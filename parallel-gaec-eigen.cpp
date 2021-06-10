@@ -51,7 +51,7 @@ std::tuple<Eigen::SparseMatrix<float>,std::vector<int>> edge_contraction_matrix(
     return {C, node_mapping}; 
 }
 
-// first, filter out all negative edges. Second, get smallest valued ones.
+// first, filter out all negative edges. Second, get smallest valued ones. TODOAA: (largest valued ones?)
 std::vector<std::array<int,2>> edges_to_contract(Eigen::SparseMatrix<float>& A, const size_t max_contractions)
 {
     assert(max_contractions > 0);
@@ -68,7 +68,7 @@ std::vector<std::array<int,2>> edges_to_contract(Eigen::SparseMatrix<float>& A, 
     }
     if(max_contractions < positive_edges.size())
     {
-        std::nth_element(positive_edges.begin(), positive_edges.begin() + max_contractions, positive_edges.end(), [](const auto& a, const auto& b) { return a.val < b.val; });
+        std::nth_element(positive_edges.begin(), positive_edges.begin() + max_contractions, positive_edges.end(), [](const auto& a, const auto& b) { return a.val > b.val; });
         positive_edges.resize(max_contractions);
     }
 
@@ -87,14 +87,14 @@ void set_diagonal_to_zero(Eigen::SparseMatrix<float>& A)
                 it.valueRef() = 0.0;
 }
 
-std::vector<int> parallel_gaec(Eigen::SparseMatrix<float> A)
+std::vector<int> parallel_gaec(Eigen::SparseMatrix<float> A, const double contract_ratio, const size_t num_itr)
 {
     std::vector<int> node_mapping(A.rows());
     std::iota(node_mapping.begin(), node_mapping.end(), 0);
-    constexpr static double contract_ratio = 0.3;
+    // constexpr static double contract_ratio = 0.3;
     assert(A.rows() == A.cols());
 
-    for(size_t iter=0; iter<3; ++iter)
+    for(size_t iter=0; iter<num_itr; ++iter)
     {
         //std::cout << "Adjacency matrix:\n";
         //std::cout << Eigen::MatrixXf(A) << "\n";
@@ -134,8 +134,8 @@ Eigen::SparseMatrix<float> construct_adjacency_matrix(const std::vector<weighted
     return A; 
 }
 
-std::vector<int> parallel_gaec(const std::vector<weighted_edge>& edges)
+std::vector<int> parallel_gaec(const std::vector<weighted_edge>& edges, const double contract_ratio, const size_t num_itr)
 {
     Eigen::SparseMatrix<float> A = construct_adjacency_matrix(edges);
-    return parallel_gaec(A); 
+    return parallel_gaec(A, contract_ratio, num_itr); 
 }
