@@ -21,6 +21,8 @@ set(PYBIND11_CPP_STANDARD -std=c++17)
 set(PYBIND11_INSTALL ON CACHE BOOL "enable pybind11 bindings.")
 add_subdirectory(external/pybind11)
 
+add_library(multicut_text_parser multicut_text_parser.cpp)
+
 add_library(parallel-gaec-eigen parallel-gaec-eigen.cpp)
 target_link_libraries(parallel-gaec-eigen parallel-gaec) 
 
@@ -28,4 +30,4 @@ add_executable(parallel-gaec-eigen-test parallel-gaec-eigen-test.cpp)
 target_link_libraries(parallel-gaec-eigen-test parallel-gaec-eigen)
 
 pybind11_add_module(parallel_gaec_py parallel_gaec_py.cpp)
-target_link_libraries(parallel_gaec_py PRIVATE parallel-gaec-eigen)
+target_link_libraries(parallel_gaec_py PRIVATE parallel-gaec-eigen multicut_text_parser)

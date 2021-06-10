@@ -3,6 +3,7 @@
 #include <iostream>
 #include <algorithm>
 #include "union_find.hxx"
+#include "time_measure_util.h"
 
 #include "parallel-gaec-eigen.h"
 
@@ -68,7 +69,7 @@ std::vector<std::array<int,2>> edges_to_contract(Eigen::SparseMatrix<float>& A, 
     }
     if(max_contractions < positive_edges.size())
     {
-        std::nth_element(positive_edges.begin(), positive_edges.begin() + max_contractions, positive_edges.end(), [](const auto& a, const auto& b) { return a.val < b.val; });
+        std::nth_element(positive_edges.begin(), positive_edges.begin() + max_contractions, positive_edges.end(), [](const auto& a, const auto& b) { return a.val > b.val; });
         positive_edges.resize(max_contractions);
     }
 
@@ -79,40 +80,54 @@ std::vector<std::array<int,2>> edges_to_contract(Eigen::SparseMatrix<float>& A, 
     return edge_indices; 
 }
 
-void set_diagonal_to_zero(Eigen::SparseMatrix<float>& A)
+double set_diagonal_to_zero(Eigen::SparseMatrix<float>& A)
 {
+    double diag_sum = 0.0;
     for(int i=0; i<A.outerSize(); ++i)
         for(Eigen::SparseMatrix<float>::InnerIterator it(A,i); it; ++it)
             if(it.row() == it.col())
+            {
+                diag_sum += it.value();
                 it.valueRef() = 0.0;
+            }
+    return diag_sum;
 }
 
 std::vector<int> parallel_gaec(Eigen::SparseMatrix<float> A)
 {
+    double lb = A.sum()/2.0;
+    std::cout << "initial energy = " << lb << "\n";
+
     std::vector<int> node_mapping(A.rows());
     std::iota(node_mapping.begin(), node_mapping.end(), 0);
-    constexpr static double contract_ratio = 0.3;
+    constexpr static double contract_ratio = 0.05;
     assert(A.rows() == A.cols());
 
-    for(size_t iter=0; iter<3; ++iter)
+    for(size_t iter=0;; ++iter)
     {
         //std::cout << "Adjacency matrix:\n";
         //std::cout << Eigen::MatrixXf(A) << "\n";
         const size_t nr_edges_to_contract = std::max(size_t(1), size_t(A.rows() * contract_ratio));
+        
         const auto e = edges_to_contract(A, nr_edges_to_contract);
         //std::cout << "iteration " << iter << ", edges to contract = " << e.size() << ", nr nodes remaining = " << A.rows() << "\n";
         if(e.size() == 0)
+        {
+            std::cout << "# iterations = " << iter << "\n";
             break;
+        }
         const auto [C, cur_node_mapping] = edge_contraction_matrix(e, A.rows());
         for(size_t i=0; i<node_mapping.size(); ++i)
             node_mapping[i] = cur_node_mapping[node_mapping[i]];
         A = C.transpose() * A * C;
-        set_diagonal_to_zero(A);
+        lb -= set_diagonal_to_zero(A)/2.0;
     }
 
     //std::cout << "solution:\n";
     //for(size_t i=0; i<node_mapping.size(); ++i)
     //    std::cout << i << " -> " << node_mapping[i] << "\n";
+    lb = A.sum()/2.0;
+    std::cout << "final energy = " << lb << "\n";
     return node_mapping;
 }
 
@@ -136,6 +151,7 @@ Eigen::SparseMatrix<float> construct_adjacency_matrix(const std::vector<weighted
 
 std::vector<int> parallel_gaec(const std::vector<weighted_edge>& edges)
 {
+    MEASURE_FUNCTION_EXECUTION_TIME;
     Eigen::SparseMatrix<float> A = construct_adjacency_matrix(edges);
     return parallel_gaec(A); 
 }
