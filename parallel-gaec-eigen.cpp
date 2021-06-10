@@ -9,6 +9,7 @@
 
 std::tuple<Eigen::SparseMatrix<float>,std::vector<int>> edge_contraction_matrix(const std::vector<std::array<int,2>>& edges, const int n)
 {
+    MEASURE_FUNCTION_EXECUTION_TIME;
     // calculate nodes that will remain after contraction.
     // Filter out edges that are not needed for contraction.
     // Calculate transitive endpoints for remaining contraction edges
@@ -55,6 +56,7 @@ std::tuple<Eigen::SparseMatrix<float>,std::vector<int>> edge_contraction_matrix(
 // first, filter out all negative edges. Second, get smallest valued ones.
 std::vector<std::array<int,2>> edges_to_contract(Eigen::SparseMatrix<float>& A, const size_t max_contractions)
 {
+    MEASURE_FUNCTION_EXECUTION_TIME;
     assert(max_contractions > 0);
     std::vector<weighted_edge> positive_edges;
     for(int i=0; i<A.outerSize(); ++i)
@@ -95,12 +97,12 @@ double set_diagonal_to_zero(Eigen::SparseMatrix<float>& A)
 
 std::vector<int> parallel_gaec(Eigen::SparseMatrix<float> A)
 {
-    double lb = A.sum()/2.0;
-    std::cout << "initial energy = " << lb << "\n";
+    const double initial_lb = A.sum()/2.0;
+    std::cout << "initial energy = " << initial_lb << "\n";
 
     std::vector<int> node_mapping(A.rows());
     std::iota(node_mapping.begin(), node_mapping.end(), 0);
-    constexpr static double contract_ratio = 0.05;
+    constexpr static double contract_ratio = 0.1;
     assert(A.rows() == A.cols());
 
     for(size_t iter=0;; ++iter)
@@ -119,20 +121,27 @@ std::vector<int> parallel_gaec(Eigen::SparseMatrix<float> A)
         const auto [C, cur_node_mapping] = edge_contraction_matrix(e, A.rows());
         for(size_t i=0; i<node_mapping.size(); ++i)
             node_mapping[i] = cur_node_mapping[node_mapping[i]];
-        A = C.transpose() * A * C;
-        lb -= set_diagonal_to_zero(A)/2.0;
+
+        {
+            MEASURE_FUNCTION_EXECUTION_TIME;
+            A = C.transpose() * A * C;
+            std::cout << "execution time for matrix multiplication:\n";
+        }
+
+        set_diagonal_to_zero(A)/2.0;
     }
 
     //std::cout << "solution:\n";
     //for(size_t i=0; i<node_mapping.size(); ++i)
     //    std::cout << i << " -> " << node_mapping[i] << "\n";
-    lb = A.sum()/2.0;
+    const double lb = A.sum()/2.0;
     std::cout << "final energy = " << lb << "\n";
     return node_mapping;
 }
 
 Eigen::SparseMatrix<float> construct_adjacency_matrix(const std::vector<weighted_edge>& edges)
 {
+    MEASURE_FUNCTION_EXECUTION_TIME;
     using T = Eigen::Triplet<float>;
     std::vector<T> coeffs;
     coeffs.reserve(edges.size()*2);
