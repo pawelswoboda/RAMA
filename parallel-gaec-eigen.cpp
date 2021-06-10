@@ -51,7 +51,7 @@ std::tuple<Eigen::SparseMatrix<float>,std::vector<int>> edge_contraction_matrix(
     return {C, node_mapping}; 
 }
 
-// first, filter out all negative edges. Second, get smallest valued ones. TODOAA: (largest valued ones?)
+// first, filter out all negative edges. Second, get largest valued ones.
 std::vector<std::array<int,2>> edges_to_contract(Eigen::SparseMatrix<float>& A, const size_t max_contractions)
 {
     assert(max_contractions > 0);
