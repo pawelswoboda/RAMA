@@ -1,7 +1,11 @@
-project(parallel-gaec)
+project(parallel-gaec LANGUAGES CXX CUDA)
 
 cmake_minimum_required(VERSION 2.8.12)
 
+include_directories(${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
+
+include_directories(external/thrust/)
+include_directories(external/thrust/dependencies/cub)
 
 add_library(parallel-gaec INTERFACE)
 target_include_directories(parallel-gaec INTERFACE include/)
@@ -29,5 +33,16 @@ target_link_libraries(parallel-gaec-eigen parallel-gaec)
 add_executable(parallel-gaec-eigen-test parallel-gaec-eigen-test.cpp)
 target_link_libraries(parallel-gaec-eigen-test parallel-gaec-eigen)
 
+add_library(dCSR dCSR.cu)
+target_link_libraries(dCSR cusparse)
+add_library(parallel_gaec_cuda parallel_gaec_cuda.cu)
+target_link_libraries(parallel_gaec_cuda dCSR cusparse)
+
+add_executable(parallel_gaec_cuda_test parallel_gaec_cuda_test.cpp)
+target_link_libraries(parallel_gaec_cuda_test parallel_gaec_cuda)
+
 pybind11_add_module(parallel_gaec_py parallel_gaec_py.cpp)
-target_link_libraries(parallel_gaec_py PRIVATE parallel-gaec-eigen multicut_text_parser)
+target_link_libraries(parallel_gaec_py PRIVATE parallel-gaec-eigen multicut_text_parser parallel_gaec_cuda)
+
+add_executable(multicut_parallel_gaec_cuda_text_input multicut_parallel_gaec_cuda_text_input.cpp)
+target_link_libraries(multicut_parallel_gaec_cuda_text_input multicut_text_parser parallel_gaec_cuda dCSR)

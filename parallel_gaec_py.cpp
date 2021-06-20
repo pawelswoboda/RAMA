@@ -1,7 +1,10 @@
+#include <vector>
+#include <tuple>
 #include <pybind11/pybind11.h>
 #include <pybind11/eigen.h>
 #include <pybind11/stl.h>
 #include "parallel-gaec-eigen.h"
+#include "parallel_gaec_cuda.h"
 #include "multicut_text_parser.h"
 
 namespace py=pybind11;
@@ -15,6 +18,14 @@ PYBIND11_MODULE(parallel_gaec_py, m) {
             for(auto [i,j,c] : edge_costs)
             e.push_back({i,j,c});
             return parallel_gaec(e); 
+            });
+
+    m.def("parallel_gaec_cuda", [](const std::vector<std::tuple<size_t,size_t,double>>& edge_costs) {
+            std::vector<std::tuple<int,int,float>> e;
+            e.reserve(edge_costs.size());
+            for(auto [i,j,c] : edge_costs)
+            e.push_back({i,j,c});
+            return parallel_gaec_cuda(e); 
             });
 
     m.def("read_multicut_file", [](const std::string& filename) {

@@ -4,3 +4,6 @@
 [submodule "external/Eigen"]
 	path = external/Eigen
 	url = https://github.com/eigenteam/eigen-git-mirror.git
+[submodule "external/thrust"]
+	path = external/thrust
+	url = https://github.com/NVIDIA/thrust.git
