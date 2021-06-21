@@ -37,7 +37,7 @@ dCSR dCSR::transpose(cusparseHandle_t handle)
 }
 
 // Inspired from: https://docs.nvidia.com/cuda/cusparse/index.html#csr2csr_compress
-dCSR dCSR::eliminate_zeros(cusparseHandle_t handle, const float tol)
+dCSR dCSR::compress(cusparseHandle_t handle, const float tol)
 {
     MEASURE_FUNCTION_EXECUTION_TIME
     thrust::device_vector<int> nnz_per_row_interm = thrust::device_vector<int>(rows(), 0);
@@ -49,7 +49,7 @@ dCSR dCSR::eliminate_zeros(cusparseHandle_t handle, const float tol)
 
     checkCuSparseError(cusparseSnnz_compress(handle, rows(), descrA, thrust::raw_pointer_cast(data.data()),
                                          thrust::raw_pointer_cast(row_offsets.data()), thrust::raw_pointer_cast(nnz_per_row_interm.data()),
-                                         thrust::raw_pointer_cast(total_nnz_interm.data()), tol), "cuSparse: stage 1 of eliminate_zeros failed");
+                                         thrust::raw_pointer_cast(total_nnz_interm.data()), tol), "cuSparse: stage 1 of compress failed");
 
     dCSR c;
 
@@ -64,7 +64,7 @@ dCSR dCSR::eliminate_zeros(cusparseHandle_t handle, const float tol)
                                               nnz(), thrust::raw_pointer_cast(nnz_per_row_interm.data()),
                                               thrust::raw_pointer_cast(c.data.data()), 
                                               thrust::raw_pointer_cast(c.col_ids.data()),
-                                              thrust::raw_pointer_cast(c.row_offsets.data()), tol), "cuSparse: stage 2 of eliminate_zeros failed");
+                                              thrust::raw_pointer_cast(c.row_offsets.data()), tol), "cuSparse: stage 2 of compress failed");
                                             
     return c;
 }
@@ -113,7 +113,7 @@ dCSR dCSR::keep_top_k_positive_values(cusparseHandle_t handle, const int top_k)
         thrust::transform(p.data.begin(), p.data.end(), p.data.begin(), keep_geq<float>(min_value_to_keep));
     }
 
-    return p.eliminate_zeros(handle);
+    return p.compress(handle);
 }
 
 dCSR multiply(cusparseHandle_t handle, const dCSR& A, const dCSR& B)

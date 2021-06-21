@@ -227,6 +227,7 @@ std::vector<int> parallel_gaec_cuda(dCSR& A)
         }
 
         A.set_diagonal_to_zero(handle);
+        A.compress(handle); // Causes memory leak on d2volta (not pascal).
     }
 
     //std::cout << "solution:\n";
