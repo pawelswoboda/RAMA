@@ -3,8 +3,6 @@ project(parallel-gaec LANGUAGES CXX CUDA)
 cmake_minimum_required(VERSION 2.8.12)
 
 include_directories(${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
-cuda_select_nvcc_arch_flags(ARCH_FLAGS Auto) # Compile for the GPU on the current machine. 
-set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} ${ARCH_FLAGS} -g -G --std=c++11) # -lcudadevrt -rdc=true for dynamic parallelism.
 
 include_directories(external/thrust/)
 include_directories(external/thrust/dependencies/cub)
