@@ -3,6 +3,7 @@
 #include <thrust/tuple.h>
 #include <thrust/for_each.h>
 #include <thrust/iterator/zip_iterator.h>
+#include "time_measure_util.h"
 
 void dCSR::print() const
 {
@@ -16,13 +17,12 @@ void dCSR::print() const
 
 dCSR dCSR::transpose(cusparseHandle_t handle)
 {
+    MEASURE_FUNCTION_EXECUTION_TIME
     dCSR t;
     t.cols_ = rows();
     t.rows_ = cols();
 
-    std::cout << "t.row_offsets.size() = " << t.row_offsets.size() << "\n";
     t.row_offsets = thrust::device_vector<int>(cols()+1);
-    std::cout << "t.row_offsets.size() after = " << t.row_offsets.size() << "\n";
     t.col_ids = thrust::device_vector<int>(nnz());
     t.data = thrust::device_vector<float>(nnz());
 
@@ -37,6 +37,7 @@ dCSR dCSR::transpose(cusparseHandle_t handle)
 
 dCSR multiply(cusparseHandle_t handle, const dCSR& A, const dCSR& B)
 {
+    MEASURE_FUNCTION_EXECUTION_TIME
     assert(A.cols() == B.rows());
     int nnzC;
     int *nnzTotalDevHostPtr = &nnzC;
@@ -146,7 +147,6 @@ void dCSR::set_diagonal_to_zero(cusparseHandle_t handle)
     
      auto begin = thrust::make_zip_iterator(thrust::make_tuple(col_ids.begin(), _row_ids.begin(), data.begin()));
      auto end = thrust::make_zip_iterator(thrust::make_tuple(col_ids.end(), _row_ids.end(), data.end()));
-
 
      thrust::for_each(thrust::device, begin, end, diag_to_zero_func());
 }

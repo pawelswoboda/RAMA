@@ -3,6 +3,8 @@ project(parallel-gaec LANGUAGES CXX CUDA)
 cmake_minimum_required(VERSION 2.8.12)
 
 include_directories(${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
+cuda_select_nvcc_arch_flags(ARCH_FLAGS Auto) # Compile for the GPU on the current machine. 
+set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} ${ARCH_FLAGS} -g -G --std=c++11) # -lcudadevrt -rdc=true for dynamic parallelism.
 
 include_directories(external/thrust/)
 include_directories(external/thrust/dependencies/cub)
@@ -35,6 +37,9 @@ target_link_libraries(parallel-gaec-eigen-test parallel-gaec-eigen)
 
 add_library(dCSR dCSR.cu)
 target_link_libraries(dCSR cusparse)
+
+add_library(ECL-CC_11 ECL-CC_11.cu)
+
 add_library(parallel_gaec_cuda parallel_gaec_cuda.cu)
 target_link_libraries(parallel_gaec_cuda dCSR cusparse)
 
@@ -43,6 +48,9 @@ target_link_libraries(parallel_gaec_cuda_test parallel_gaec_cuda)
 
 pybind11_add_module(parallel_gaec_py parallel_gaec_py.cpp)
 target_link_libraries(parallel_gaec_py PRIVATE parallel-gaec-eigen multicut_text_parser parallel_gaec_cuda)
+
+add_executable(multicut_parallel_gaec_eigen_text_input multicut_parallel_gaec_eigen_text_input.cpp)
+target_link_libraries(multicut_parallel_gaec_eigen_text_input multicut_text_parser parallel-gaec-eigen)
 
 add_executable(multicut_parallel_gaec_cuda_text_input multicut_parallel_gaec_cuda_text_input.cpp)
 target_link_libraries(multicut_parallel_gaec_cuda_text_input multicut_text_parser parallel_gaec_cuda dCSR)
