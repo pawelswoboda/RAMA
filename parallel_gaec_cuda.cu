@@ -1,5 +1,6 @@
 #include <cuda_runtime.h>
 #include "dCSR.h"
+#include <ECLgraph.h>
 #include "union_find.hxx"
 #include "time_measure_util.h"
 #include <algorithm>
@@ -36,6 +37,16 @@ std::tuple<thrust::host_vector<int>, thrust::host_vector<int>, thrust::host_vect
         cost[2*std::distance(entry_begin, it)+1] = c;
     }
     return {col_ids, row_ids, cost};
+}
+
+dCSR edge_contraction_matrix_cuda_complete(cusparseHandle_t handle, dCSR& A, const size_t max_contractions)
+{
+    dCSR adj_contraction = A.keep_top_k_positive_values();
+    thrust::device_vector<int> cc_ids(A.rows());
+
+    computeCC_gpu(A.rows(), A.nnz(), A.row_offsets(), A.col_ids(), thrust::raw_pointer_cast(cc_ids.data()), get_cuda_device());
+
+    //TODO: Create the matrix with cc_ids
 }
 
 std::tuple<dCSR,std::vector<int>> edge_contraction_matrix_cuda(cusparseHandle_t handle, const std::vector<std::array<int,2>>& edges, const int n)

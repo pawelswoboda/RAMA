@@ -35,6 +35,83 @@ dCSR dCSR::transpose(cusparseHandle_t handle)
     return t;
 }
 
+// Inspired from: https://docs.nvidia.com/cuda/cusparse/index.html#csr2csr_compress
+dCSR dCSR::eliminate_zeros(cusparseHandle_t handle, const float tol)
+{
+    MEASURE_FUNCTION_EXECUTION_TIME
+    thrust::device_vector<int> nnz_per_row_interm = thrust::device_vector<int>(rows(), 0);
+    thrust::device_vector<int> total_nnz_interm = thrust::device_vector<int>(1);
+
+    cusparseMatDescr_t descrA;
+    checkCuSparseError(cusparseCreateMatDescr(&descrA), "Matrix descriptor init failed");
+    checkCuSparseError(cusparseSetMatType(descrA, CUSPARSE_MATRIX_TYPE_GENERAL), "cusparseSetMatType failed");
+
+    checkCuSparseError(cusparseSnnz_compress(handle, rows(), descrA, thrust::raw_pointer_cast(data.data()),
+                                         thrust::raw_pointer_cast(row_offsets.data()), thrust::raw_pointer_cast(nnz_per_row_interm.data()),
+                                         thrust::raw_pointer_cast(total_nnz_interm.data()), tol), "cuSparse: stage 1 of eliminate_zeros failed");
+
+    dCSR c;
+
+    c.row_offsets = thrust::device_vector<int>(rows() + 1); 
+    c.data = thrust::device_vector<int>(total_nnz_interm[0]); // TODO: direct access to device memory?
+    c.col_ids = thrust::device_vector<int>(total_nnz_interm[0]);
+
+    checkCuSparseError(cusparseScsr2csr_compress(handle, rows(), cols(), descrA, 
+                                              thrust::raw_pointer_cast(data.data()),
+                                              thrust::raw_pointer_cast(col_ids.data()), 
+                                              thrust::raw_pointer_cast(row_offsets.data()),
+                                              nnz(), thrust::raw_pointer_cast(nnz_per_row_interm.data()),
+                                              thrust::raw_pointer_cast(c.data.data()), 
+                                              thrust::raw_pointer_cast(c.col_ids.data()),
+                                              thrust::raw_pointer_cast(c.row_offsets.data()), tol), "cuSparse: stage 2 of eliminate_zeros failed");
+                                            
+    return c;
+}
+
+template<typename T>
+struct keep_geq : public thrust::unary_function<T,T>
+{
+   __host__ __device__ T operator()(const T &x) const
+   {
+     return x > T(0) ? x : 0;
+   }
+};
+
+struct is_positive
+{
+    __host__ __device__ bool operator()(int &x)
+    {
+        return x > 0;
+    }
+};
+
+dCSR keep_top_k_positive_values(cusparseHandle_t handle, const int top_k)
+{
+    MEASURE_FUNCTION_EXECUTION_TIME
+    // Create copy of self:
+    dCSR p;
+    p.cols_ = rows();
+    p.rows_ = cols();
+    p.row_offsets = row_offsets;
+    p.col_ids = col_ids;
+    p.data = data;
+
+    // Set all negatives values to zero.
+    thrust::transform(p.data.begin(), p.data.end(), p.data.begin(), keep_geq(0.0));
+    int num_positive = thrust::count_if(p.data.begin(), p.data.end(), is_positive());
+
+    if (top_k < num_positive)
+    {
+        thurst::device_vector<float> temp = p.data();
+        thrust::sort(temp.begin(), temp.end(), thrust::greater<float>()); // Ideal would be https://github.com/NVIDIA/thrust/issues/75
+
+        float min_value_to_keep = temp[top_k];
+        thrust::transform(p.data.begin(), p.data.end(), p.data.begin(), keep_geq(min_value_to_keep));
+    }
+
+    return p.eliminate_zeros(handle);
+}
+
 dCSR multiply(cusparseHandle_t handle, const dCSR& A, const dCSR& B)
 {
     MEASURE_FUNCTION_EXECUTION_TIME
