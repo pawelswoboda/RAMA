@@ -36,7 +36,11 @@ target_link_libraries(parallel-gaec-eigen-test parallel-gaec-eigen)
 add_library(dCSR dCSR.cu)
 target_link_libraries(dCSR cusparse)
 
-add_library(ECL-CC_11 ECL-CC_11.cu)
+add_library(ECL-CC_11 external/ECL-CC/ECL-CC_11.cu)
+target_include_directories(ECL-CC_11 INTERFACE external/ECL-CC)
+
+add_executable(cc_gpu_test cc_gpu_test.cu)
+target_link_libraries(cc_gpu_test ECL-CC_11)
 
 add_library(parallel_gaec_cuda parallel_gaec_cuda.cu)
 target_link_libraries(parallel_gaec_cuda dCSR cusparse)
