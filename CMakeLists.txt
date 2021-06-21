@@ -34,7 +34,7 @@ add_executable(parallel-gaec-eigen-test parallel-gaec-eigen-test.cpp)
 target_link_libraries(parallel-gaec-eigen-test parallel-gaec-eigen)
 
 add_library(dCSR dCSR.cu)
-target_link_libraries(dCSR cusparse)
+target_link_libraries(dCSR cusparse ECL-CC_11)
 
 add_library(ECL-CC_11 external/ECL-CC/ECL-CC_11.cu)
 target_include_directories(ECL-CC_11 INTERFACE external/ECL-CC)

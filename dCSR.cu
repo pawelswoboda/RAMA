@@ -3,6 +3,7 @@
 #include <thrust/tuple.h>
 #include <thrust/for_each.h>
 #include <thrust/iterator/zip_iterator.h>
+#include <ECLgraph.h>
 #include "time_measure_util.h"
 
 void dCSR::print() const
@@ -68,45 +69,48 @@ dCSR dCSR::eliminate_zeros(cusparseHandle_t handle, const float tol)
     return c;
 }
 
-template<typename T>
-struct keep_geq : public thrust::unary_function<T,T>
+template <typename T>
+struct keep_geq
 {
-   __host__ __device__ T operator()(const T &x) const
+    const T _thresh;
+    keep_geq(T thresh): _thresh(thresh) {} 
+   __host__ __device__ float operator()(const T &x) const
    {
-     return x > T(0) ? x : 0;
+     return x > _thresh ? x : 0;
    }
 };
 
+template <typename T>
 struct is_positive
 {
-    __host__ __device__ bool operator()(int &x)
+    __host__ __device__ bool operator()(const T &x)
     {
         return x > 0;
     }
 };
 
-dCSR keep_top_k_positive_values(cusparseHandle_t handle, const int top_k)
+dCSR dCSR::keep_top_k_positive_values(cusparseHandle_t handle, const int top_k)
 {
     MEASURE_FUNCTION_EXECUTION_TIME
     // Create copy of self:
     dCSR p;
-    p.cols_ = rows();
-    p.rows_ = cols();
+    p.rows_ = rows();
+    p.cols_ = cols();
     p.row_offsets = row_offsets;
     p.col_ids = col_ids;
     p.data = data;
 
     // Set all negatives values to zero.
-    thrust::transform(p.data.begin(), p.data.end(), p.data.begin(), keep_geq(0.0));
-    int num_positive = thrust::count_if(p.data.begin(), p.data.end(), is_positive());
+    thrust::transform(p.data.begin(), p.data.end(), p.data.begin(), keep_geq<float>(0.0f));
+    int num_positive = thrust::count_if(thrust::device, p.data.begin(), p.data.end(), is_positive<float>());
 
     if (top_k < num_positive)
     {
-        thurst::device_vector<float> temp = p.data();
+        thrust::device_vector<float> temp = p.data;
         thrust::sort(temp.begin(), temp.end(), thrust::greater<float>()); // Ideal would be https://github.com/NVIDIA/thrust/issues/75
 
         float min_value_to_keep = temp[top_k];
-        thrust::transform(p.data.begin(), p.data.end(), p.data.begin(), keep_geq(min_value_to_keep));
+        thrust::transform(p.data.begin(), p.data.end(), p.data.begin(), keep_geq<float>(min_value_to_keep));
     }
 
     return p.eliminate_zeros(handle);
@@ -233,3 +237,12 @@ float dCSR::sum()
     return thrust::reduce(data.begin(), data.end(), (float) 0.0, thrust::plus<float>());
 }
 
+thrust::device_vector<int> dCSR::compute_cc(const int device)
+{
+    thrust::device_vector<int> cc_ids(rows());
+    computeCC_gpu(rows(), nnz(), 
+                thrust::raw_pointer_cast(row_offsets.data()), 
+                thrust::raw_pointer_cast(col_ids.data()), 
+                thrust::raw_pointer_cast(cc_ids.data()), device);
+    return cc_ids;
+}

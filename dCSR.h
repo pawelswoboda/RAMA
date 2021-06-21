@@ -40,6 +40,7 @@ class dCSR {
         dCSR transpose(cusparseHandle_t handle);
         dCSR eliminate_zeros(cusparseHandle_t handle, const float tol = 1e-4);
         dCSR keep_top_k_positive_values(cusparseHandle_t handle, const int top_k);
+        thrust::device_vector<int> compute_cc(const int device);
 
         size_t rows() const { return rows_; }
         size_t cols() const { return cols_; }
