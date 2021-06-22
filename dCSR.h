@@ -11,10 +11,18 @@
 #include <cusparse.h>
 
 namespace {
+
 void checkCuSparseError(cusparseStatus_t status, std::string errorMsg)
 {
     if (status != CUSPARSE_STATUS_SUCCESS) {
-        std::cout << "CuSparse error: " << errorMsg << std::endl;
+        std::cout << "CuSparse error: " << errorMsg; // << "status: "<< cusparseGetErrorString(status) << std::endl;
+        throw std::exception();
+    }
+}
+void checkCudaError(cudaError_t status, std::string errorMsg)
+{
+    if (status != cudaSuccess) {
+        std::cout << "CUDA error: " << errorMsg; // << "status" <<cudaGetErrorString(status) << std::endl;
         throw std::exception();
     }
 }
@@ -46,7 +54,7 @@ class dCSR {
         size_t cols() const { return cols_; }
         size_t nnz() const { return data.size(); }
 
-        friend dCSR multiply(cusparseHandle_t handle, const dCSR& A, const dCSR& B);
+        friend dCSR multiply(cusparseHandle_t handle, dCSR& A, dCSR& B);
 
         std::tuple<thrust::host_vector<int>, thrust::host_vector<int>, thrust::host_vector<float>> export_coo(cusparseHandle_t handle);
 

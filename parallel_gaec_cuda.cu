@@ -191,8 +191,6 @@ std::vector<int> parallel_gaec_cuda(dCSR& A)
 
     for(size_t iter=0;; ++iter)
     {
-        //std::cout << "Adjacency matrix:\n";
-        //std::cout << Eigen::MatrixXf(A) << "\n";
         const size_t nr_edges_to_contract = std::max(size_t(1), size_t(A.rows() * contract_ratio));
         
         const auto e = edges_to_contract(handle, A, nr_edges_to_contract);
@@ -216,8 +214,11 @@ std::vector<int> parallel_gaec_cuda(dCSR& A)
             std::cout << "A dim = " << A.cols() << "x" << A.rows() << "\n";
             std::cout << "A*C multiply time:\n";
             dCSR intermed = multiply(handle, A, C);
+            intermed.print();
+            std::cout << "A C dim = " << intermed.rows() << "x" << intermed.cols() << "\n"; 
             std::cout << "C' transpose time:\n";
             dCSR C_trans = C.transpose(handle);
+            C_trans.print();
             std::cout << "C' * (AC) multiply time:\n";
             dCSR new_A = multiply(handle, C_trans, intermed);
             std::cout << "C' A C dim = " << new_A.rows() << "x" << new_A.cols() << "\n"; 
