@@ -52,10 +52,12 @@ dCSR dCSR::compress(cusparseHandle_t handle, const float tol)
                                          thrust::raw_pointer_cast(total_nnz_interm.data()), tol), "cuSparse: stage 1 of compress failed");
 
     dCSR c;
+    c.rows_ = rows();
 
     c.row_offsets = thrust::device_vector<int>(rows() + 1); 
-    c.data = thrust::device_vector<int>(total_nnz_interm[0]); // TODO: direct access to device memory?
-    c.col_ids = thrust::device_vector<int>(total_nnz_interm[0]);
+    thrust::host_vector<int> total_nnz_interm_h = total_nnz_interm;
+    c.data = thrust::device_vector<float>(total_nnz_interm_h[0]); 
+    c.col_ids = thrust::device_vector<int>(total_nnz_interm_h[0]);
 
     checkCuSparseError(cusparseScsr2csr_compress(handle, rows(), cols(), descrA, 
                                               thrust::raw_pointer_cast(data.data()),
@@ -65,7 +67,9 @@ dCSR dCSR::compress(cusparseHandle_t handle, const float tol)
                                               thrust::raw_pointer_cast(c.data.data()), 
                                               thrust::raw_pointer_cast(c.col_ids.data()),
                                               thrust::raw_pointer_cast(c.row_offsets.data()), tol), "cuSparse: stage 2 of compress failed");
-                                            
+
+    c.cols_ = *thrust::max_element(c.col_ids.begin(), c.col_ids.end()) + 1;
+
     return c;
 }
 
