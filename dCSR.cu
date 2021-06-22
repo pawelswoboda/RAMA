@@ -32,14 +32,14 @@ dCSR dCSR::transpose(cusparseHandle_t handle)
     size_t bufferSize = 0;
     checkCuSparseError(cusparseCsr2cscEx2_bufferSize(handle, rows(), cols(), nnz(), 
 			thrust::raw_pointer_cast(data.data()), thrust::raw_pointer_cast(row_offsets.data()), thrust::raw_pointer_cast(col_ids.data()),
-			thrust::raw_pointer_cast(t.data.data()), thrust::raw_pointer_cast(t.col_ids.data()), thrust::raw_pointer_cast(t.row_offsets.data()),
+			thrust::raw_pointer_cast(t.data.data()), thrust::raw_pointer_cast(t.row_offsets.data()), thrust::raw_pointer_cast(t.col_ids.data()), 
             CUDA_R_32F, CUSPARSE_ACTION_NUMERIC, CUSPARSE_INDEX_BASE_ZERO, CUSPARSE_CSR2CSC_ALG1, &bufferSize), "transpose buffer failed");
     
     checkCudaError(cudaMalloc((void**) &dbuffer, bufferSize), "transpose buffer allocation failed");
 
     checkCuSparseError(cusparseCsr2cscEx2(handle, rows(), cols(), nnz(), 
 			thrust::raw_pointer_cast(data.data()), thrust::raw_pointer_cast(row_offsets.data()), thrust::raw_pointer_cast(col_ids.data()),
-			thrust::raw_pointer_cast(t.data.data()), thrust::raw_pointer_cast(t.col_ids.data()), thrust::raw_pointer_cast(t.row_offsets.data()),
+			thrust::raw_pointer_cast(t.data.data()), thrust::raw_pointer_cast(t.row_offsets.data()), thrust::raw_pointer_cast(t.col_ids.data()), 
             CUDA_R_32F, CUSPARSE_ACTION_NUMERIC, CUSPARSE_INDEX_BASE_ZERO, CUSPARSE_CSR2CSC_ALG1, dbuffer),
             "transpose failed");
 

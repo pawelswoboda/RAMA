@@ -214,11 +214,9 @@ std::vector<int> parallel_gaec_cuda(dCSR& A)
             std::cout << "A dim = " << A.cols() << "x" << A.rows() << "\n";
             std::cout << "A*C multiply time:\n";
             dCSR intermed = multiply(handle, A, C);
-            intermed.print();
             std::cout << "A C dim = " << intermed.rows() << "x" << intermed.cols() << "\n"; 
             std::cout << "C' transpose time:\n";
             dCSR C_trans = C.transpose(handle);
-            C_trans.print();
             std::cout << "C' * (AC) multiply time:\n";
             dCSR new_A = multiply(handle, C_trans, intermed);
             std::cout << "C' A C dim = " << new_A.rows() << "x" << new_A.cols() << "\n"; 
