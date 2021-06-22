@@ -57,9 +57,9 @@ struct non_zero_indicator_func
         bool operator()(const thrust::tuple<int,int,float> t)
         {
             if(fabs(thrust::get<2>(t)) >= _tol)
-                return true;
-            else
                 return false;
+            else
+                return true;
         }
 };
 
