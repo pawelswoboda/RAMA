@@ -46,7 +46,7 @@ class dCSR {
                     DATA_ITERATOR data_begin, DATA_ITERATOR data_end);
 
         dCSR transpose(cusparseHandle_t handle);
-        dCSR compress(cusparseHandle_t handle, const float tol = 1e-4);
+        void compress(cusparseHandle_t handle, const float tol = 1e-4);
         dCSR keep_top_k_positive_values(cusparseHandle_t handle, const int top_k);
         thrust::device_vector<int> compute_cc(const int device);
 
@@ -165,7 +165,7 @@ void dCSR::init(cusparseHandle_t handle,
     assert(rows_ > *thrust::max_element(row_ids.begin(), row_ids.end()));
 
     row_offsets = thrust::device_vector<int>(row_ids.size()+1);
-    thrust::sequence(row_offsets.begin(), row_offsets.end());
+    thrust::sequence(row_offsets.begin(), row_offsets.end()); // TODO: redundant?
 
     row_offsets = thrust::device_vector<int>(rows_+1);
     cusparseXcoo2csr(handle, thrust::raw_pointer_cast(row_ids.data()), nnz(), rows(), thrust::raw_pointer_cast(row_offsets.data()), CUSPARSE_INDEX_BASE_ZERO);

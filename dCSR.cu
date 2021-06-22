@@ -47,42 +47,120 @@ dCSR dCSR::transpose(cusparseHandle_t handle)
     return t;
 }
 
-// Inspired from: https://docs.nvidia.com/cuda/cusparse/index.html#csr2csr_compress
-dCSR dCSR::compress(cusparseHandle_t handle, const float tol)
+template <typename T>
+struct non_zero_indicator_func
+{
+    const T _tol;
+    non_zero_indicator_func(T tol): _tol(tol) {} 
+
+    __host__ __device__
+        bool operator()(const thrust::tuple<int,int,float> t)
+        {
+            if(fabs(thrust::get<2>(t)) >= _tol)
+                return true;
+            else
+                return false;
+        }
+};
+
+void dCSR::compress(cusparseHandle_t handle, const float tol)
 {
     MEASURE_FUNCTION_EXECUTION_TIME
-    thrust::device_vector<int> nnz_per_row_interm = thrust::device_vector<int>(rows(), 0);
-    thrust::device_vector<int> total_nnz_interm = thrust::device_vector<int>(1);
+    thrust::device_vector<int> _row_ids = row_ids(handle);
+    
+    auto first = thrust::make_zip_iterator(thrust::make_tuple(col_ids.begin(), _row_ids.begin(), data.begin()));
+    auto last = thrust::make_zip_iterator(thrust::make_tuple(col_ids.end(), _row_ids.end(), data.end()));
 
-    cusparseMatDescr_t descrA;
-    checkCuSparseError(cusparseCreateMatDescr(&descrA), "Matrix descriptor init failed");
-    checkCuSparseError(cusparseSetMatType(descrA, CUSPARSE_MATRIX_TYPE_GENERAL), "cusparseSetMatType failed");
+    auto new_last = thrust::remove_if(first, last, non_zero_indicator_func<float>(tol));
 
-    checkCuSparseError(cusparseSnnz_compress(handle, rows(), descrA, thrust::raw_pointer_cast(data.data()),
-                                         thrust::raw_pointer_cast(row_offsets.data()), thrust::raw_pointer_cast(nnz_per_row_interm.data()),
-                                         thrust::raw_pointer_cast(total_nnz_interm.data()), tol), "cuSparse: stage 1 of compress failed");
+    const size_t nr_non_zeros = std::distance(first, new_last);
+    col_ids.resize(nr_non_zeros);
+    _row_ids.resize(nr_non_zeros);
+    data.resize(nr_non_zeros);
 
-    dCSR c;
-    c.rows_ = rows();
+    coo_sorting(col_ids, _row_ids, data);
 
-    c.row_offsets = thrust::device_vector<int>(rows() + 1); 
-    thrust::host_vector<int> total_nnz_interm_h = total_nnz_interm;
-    c.data = thrust::device_vector<float>(total_nnz_interm_h[0]); 
-    c.col_ids = thrust::device_vector<int>(total_nnz_interm_h[0]);
+    // now row indices are non-decreasing
+    assert(thrust::is_sorted(_row_ids.begin(), _row_ids.end()));
 
-    checkCuSparseError(cusparseScsr2csr_compress(handle, rows(), cols(), descrA, 
-                                              thrust::raw_pointer_cast(data.data()),
-                                              thrust::raw_pointer_cast(col_ids.data()), 
-                                              thrust::raw_pointer_cast(row_offsets.data()),
-                                              nnz(), thrust::raw_pointer_cast(nnz_per_row_interm.data()),
-                                              thrust::raw_pointer_cast(c.data.data()), 
-                                              thrust::raw_pointer_cast(c.col_ids.data()),
-                                              thrust::raw_pointer_cast(c.row_offsets.data()), tol), "cuSparse: stage 2 of compress failed");
+    cols_ = *thrust::max_element(col_ids.begin(), col_ids.end()) + 1;
+    rows_ = _row_ids.back() + 1;
 
-    c.cols_ = cols();
-
-    return c;
+    row_offsets = thrust::device_vector<int>(rows_ + 1);
+    cusparseXcoo2csr(handle, thrust::raw_pointer_cast(_row_ids.data()), nnz(), rows(), thrust::raw_pointer_cast(row_offsets.data()), CUSPARSE_INDEX_BASE_ZERO);
 }
+
+// // Inspired from: https://docs.nvidia.com/cuda/cusparse/index.html#csr2csr_compress
+// dCSR dCSR::compress(cusparseHandle_t handle, const float tol) const
+// {
+//     MEASURE_FUNCTION_EXECUTION_TIME
+//     thrust::device_vector<int> nnz_per_row_interm = thrust::device_vector<int>(rows(), 0);
+//     thrust::device_vector<int> total_nnz_interm = thrust::device_vector<int>(1);
+
+//     cusparseMatDescr_t descrA;
+//     checkCuSparseError(cusparseCreateMatDescr(&descrA), "Matrix descriptor init failed");
+//     checkCuSparseError(cusparseSetMatIndexBase(descrA, CUSPARSE_INDEX_BASE_ZERO), "cusparseSetMatIndex failed");
+//     checkCuSparseError(cusparseSetMatType(descrA, CUSPARSE_MATRIX_TYPE_GENERAL), "cusparseSetMatType failed");
+
+//     checkCuSparseError(cusparseSnnz_compress(handle, rows(), descrA, thrust::raw_pointer_cast(data.data()),
+//                                          thrust::raw_pointer_cast(row_offsets.data()), thrust::raw_pointer_cast(nnz_per_row_interm.data()),
+//                                          thrust::raw_pointer_cast(total_nnz_interm.data()), tol), "cuSparse: stage 1 of compress failed");
+
+//     dCSR c;
+//     c.rows_ = rows();
+
+//     c.row_offsets = thrust::device_vector<int>(rows() + 1); 
+//     thrust::host_vector<int> total_nnz_interm_h = total_nnz_interm;
+//     c.data = thrust::device_vector<float>(total_nnz_interm_h[0]); 
+//     c.col_ids = thrust::device_vector<int>(total_nnz_interm_h[0]);
+
+//     //DEBUG:
+//     int max_rows = *thrust::max_element(row_offsets.begin(), row_offsets.end());
+//     int max_cols = *thrust::max_element(col_ids.begin(), col_ids.end());
+//     std::cout<<"max_rows: "<<max_rows<<", max_cols: "<<max_cols<<std::endl;
+//     thrust::host_vector<int> row_offsets_h = row_offsets;
+//     for (int i = 0; i < rows(); i++)
+//     {
+//         assert(row_offsets_h[i] >= 0);
+//         assert(row_offsets_h[i + 1] >= row_offsets_h[i]);
+//     }
+//     assert(row_offsets_h[rows()] = nnz());
+//     assert(nnz() == col_ids.size());
+    
+//     checkCuSparseError(cusparseScsr2csr_compress(handle, rows(), cols(), descrA, 
+//                                               thrust::raw_pointer_cast(data.data()),
+//                                               thrust::raw_pointer_cast(col_ids.data()), 
+//                                               thrust::raw_pointer_cast(row_offsets.data()),
+//                                               nnz(), thrust::raw_pointer_cast(nnz_per_row_interm.data()),
+//                                               thrust::raw_pointer_cast(c.data.data()), 
+//                                               thrust::raw_pointer_cast(c.col_ids.data()),
+//                                               thrust::raw_pointer_cast(c.row_offsets.data()), tol), "cuSparse: stage 2 of compress failed");
+
+//     c.cols_ = cols();
+//     //DEBUG:
+//     int max_rows_after = *thrust::max_element(row_offsets.begin(), row_offsets.end());
+//     int max_cols_after = *thrust::max_element(col_ids.begin(), col_ids.end());
+//     std::cout<<"max_rows: "<<max_rows_after<<", max_cols: "<<max_cols_after<<std::endl;
+
+//     if (max_cols_after != max_cols or max_rows == 1182577)
+//     {
+//         for(int i = 54; i < 55; i++)
+//         {
+//             int j_n = row_offsets[i + 1];
+//             int nnz_exp = nnz_per_row_interm[i];
+//             for(int j_i = row_offsets[i]; j_i < j_n; j_i++)
+//             {
+//                 int j = col_ids[j_i];
+//                 if (j == max_cols_after)
+//                 {
+//                     float val = data[j_i];
+//                     int a = 1;
+//                 }
+//             }
+//         }
+//     }
+//     return c;
+// }
 
 template <typename T>
 struct keep_geq
@@ -128,7 +206,9 @@ dCSR dCSR::keep_top_k_positive_values(cusparseHandle_t handle, const int top_k)
         thrust::transform(p.data.begin(), p.data.end(), p.data.begin(), keep_geq<float>(min_value_to_keep));
     }
 
-    return p.compress(handle);
+    p.compress(handle);
+
+    return p;
 }
 
 dCSR multiply(cusparseHandle_t handle, dCSR& A, dCSR& B)

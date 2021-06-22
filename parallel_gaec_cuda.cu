@@ -135,7 +135,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> edges_to_cont
 
         col_ids.resize(max_contractions);
         row_ids.resize(max_contractions);
-        data.resize(max_contractions);
+        data.resize(max_contractions); //TODO: Is this data used?
     }
 
     return {col_ids, row_ids};
@@ -226,7 +226,7 @@ std::vector<int> parallel_gaec_cuda(dCSR& A)
         }
 
         A.set_diagonal_to_zero(handle);
-        // A = A.compress(handle); 
+        A.compress(handle); 
     }
 
     //std::cout << "solution:\n";
