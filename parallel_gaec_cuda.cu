@@ -38,6 +38,15 @@ std::tuple<thrust::host_vector<int>, thrust::host_vector<int>, thrust::host_vect
     return {col_ids, row_ids, cost};
 }
 
+dCSR edge_contraction_matrix_cuda_complete(cusparseHandle_t handle, dCSR& A, const size_t max_contractions, const int device)
+{
+    dCSR adj_contraction = A.keep_top_k_positive_values(handle, max_contractions);
+    
+    thrust::device_vector<int> cc = A.compute_cc(device);
+
+    //TODO: Create the matrix with cc_ids
+}
+
 std::tuple<dCSR,std::vector<int>> edge_contraction_matrix_cuda(cusparseHandle_t handle, const std::vector<std::array<int,2>>& edges, const int n)
 {
     union_find uf(n);
@@ -218,6 +227,7 @@ std::vector<int> parallel_gaec_cuda(dCSR& A)
         }
 
         A.set_diagonal_to_zero(handle);
+        // A = A.compress(handle); 
     }
 
     //std::cout << "solution:\n";

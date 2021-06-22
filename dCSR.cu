@@ -3,6 +3,7 @@
 #include <thrust/tuple.h>
 #include <thrust/for_each.h>
 #include <thrust/iterator/zip_iterator.h>
+#include <ECLgraph.h>
 #include "time_measure_util.h"
 
 void dCSR::print() const
@@ -33,6 +34,90 @@ dCSR dCSR::transpose(cusparseHandle_t handle)
             "transpose failed");
 
     return t;
+}
+
+// Inspired from: https://docs.nvidia.com/cuda/cusparse/index.html#csr2csr_compress
+dCSR dCSR::compress(cusparseHandle_t handle, const float tol)
+{
+    MEASURE_FUNCTION_EXECUTION_TIME
+    thrust::device_vector<int> nnz_per_row_interm = thrust::device_vector<int>(rows(), 0);
+    thrust::device_vector<int> total_nnz_interm = thrust::device_vector<int>(1);
+
+    cusparseMatDescr_t descrA;
+    checkCuSparseError(cusparseCreateMatDescr(&descrA), "Matrix descriptor init failed");
+    checkCuSparseError(cusparseSetMatType(descrA, CUSPARSE_MATRIX_TYPE_GENERAL), "cusparseSetMatType failed");
+
+    checkCuSparseError(cusparseSnnz_compress(handle, rows(), descrA, thrust::raw_pointer_cast(data.data()),
+                                         thrust::raw_pointer_cast(row_offsets.data()), thrust::raw_pointer_cast(nnz_per_row_interm.data()),
+                                         thrust::raw_pointer_cast(total_nnz_interm.data()), tol), "cuSparse: stage 1 of compress failed");
+
+    dCSR c;
+    c.rows_ = rows();
+
+    c.row_offsets = thrust::device_vector<int>(rows() + 1); 
+    thrust::host_vector<int> total_nnz_interm_h = total_nnz_interm;
+    c.data = thrust::device_vector<float>(total_nnz_interm_h[0]); 
+    c.col_ids = thrust::device_vector<int>(total_nnz_interm_h[0]);
+
+    checkCuSparseError(cusparseScsr2csr_compress(handle, rows(), cols(), descrA, 
+                                              thrust::raw_pointer_cast(data.data()),
+                                              thrust::raw_pointer_cast(col_ids.data()), 
+                                              thrust::raw_pointer_cast(row_offsets.data()),
+                                              nnz(), thrust::raw_pointer_cast(nnz_per_row_interm.data()),
+                                              thrust::raw_pointer_cast(c.data.data()), 
+                                              thrust::raw_pointer_cast(c.col_ids.data()),
+                                              thrust::raw_pointer_cast(c.row_offsets.data()), tol), "cuSparse: stage 2 of compress failed");
+
+    c.cols_ = cols();
+
+    return c;
+}
+
+template <typename T>
+struct keep_geq
+{
+    const T _thresh;
+    keep_geq(T thresh): _thresh(thresh) {} 
+   __host__ __device__ float operator()(const T &x) const
+   {
+     return x > _thresh ? x : 0;
+   }
+};
+
+template <typename T>
+struct is_positive
+{
+    __host__ __device__ bool operator()(const T &x)
+    {
+        return x > 0;
+    }
+};
+
+dCSR dCSR::keep_top_k_positive_values(cusparseHandle_t handle, const int top_k)
+{
+    MEASURE_FUNCTION_EXECUTION_TIME
+    // Create copy of self:
+    dCSR p;
+    p.rows_ = rows();
+    p.cols_ = cols();
+    p.row_offsets = row_offsets;
+    p.col_ids = col_ids;
+    p.data = data;
+
+    // Set all negatives values to zero.
+    thrust::transform(p.data.begin(), p.data.end(), p.data.begin(), keep_geq<float>(0.0f));
+    int num_positive = thrust::count_if(thrust::device, p.data.begin(), p.data.end(), is_positive<float>());
+
+    if (top_k < num_positive)
+    {
+        thrust::device_vector<float> temp = p.data;
+        thrust::sort(temp.begin(), temp.end(), thrust::greater<float>()); // Ideal would be https://github.com/NVIDIA/thrust/issues/75
+
+        float min_value_to_keep = temp[top_k];
+        thrust::transform(p.data.begin(), p.data.end(), p.data.begin(), keep_geq<float>(min_value_to_keep));
+    }
+
+    return p.compress(handle);
 }
 
 dCSR multiply(cusparseHandle_t handle, const dCSR& A, const dCSR& B)
@@ -156,3 +241,20 @@ float dCSR::sum()
     return thrust::reduce(data.begin(), data.end(), (float) 0.0, thrust::plus<float>());
 }
 
+thrust::device_vector<int> dCSR::compute_cc(const int device)
+{
+    thrust::device_vector<int> cc_ids(rows());
+    computeCC_gpu(rows(), nnz(), 
+                thrust::raw_pointer_cast(row_offsets.data()), 
+                thrust::raw_pointer_cast(col_ids.data()), 
+                thrust::raw_pointer_cast(cc_ids.data()), device);
+    return cc_ids;
+}
+
+void dCSR::print_info_of(const int i) const
+{   
+    std::cout<<"Row offsets of "<<i<<", start: "<<row_offsets[i]<<", end excl.: "<<row_offsets[i+1]<<std::endl;
+    std::cout<<"Neighbours:"<<std::endl;
+    for(size_t l=row_offsets[i]; l<row_offsets[i+1]; ++l)
+        std::cout << i << "," << col_ids[l] << "," << data[l] << "\n"; 
+}

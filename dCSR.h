@@ -38,6 +38,9 @@ class dCSR {
                     DATA_ITERATOR data_begin, DATA_ITERATOR data_end);
 
         dCSR transpose(cusparseHandle_t handle);
+        dCSR compress(cusparseHandle_t handle, const float tol = 1e-4);
+        dCSR keep_top_k_positive_values(cusparseHandle_t handle, const int top_k);
+        thrust::device_vector<int> compute_cc(const int device);
 
         size_t rows() const { return rows_; }
         size_t cols() const { return cols_; }
@@ -51,6 +54,7 @@ class dCSR {
         void set_diagonal_to_zero(cusparseHandle_t handle);
         float sum();
         void print() const;
+        void print_info_of(const int i) const;
 
     private:
         template<typename COL_ITERATOR, typename ROW_ITERATOR, typename DATA_ITERATOR>
