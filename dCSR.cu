@@ -68,7 +68,7 @@ dCSR dCSR::compress(cusparseHandle_t handle, const float tol)
                                               thrust::raw_pointer_cast(c.col_ids.data()),
                                               thrust::raw_pointer_cast(c.row_offsets.data()), tol), "cuSparse: stage 2 of compress failed");
 
-    c.cols_ = *thrust::max_element(c.col_ids.begin(), c.col_ids.end()) + 1;
+    c.cols_ = cols();
 
     return c;
 }
@@ -249,4 +249,12 @@ thrust::device_vector<int> dCSR::compute_cc(const int device)
                 thrust::raw_pointer_cast(col_ids.data()), 
                 thrust::raw_pointer_cast(cc_ids.data()), device);
     return cc_ids;
+}
+
+void dCSR::print_info_of(const int i) const
+{   
+    std::cout<<"Row offsets of "<<i<<", start: "<<row_offsets[i]<<", end excl.: "<<row_offsets[i+1]<<std::endl;
+    std::cout<<"Neighbours:"<<std::endl;
+    for(size_t l=row_offsets[i]; l<row_offsets[i+1]; ++l)
+        std::cout << i << "," << col_ids[l] << "," << data[l] << "\n"; 
 }

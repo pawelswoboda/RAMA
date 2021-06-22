@@ -54,6 +54,7 @@ class dCSR {
         void set_diagonal_to_zero(cusparseHandle_t handle);
         float sum();
         void print() const;
+        void print_info_of(const int i) const;
 
     private:
         template<typename COL_ITERATOR, typename ROW_ITERATOR, typename DATA_ITERATOR>
