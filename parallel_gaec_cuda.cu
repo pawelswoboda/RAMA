@@ -4,6 +4,9 @@
 #include "time_measure_util.h"
 #include <algorithm>
 #include <cstdlib>
+#include "external/ECL-CC/ECLgraph.h"
+#include <thrust/transform_scan.h>
+#include <thrust/transform.h>
 
 int get_cuda_device()
 {
@@ -19,6 +22,7 @@ int get_cuda_device()
 template<typename ITERATOR>
 std::tuple<thrust::host_vector<int>, thrust::host_vector<int>, thrust::host_vector<float>> adjacency_edges(ITERATOR entry_begin, ITERATOR entry_end)
 {
+    // TODO: make faster
     const size_t nr_edges = std::distance(entry_begin, entry_end);
     thrust::host_vector<int> col_ids(2*nr_edges);
     thrust::host_vector<int> row_ids(2*nr_edges);
@@ -38,54 +42,57 @@ std::tuple<thrust::host_vector<int>, thrust::host_vector<int>, thrust::host_vect
     return {col_ids, row_ids, cost};
 }
 
-dCSR edge_contraction_matrix_cuda_complete(cusparseHandle_t handle, dCSR& A, const size_t max_contractions, const int device)
+thrust::device_vector<int> compress_label_sequence(const thrust::device_vector<int>& data)
 {
-    dCSR adj_contraction = A.keep_top_k_positive_values(handle, max_contractions);
-    
-    thrust::device_vector<int> cc = A.compute_cc(device);
+    assert(*thrust::max_element(data.begin(), data.end()) < data.size());
 
-    //TODO: Create the matrix with cc_ids
+    // first get mask of used labels
+    thrust::device_vector<int> label_mask(data.size(), 0);
+    thrust::scatter(thrust::constant_iterator<int>(1), thrust::constant_iterator<int>(1) + data.size(), data.begin(), label_mask.begin());
+
+    // get map of original labels to consecutive ones
+    thrust::device_vector<int> label_to_consecutive(data.size());
+    thrust::exclusive_scan(label_mask.begin(), label_mask.end(), label_to_consecutive.begin());
+
+    // apply compressed label map
+    thrust::device_vector<int> result(data.size(), 0);
+    thrust::gather(data.begin(), data.end(), label_to_consecutive.begin(), result.begin());
+
+    return result;
 }
 
-std::tuple<dCSR,std::vector<int>> edge_contraction_matrix_cuda(cusparseHandle_t handle, const std::vector<std::array<int,2>>& edges, const int n)
+std::tuple<dCSR,thrust::device_vector<int>> edge_contraction_matrix_cuda(cusparseHandle_t handle, thrust::device_vector<int>& col_ids, thrust::device_vector<int>& row_ids, const int n)
 {
-    union_find uf(n);
-    for(size_t c=0; c<edges.size(); ++c)
-        uf.merge(edges[c][0],edges[c][1]);
+    MEASURE_FUNCTION_EXECUTION_TIME;
+    assert(col_ids.size() == row_ids.size());
+    assert(n > *thrust::max_element(col_ids.begin(), col_ids.end()));
+    assert(n > *thrust::max_element(row_ids.begin(), row_ids.end()));
 
-    std::vector<char> node_id_present(n,false);
-    for(int i=0; i<n; ++i)
-        node_id_present[uf.find(i)] = 1;
-    std::vector<int> uf_find_mapping(n, std::numeric_limits<int>::max());
-    int c=0;
-    for(int i=0; i<n; ++i)
-        if(node_id_present[i])
-            uf_find_mapping[i] = c++;
+    coo_sorting(col_ids, row_ids);
+    thrust::device_vector<int> row_offsets = dCSR::compute_row_offsets(handle, n, col_ids, row_ids);
 
-    assert(c == std::count(node_id_present.begin(), node_id_present.end(), 1));
-    std::vector<int> node_mapping;
-    node_mapping.reserve(n);
-    for(int i=0; i<n; ++i)
-    {
-        assert(uf_find_mapping[uf.find(i)] != std::numeric_limits<int>::max());
-        node_mapping.push_back( uf_find_mapping[uf.find(i)] );
-    }
+    thrust::device_vector<int> cc_labels(n);
+    computeCC_gpu(n, col_ids.size(), 
+            thrust::raw_pointer_cast(row_offsets.data()), thrust::raw_pointer_cast(col_ids.data()), 
+            thrust::raw_pointer_cast(cc_labels.data()), get_cuda_device());
 
-    std::vector<int> col_ids;
-    std::vector<int> row_ids;
-    std::vector<float> data;
-    for(int i=0; i<n; ++i)
-    {
-        assert(node_mapping[i] < c && node_mapping[i] >= 0);
-        row_ids.push_back(i);
-        col_ids.push_back(node_mapping[i]);
-        data.push_back(1.0);
-    }
-    dCSR C(handle, col_ids.begin(), col_ids.end(), row_ids.begin(), row_ids.end(), data.begin(), data.end());
-    //dCSR C(handle, row_ids.begin(), row_ids.end(), col_ids.begin(), col_ids.end(), data.begin(), data.end());
-    std::cout << "edge contraction matrix dim: " << C.cols() << ", " << C.rows() << "\n";
+    thrust::device_vector<int> node_mapping = compress_label_sequence(cc_labels);
+    const int nr_ccs = *thrust::max_element(node_mapping.begin(), node_mapping.end()) + 1;
 
-    return {C, node_mapping}; 
+    assert(nr_ccs < n);
+
+    // construct contraction matrix
+    thrust::device_vector<int> c_row_ids(n);
+    thrust::sequence(c_row_ids.begin(), c_row_ids.end());
+    thrust::device_vector<int> c_col_ids = node_mapping;
+
+    assert(nr_ccs > *thrust::max_element(c_col_ids.begin(), c_col_ids.end()));
+    assert(n > *thrust::max_element(c_row_ids.begin(), c_row_ids.end()));
+
+    thrust::device_vector<int> ones(c_row_ids.size(), 1);
+    dCSR C(handle, n, nr_ccs, c_col_ids.begin(), c_col_ids.end(), c_row_ids.begin(), c_row_ids.end(), ones.begin(), ones.end());
+
+    return {C, node_mapping};
 }
 
 struct positive_edge_indicator_func
@@ -104,19 +111,18 @@ struct edge_comparator_func {
     __host__ __device__
         inline bool operator()(const thrust::tuple<int, int, float>& a, const thrust::tuple<int, int, float>& b)
         {
-            return thrust::get<2>(a) < thrust::get<2>(b);
+            return thrust::get<2>(a) > thrust::get<2>(b);
         } 
 };
 
 std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> edges_to_contract_cuda(cusparseHandle_t handle, dCSR& A, const size_t max_contractions)
 {
+    MEASURE_FUNCTION_EXECUTION_TIME;
     assert(max_contractions > 0);
     thrust::device_vector<int> col_ids;
     thrust::device_vector<int> row_ids;
     thrust::device_vector<float> data;
     std::tie(col_ids, row_ids, data) = A.export_coo(handle);
-    std::cout << "adjacency matrix nr of edges = " << col_ids.size() << "\n";
-
 
     auto first = thrust::make_zip_iterator(thrust::make_tuple(col_ids.begin(), row_ids.begin(), data.begin()));
     auto last = thrust::make_zip_iterator(thrust::make_tuple(col_ids.end(), row_ids.end(), data.end()));
@@ -138,42 +144,16 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> edges_to_cont
         data.resize(max_contractions); //TODO: Is this data used?
     }
 
+    // add reverse edges
+    const int old_size = col_ids.size();
+    const int new_size = 2*col_ids.size();
+    col_ids.resize(new_size);
+    row_ids.resize(new_size);
+
+    thrust::copy(col_ids.begin(), col_ids.begin() + old_size, row_ids.begin() + old_size);
+    thrust::copy(row_ids.begin(), row_ids.begin() + old_size, col_ids.begin() + old_size);
+
     return {col_ids, row_ids};
-}
-
-std::vector<std::array<int,2>> edges_to_contract(cusparseHandle_t handle, dCSR& A, const size_t max_contractions)
-{
-    assert(max_contractions > 0);
-    const auto A_coo = A.export_coo(handle);
-    const auto& col_ids = std::get<0>(A_coo);
-    const auto& row_ids = std::get<1>(A_coo);
-    const auto& data = std::get<2>(A_coo);
-    std::cout << "adjacency matrix nr of edges = " << col_ids.size() << "\n";
-    std::vector<std::tuple<int,int,float>> positive_edges;
-    for(size_t c=0; c<col_ids.size(); ++c)
-    {
-        const int i = col_ids[c];
-        const int j = row_ids[c];
-        const float x = data[c];
-        //std::cout << i << "," << j << "," << x << "\n";
-        if(i > j && x > 0.0)
-            positive_edges.push_back({i, j, x});
-    }
-    if(max_contractions < positive_edges.size())
-    {
-        std::nth_element(positive_edges.begin(), positive_edges.begin() + max_contractions, positive_edges.end(), [](const auto& a, const auto& b) { return std::get<2>(a) > std::get<2>(b); });
-        positive_edges.resize(max_contractions);
-    }
-
-    std::vector<std::array<int,2>> edge_indices;
-    edge_indices.reserve(positive_edges.size());
-    for(auto it=positive_edges.begin(); it!=positive_edges.end(); ++it)
-    {
-        const int i = std::get<0>(*it);
-        const int j = std::get<1>(*it);
-        edge_indices.push_back({i,j});
-    }
-    return edge_indices; 
 }
 
 std::vector<int> parallel_gaec_cuda(dCSR& A)
@@ -184,8 +164,8 @@ std::vector<int> parallel_gaec_cuda(dCSR& A)
     const double initial_lb = A.sum()/2.0;
     std::cout << "initial energy = " << initial_lb << "\n";
 
-    std::vector<int> node_mapping(A.rows());
-    std::iota(node_mapping.begin(), node_mapping.end(), 0);
+    thrust::device_vector<int> node_mapping(A.rows());
+    thrust::sequence(node_mapping.begin(), node_mapping.end());
     constexpr static double contract_ratio = 0.1;
     assert(A.rows() == A.cols());
 
@@ -193,25 +173,27 @@ std::vector<int> parallel_gaec_cuda(dCSR& A)
     {
         const size_t nr_edges_to_contract = std::max(size_t(1), size_t(A.rows() * contract_ratio));
         
-        const auto e = edges_to_contract(handle, A, nr_edges_to_contract);
-        std::cout << "edges to contract size = " << e.size() << "\n";
-        //std::cout << "iteration " << iter << ", edges to contract = " << e.size() << ", nr nodes remaining = " << A.rows() << "\n";
-        if(e.size() == 0)
+        thrust::device_vector<int> contract_cols;
+        thrust::device_vector<int> contract_rows;
+        std::tie(contract_cols, contract_rows)  = edges_to_contract_cuda(handle, A, nr_edges_to_contract);
+
+        if(contract_cols.size() == 0)
         {
             std::cout << "# iterations = " << iter << "\n";
             break;
         }
         dCSR C;
-        std::vector<int> cur_node_mapping;
-        std::tie(C, cur_node_mapping) = edge_contraction_matrix_cuda(handle, e, A.rows());
-        for(size_t i=0; i<node_mapping.size(); ++i)
-            node_mapping[i] = cur_node_mapping[node_mapping[i]];
+        thrust::device_vector<int> cur_node_mapping;
+        std::tie(C, cur_node_mapping) = edge_contraction_matrix_cuda(handle, contract_cols, contract_rows, A.rows());
+
+        thrust::gather(node_mapping.begin(), node_mapping.end(), cur_node_mapping.begin(), node_mapping.begin());
 
         {
             MEASURE_FUNCTION_EXECUTION_TIME;
 
             assert(A.cols() == A.rows());
             std::cout << "A dim = " << A.cols() << "x" << A.rows() << "\n";
+            std::cout << "A nnz = " << A.nnz() << ", sparsity = " << 100.0 * double(A.nnz()) / double(A.cols() * A.rows()) << "%\n";
             std::cout << "A*C multiply time:\n";
             dCSR intermed = multiply(handle, A, C);
             std::cout << "A C dim = " << intermed.rows() << "x" << intermed.cols() << "\n"; 
@@ -227,16 +209,16 @@ std::vector<int> parallel_gaec_cuda(dCSR& A)
 
         A.set_diagonal_to_zero(handle);
         A.compress(handle); 
+        std::cout << "energy after iteration " << iter << ": " << A.sum()/2.0 << "\n";
     }
 
-    //std::cout << "solution:\n";
-    //for(size_t i=0; i<node_mapping.size(); ++i)
-    //    std::cout << i << " -> " << node_mapping[i] << "\n";
     const double lb = A.sum()/2.0;
     std::cout << "final energy = " << lb << "\n";
 
     cusparseDestroy(handle);
-    return node_mapping;
+    std::vector<int> h_node_mapping(node_mapping.size());
+    thrust::copy(node_mapping.begin(), node_mapping.end(), h_node_mapping.begin());
+    return h_node_mapping;
 }
 
 std::vector<int> parallel_gaec_cuda(const std::vector<std::tuple<int,int,float>>& edges)
