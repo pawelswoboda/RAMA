@@ -1,5 +1,6 @@
 #include "parallel_gaec_cuda.h"
 #include "multicut_text_parser.h"
+#include<stdexcept>
 
 int main(int argc, char** argv)
 {

@@ -141,7 +141,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> edges_to_cont
 
         col_ids.resize(max_contractions);
         row_ids.resize(max_contractions);
-        data.resize(max_contractions);
+        data.resize(max_contractions); //TODO: Is this data used?
     }
 
     // add reverse edges
@@ -196,6 +196,7 @@ std::vector<int> parallel_gaec_cuda(dCSR& A)
             std::cout << "A nnz = " << A.nnz() << ", sparsity = " << 100.0 * double(A.nnz()) / double(A.cols() * A.rows()) << "%\n";
             std::cout << "A*C multiply time:\n";
             dCSR intermed = multiply(handle, A, C);
+            std::cout << "A C dim = " << intermed.rows() << "x" << intermed.cols() << "\n"; 
             std::cout << "C' transpose time:\n";
             dCSR C_trans = C.transpose(handle);
             std::cout << "C' * (AC) multiply time:\n";
@@ -207,8 +208,8 @@ std::vector<int> parallel_gaec_cuda(dCSR& A)
         }
 
         A.set_diagonal_to_zero(handle);
+        A.compress(handle); 
         std::cout << "energy after iteration " << iter << ": " << A.sum()/2.0 << "\n";
-        // A.compress(handle);
     }
 
     const double lb = A.sum()/2.0;

@@ -27,50 +27,67 @@ dCSR dCSR::transpose(cusparseHandle_t handle)
     t.col_ids = thrust::device_vector<int>(nnz());
     t.data = thrust::device_vector<float>(nnz());
 
-    checkCuSparseError(cusparseScsr2csc(handle, rows(), cols(), nnz(), 
+    // make buffer
+    void* dbuffer = NULL;
+    size_t bufferSize = 0;
+    checkCuSparseError(cusparseCsr2cscEx2_bufferSize(handle, rows(), cols(), nnz(), 
 			thrust::raw_pointer_cast(data.data()), thrust::raw_pointer_cast(row_offsets.data()), thrust::raw_pointer_cast(col_ids.data()),
-			thrust::raw_pointer_cast(t.data.data()), thrust::raw_pointer_cast(t.col_ids.data()), thrust::raw_pointer_cast(t.row_offsets.data()),
-            CUSPARSE_ACTION_NUMERIC, CUSPARSE_INDEX_BASE_ZERO),
+			thrust::raw_pointer_cast(t.data.data()), thrust::raw_pointer_cast(t.row_offsets.data()), thrust::raw_pointer_cast(t.col_ids.data()), 
+            CUDA_R_32F, CUSPARSE_ACTION_NUMERIC, CUSPARSE_INDEX_BASE_ZERO, CUSPARSE_CSR2CSC_ALG1, &bufferSize), "transpose buffer failed");
+    
+    checkCudaError(cudaMalloc((void**) &dbuffer, bufferSize), "transpose buffer allocation failed");
+
+    checkCuSparseError(cusparseCsr2cscEx2(handle, rows(), cols(), nnz(), 
+			thrust::raw_pointer_cast(data.data()), thrust::raw_pointer_cast(row_offsets.data()), thrust::raw_pointer_cast(col_ids.data()),
+			thrust::raw_pointer_cast(t.data.data()), thrust::raw_pointer_cast(t.row_offsets.data()), thrust::raw_pointer_cast(t.col_ids.data()), 
+            CUDA_R_32F, CUSPARSE_ACTION_NUMERIC, CUSPARSE_INDEX_BASE_ZERO, CUSPARSE_CSR2CSC_ALG1, dbuffer),
             "transpose failed");
 
+    cudaFree(dbuffer);
     return t;
 }
 
-// Inspired from: https://docs.nvidia.com/cuda/cusparse/index.html#csr2csr_compress
-dCSR dCSR::compress(cusparseHandle_t handle, const float tol)
+template <typename T>
+struct non_zero_indicator_func
+{
+    const T _tol;
+    non_zero_indicator_func(T tol): _tol(tol) {} 
+
+    __host__ __device__
+        bool operator()(const thrust::tuple<int,int,float> t)
+        {
+            if(fabs(thrust::get<2>(t)) >= _tol)
+                return false;
+            else
+                return true;
+        }
+};
+
+void dCSR::compress(cusparseHandle_t handle, const float tol)
 {
     MEASURE_FUNCTION_EXECUTION_TIME
-    thrust::device_vector<int> nnz_per_row_interm = thrust::device_vector<int>(rows(), 0);
-    thrust::device_vector<int> total_nnz_interm = thrust::device_vector<int>(1);
+    thrust::device_vector<int> _row_ids = row_ids(handle);
+    
+    auto first = thrust::make_zip_iterator(thrust::make_tuple(col_ids.begin(), _row_ids.begin(), data.begin()));
+    auto last = thrust::make_zip_iterator(thrust::make_tuple(col_ids.end(), _row_ids.end(), data.end()));
 
-    cusparseMatDescr_t descrA;
-    checkCuSparseError(cusparseCreateMatDescr(&descrA), "Matrix descriptor init failed");
-    checkCuSparseError(cusparseSetMatType(descrA, CUSPARSE_MATRIX_TYPE_GENERAL), "cusparseSetMatType failed");
+    auto new_last = thrust::remove_if(first, last, non_zero_indicator_func<float>(tol));
 
-    checkCuSparseError(cusparseSnnz_compress(handle, rows(), descrA, thrust::raw_pointer_cast(data.data()),
-                                         thrust::raw_pointer_cast(row_offsets.data()), thrust::raw_pointer_cast(nnz_per_row_interm.data()),
-                                         thrust::raw_pointer_cast(total_nnz_interm.data()), tol), "cuSparse: stage 1 of compress failed");
+    const size_t nr_non_zeros = std::distance(first, new_last);
+    col_ids.resize(nr_non_zeros);
+    _row_ids.resize(nr_non_zeros);
+    data.resize(nr_non_zeros);
 
-    dCSR c;
-    c.rows_ = rows();
+    coo_sorting(col_ids, _row_ids, data);
 
-    c.row_offsets = thrust::device_vector<int>(rows() + 1); 
-    thrust::host_vector<int> total_nnz_interm_h = total_nnz_interm;
-    c.data = thrust::device_vector<float>(total_nnz_interm_h[0]); 
-    c.col_ids = thrust::device_vector<int>(total_nnz_interm_h[0]);
+    // now row indices are non-decreasing
+    assert(thrust::is_sorted(_row_ids.begin(), _row_ids.end()));
 
-    checkCuSparseError(cusparseScsr2csr_compress(handle, rows(), cols(), descrA, 
-                                              thrust::raw_pointer_cast(data.data()),
-                                              thrust::raw_pointer_cast(col_ids.data()), 
-                                              thrust::raw_pointer_cast(row_offsets.data()),
-                                              nnz(), thrust::raw_pointer_cast(nnz_per_row_interm.data()),
-                                              thrust::raw_pointer_cast(c.data.data()), 
-                                              thrust::raw_pointer_cast(c.col_ids.data()),
-                                              thrust::raw_pointer_cast(c.row_offsets.data()), tol), "cuSparse: stage 2 of compress failed");
+    cols_ = *thrust::max_element(col_ids.begin(), col_ids.end()) + 1;
+    rows_ = _row_ids.back() + 1;
 
-    c.cols_ = cols();
-
-    return c;
+    row_offsets = thrust::device_vector<int>(rows_ + 1);
+    cusparseXcoo2csr(handle, thrust::raw_pointer_cast(_row_ids.data()), nnz(), rows(), thrust::raw_pointer_cast(row_offsets.data()), CUSPARSE_INDEX_BASE_ZERO);
 }
 
 template <typename T>
@@ -117,15 +134,15 @@ dCSR dCSR::keep_top_k_positive_values(cusparseHandle_t handle, const int top_k)
         thrust::transform(p.data.begin(), p.data.end(), p.data.begin(), keep_geq<float>(min_value_to_keep));
     }
 
-    return p.compress(handle);
+    p.compress(handle);
+
+    return p;
 }
 
-dCSR multiply(cusparseHandle_t handle, const dCSR& A, const dCSR& B)
+dCSR multiply(cusparseHandle_t handle, dCSR& A, dCSR& B)
 {
     MEASURE_FUNCTION_EXECUTION_TIME
     assert(A.cols() == B.rows());
-    int nnzC;
-    int *nnzTotalDevHostPtr = &nnzC;
     float duration;
     dCSR C;
 
@@ -133,53 +150,93 @@ dCSR multiply(cusparseHandle_t handle, const dCSR& A, const dCSR& B)
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
 
-    cusparseMatDescr_t descrA;
-    cusparseMatDescr_t descrB;
-    cusparseMatDescr_t descrC;
+    // CUSPARSE API 
+    cusparseSpMatDescr_t matA, matB, matC;
+    float alpha = 1.0f;
+    float beta = 0.0f;
+    cusparseOperation_t opA = CUSPARSE_OPERATION_NON_TRANSPOSE;
+    cusparseOperation_t opB = CUSPARSE_OPERATION_NON_TRANSPOSE;
+    cudaDataType computeType = CUDA_R_32F;
+    void* dBuffer1 = NULL, *dBuffer2 = NULL;
+    size_t bufferSize1 = 0, bufferSize2 = 0;
 
-    checkCuSparseError(cusparseCreateMatDescr(&descrA), "Matrix descriptor init failed");
-    checkCuSparseError(cusparseCreateMatDescr(&descrB), "Matrix descriptor init failed");
-    checkCuSparseError(cusparseCreateMatDescr(&descrC), "Matrix descriptor init failed");
-    checkCuSparseError(cusparseSetMatType(descrA, CUSPARSE_MATRIX_TYPE_GENERAL), "cusparseSetMatType failed");
-    checkCuSparseError(cusparseSetMatIndexBase(descrA, CUSPARSE_INDEX_BASE_ZERO), "cusparseSetMatIndexBase failed");
-    checkCuSparseError(cusparseSetMatType(descrB, CUSPARSE_MATRIX_TYPE_GENERAL), "cusparseSetMatType failed");
-    checkCuSparseError(cusparseSetMatIndexBase(descrB, CUSPARSE_INDEX_BASE_ZERO), "cusparseSetMatIndexBase failed");
-    checkCuSparseError(cusparseSetMatType(descrC, CUSPARSE_MATRIX_TYPE_GENERAL), "cusparseSetMatType failed");
-    checkCuSparseError(cusparseSetMatIndexBase(descrC, CUSPARSE_INDEX_BASE_ZERO), "cusparseSetMatIndexBase failed");
+    int* rp = thrust::raw_pointer_cast(A.row_offsets.data());
 
+    checkCuSparseError(cusparseCreateCsr(&matA, A.rows(), A.cols(), A.nnz(),
+                                      thrust::raw_pointer_cast(A.row_offsets.data()), 
+                                      thrust::raw_pointer_cast(A.col_ids.data()), 
+                                      thrust::raw_pointer_cast(A.data.data()),
+                                      CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I,
+                                      CUSPARSE_INDEX_BASE_ZERO, CUDA_R_32F), "Matrix descriptor init failed");
+
+    checkCuSparseError(cusparseCreateCsr(&matB, B.rows(), B.cols(), B.nnz(),
+                                      thrust::raw_pointer_cast(B.row_offsets.data()), 
+                                      thrust::raw_pointer_cast(B.col_ids.data()), 
+                                      thrust::raw_pointer_cast(B.data.data()),
+                                      CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I,
+                                      CUSPARSE_INDEX_BASE_ZERO, CUDA_R_32F), "Matrix descriptor init failed");
+
+    checkCuSparseError(cusparseCreateCsr(&matC, A.rows(), B.cols(), 0,
+                                      NULL, NULL, NULL,
+                                      CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I,
+                                      CUSPARSE_INDEX_BASE_ZERO, CUDA_R_32F), "Matrix descriptor init failed");
+
+    // SpGEMM Computation
     // ############################
     cudaEventRecord(start);
     // ############################
+    
+    cusparseSpGEMMDescr_t spgemmDesc;
+    checkCuSparseError(cusparseSpGEMM_createDescr(&spgemmDesc), "sparse MM desc. failed");
 
-    // Allocate memory for row indices
-    C.row_offsets = thrust::device_vector<int>(A.rows()+1);
+    // ask bufferSize1 bytes for external memory
+    checkCuSparseError(cusparseSpGEMM_workEstimation(handle, opA, opB,
+                                      &alpha, matA, matB, &beta, matC,
+                                      computeType, CUSPARSE_SPGEMM_DEFAULT,
+                                      spgemmDesc, &bufferSize1, NULL), "spGEMM work estimation 1 failed");
 
-    // Precompute number of nnz in C
-    checkCuSparseError(cusparseXcsrgemmNnz(
-                handle,
-                CUSPARSE_OPERATION_NON_TRANSPOSE,
-                CUSPARSE_OPERATION_NON_TRANSPOSE,
-                A.rows(), B.cols(), A.cols(),
-                descrA, A.nnz(), thrust::raw_pointer_cast(A.row_offsets.data()), thrust::raw_pointer_cast(A.col_ids.data()),
-                descrB, B.nnz(), thrust::raw_pointer_cast(B.row_offsets.data()), thrust::raw_pointer_cast(B.col_ids.data()),
-                descrC, thrust::raw_pointer_cast(C.row_offsets.data()), nnzTotalDevHostPtr), "cuSparse: Precompute failed"
-            );
+    checkCudaError(cudaMalloc((void**) &dBuffer1, bufferSize1), "buffer 1 allocation failed");
 
+    // inspect the matrices A and B to understand the memory requirement for the next step
+    checkCuSparseError(cusparseSpGEMM_workEstimation(handle, opA, opB,
+                                      &alpha, matA, matB, &beta, matC,
+                                      computeType, CUSPARSE_SPGEMM_DEFAULT,
+                                      spgemmDesc, &bufferSize1, dBuffer1), "spGEMM work estimation 2 failed.");
+
+    // ask bufferSize2 bytes for external memory
+    checkCuSparseError(cusparseSpGEMM_compute(handle, opA, opB,
+                               &alpha, matA, matB, &beta, matC,
+                               computeType, CUSPARSE_SPGEMM_DEFAULT,
+                               spgemmDesc, &bufferSize2, NULL), "cusparseSpGEMM_compute 1 failed");
+    checkCudaError(cudaMalloc((void**) &dBuffer2, bufferSize2), "buffer 2 allocation failed");
+
+    // compute A * B
+    checkCuSparseError(cusparseSpGEMM_compute(handle, opA, opB,
+                                           &alpha, matA, matB, &beta, matC,
+                                           computeType, CUSPARSE_SPGEMM_DEFAULT,
+                                           spgemmDesc, &bufferSize2, dBuffer2), "cusparseSpGEMM_compute 2 failed");
+    // get matrix C sizes
+    int64_t rows_C, cols_C, nnzC;
+    checkCuSparseError(cusparseSpMatGetSize(matC, &rows_C, &cols_C, &nnzC), "matC get size failed");
+    assert(rows_C == A.rows());
+    assert(cols_C == B.cols());
+
+    // Allocate memory for C
     C.rows_ = A.rows();
     C.cols_ = B.cols();
+    C.row_offsets = thrust::device_vector<int>(A.rows()+1);
     C.col_ids = thrust::device_vector<int>(nnzC);
     C.data = thrust::device_vector<float>(nnzC);
 
-    // Compute SpGEMM
-    checkCuSparseError(cusparseScsrgemm(
-                handle,
-                CUSPARSE_OPERATION_NON_TRANSPOSE,
-                CUSPARSE_OPERATION_NON_TRANSPOSE,
-                A.rows(), B.cols(), A.cols(),
-                descrA, A.nnz(), thrust::raw_pointer_cast(A.data.data()), thrust::raw_pointer_cast(A.row_offsets.data()), thrust::raw_pointer_cast(A.col_ids.data()),
-                descrB, B.nnz(), thrust::raw_pointer_cast(B.data.data()), thrust::raw_pointer_cast(B.row_offsets.data()), thrust::raw_pointer_cast(B.col_ids.data()),
-                descrC, thrust::raw_pointer_cast(C.data.data()), thrust::raw_pointer_cast(C.row_offsets.data()), thrust::raw_pointer_cast(C.col_ids.data())),
-            "cuSparse: SpGEMM failed");
+    // update matC with the new pointers
+    checkCuSparseError(cusparseCsrSetPointers(matC, thrust::raw_pointer_cast(C.row_offsets.data()), 
+                                                    thrust::raw_pointer_cast(C.col_ids.data()), 
+                                                    thrust::raw_pointer_cast(C.data.data())), "Setting matC pointers failed");
+
+    // copy the final products to the matrix C.
+    checkCuSparseError(cusparseSpGEMM_copy(handle, opA, opB,
+                            &alpha, matA, matB, &beta, matC,
+                            computeType, CUSPARSE_SPGEMM_DEFAULT, spgemmDesc), "Copying to matC failed");
 
     // ############################
     cudaEventRecord(stop);
@@ -188,9 +245,12 @@ dCSR multiply(cusparseHandle_t handle, const dCSR& A, const dCSR& B)
 
     cudaEventElapsedTime(&duration, start, stop);
 
-    checkCuSparseError(cusparseDestroyMatDescr(descrA), "Matrix descriptor destruction failed");
-    checkCuSparseError(cusparseDestroyMatDescr(descrB), "Matrix descriptor destruction failed");
-    checkCuSparseError(cusparseDestroyMatDescr(descrC), "Matrix descriptor destruction failed");
+    checkCuSparseError(cusparseSpGEMM_destroyDescr(spgemmDesc), "SPGEMM descriptor destruction failed");
+    checkCuSparseError(cusparseDestroySpMat(matA), "Matrix descriptor destruction failed");
+    checkCuSparseError(cusparseDestroySpMat(matB), "Matrix descriptor destruction failed");
+    checkCuSparseError(cusparseDestroySpMat(matC), "Matrix descriptor destruction failed");
+    checkCudaError(cudaFree(dBuffer1), "dBuffer1 free failed");
+    checkCudaError(cudaFree(dBuffer2), "dBuffer2 free failed");
 
     return C;
 }

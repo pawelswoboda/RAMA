@@ -312,7 +312,7 @@ void computeCC(const int nodes, const int edges, const int* const __restrict__ n
   cudaFree(nidx_d);
 }
 
-void computeCC_gpu(const int num_rows, const int nnz, int* d_row_offsets, int* d_col_ids, int* d_node_stat_out, const int device)
+void computeCC_gpu(const int num_rows, const int nnz, const int* d_row_offsets, const int* d_col_ids, int* d_node_stat_out, const int device)
 {
   cudaSetDevice(device);
   cudaDeviceProp deviceProp;
