@@ -2,7 +2,7 @@ project(parallel-gaec LANGUAGES CXX CUDA)
 
 cmake_minimum_required(VERSION 2.8.12)
 
-include_directories(${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
+set(CMAKE_CUDA_ARCHITECTURES 75)
 
 include_directories(external/thrust/)
 include_directories(external/thrust/dependencies/cub)

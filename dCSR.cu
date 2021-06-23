@@ -251,6 +251,16 @@ thrust::device_vector<int> dCSR::compute_cc(const int device)
     return cc_ids;
 }
 
+thrust::device_vector<int> dCSR::compute_row_offsets(cusparseHandle_t handle, const int rows, const thrust::device_vector<int>& col_ids, const thrust::device_vector<int>& row_ids)
+{
+    assert(row_ids.size() == col_ids.size());
+    assert(rows > *thrust::max_element(row_ids.begin(), row_ids.end()));
+    assert(thrust::is_sorted(row_ids.begin(), row_ids.end()));
+    thrust::device_vector<int> row_offsets(rows+1);
+    cusparseXcoo2csr(handle, thrust::raw_pointer_cast(row_ids.data()), row_ids.size(), rows, thrust::raw_pointer_cast(row_offsets.data()), CUSPARSE_INDEX_BASE_ZERO);
+    return row_offsets;
+}
+
 void dCSR::print_info_of(const int i) const
 {   
     std::cout<<"Row offsets of "<<i<<", start: "<<row_offsets[i]<<", end excl.: "<<row_offsets[i+1]<<std::endl;
@@ -258,3 +268,4 @@ void dCSR::print_info_of(const int i) const
     for(size_t l=row_offsets[i]; l<row_offsets[i+1]; ++l)
         std::cout << i << "," << col_ids[l] << "," << data[l] << "\n"; 
 }
+

@@ -56,6 +56,8 @@ class dCSR {
         void print() const;
         void print_info_of(const int i) const;
 
+        static thrust::device_vector<int> compute_row_offsets(cusparseHandle_t handle, const int rows, const thrust::device_vector<int>& col_ids, const thrust::device_vector<int>& row_ids);
+
     private:
         template<typename COL_ITERATOR, typename ROW_ITERATOR, typename DATA_ITERATOR>
             void init(cusparseHandle_t handle,
@@ -90,6 +92,21 @@ void apply_permutation(thrust::device_vector<T>& keys, thrust::device_vector<int
 
     // permute the keys
     thrust::gather(permutation.begin(), permutation.end(), temp.begin(), keys.begin());
+}
+
+inline void coo_sorting(thrust::device_vector<int>& col_ids, thrust::device_vector<int>& row_ids)
+{
+    assert(row_ids.size() == col_ids.size());
+    const size_t N = row_ids.size();
+    thrust::device_vector<int> permutation(N);
+    thrust::sequence(permutation.begin(), permutation.end());
+
+    update_permutation(col_ids,  permutation);
+    update_permutation(row_ids, permutation);
+
+    apply_permutation(col_ids,  permutation);
+    apply_permutation(row_ids, permutation);
+    assert(thrust::is_sorted(row_ids.begin(), row_ids.end()));
 }
 
 inline void coo_sorting(thrust::device_vector<int>& col_ids, thrust::device_vector<int>& row_ids, thrust::device_vector<float>& data)
@@ -156,11 +173,9 @@ void dCSR::init(cusparseHandle_t handle,
         rows_ = row_ids.back() + 1;
     assert(rows_ > *thrust::max_element(row_ids.begin(), row_ids.end()));
 
-    row_offsets = thrust::device_vector<int>(row_ids.size()+1);
-    thrust::sequence(row_offsets.begin(), row_offsets.end());
-
-    row_offsets = thrust::device_vector<int>(rows_+1);
-    cusparseXcoo2csr(handle, thrust::raw_pointer_cast(row_ids.data()), nnz(), rows(), thrust::raw_pointer_cast(row_offsets.data()), CUSPARSE_INDEX_BASE_ZERO);
+    row_offsets = compute_row_offsets(handle, rows(), col_ids, row_ids);
 }
+
+
 
 dCSR multiply(cusparseHandle_t handle, const dCSR& A, const dCSR& B);
