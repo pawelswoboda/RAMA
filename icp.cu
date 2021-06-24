@@ -138,7 +138,7 @@ __device__ void print_cycle(int edge, int cycle_length, const int* const __restr
 
 __global__ void reparameterize(int num_edges, int cycle_length, const int* const __restrict__ e_row_ids, const int* const __restrict__ e_col_ids, float* const __restrict__ e_values, 
     const int* const __restrict__ v_seed_edge, const int* const __restrict__ v_parent_edge, 
-    bool* const __restrict__ e_valid_seeds, bool* const __restrict__ e_used)
+    bool* const __restrict__ e_valid_seeds, bool* const __restrict__ e_used, int* const __restrict__ num_cycles_packed)
 {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int num_threads = blockDim.x * gridDim.x;
@@ -182,6 +182,7 @@ __global__ void reparameterize(int num_edges, int cycle_length, const int* const
                 next_edge = v_parent_edge[to_vertex];
                 assert(message >= 0);
                 e_values[edge] += message; 
+                atomicAdd(&num_cycles_packed[0], 1); // TODO: For debugging info, should remove during production.
                 for (int e = 0; e != cycle_length - 1; ++e)
                 {
                     assert(e_values[next_edge] >= 0);
@@ -221,6 +222,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
     thrust::device_vector<bool> e_valid_seeds(num_edges);
     thrust::device_vector<bool> e_used(num_edges, false);
     thrust::device_vector<bool> still_running(1, false);
+    thrust::device_vector<int> num_cycles_packed(1, 0);
     
     int threadCount = 256;
     int blockCount = ceil(num_edges / (float) threadCount);
@@ -235,7 +237,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
         thrust::fill(thrust::device, v_parent_edge.begin(), v_parent_edge.end(), -1);
         thrust::fill(thrust::device, e_valid_seeds.begin(), e_valid_seeds.end(), false);
         thrust::fill(thrust::device, still_running.begin(), still_running.end(), false);
-        std::cout<<"cycle length: "<<l<<", # used -ive edges: "<<thrust::reduce(e_used.begin(), e_used.end(), 0)<<std::endl;
+
         // thrust::copy(costs_reparam.begin(), costs_reparam.end(), std::ostream_iterator<float>(std::cout, " "));
         // std::cout<<"\n";
                                     
@@ -269,6 +271,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
         if (!still_running_h || try_idx >= max_tries)
         {
             thrust::fill(thrust::device, e_used.begin(), e_used.end(), false);
+            thrust::fill(thrust::device, num_cycles_packed.begin(), num_cycles_packed.end(), 0);
             l++;
             try_idx = 0;
             continue;
@@ -280,9 +283,12 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
                                             thrust::raw_pointer_cast(v_seed_edge.data()), 
                                             thrust::raw_pointer_cast(v_parent_edge.data()), 
                                             thrust::raw_pointer_cast(e_valid_seeds.data()), 
-                                            thrust::raw_pointer_cast(e_used.data()));
+                                            thrust::raw_pointer_cast(e_used.data()), 
+                                            thrust::raw_pointer_cast(num_cycles_packed.data()));
 
         thrust::transform(e_used.begin(), e_used.end(), e_valid_seeds.begin(), e_used.begin(), thrust::maximum<bool>());
+        std::cout<<"cycle length: "<<l<<", cumulative # used -ive edges: "<<thrust::reduce(e_used.begin(), e_used.end(), 0)<<" cumulative # cycles packed: "<<num_cycles_packed[0]<<std::endl;
+
     }
 
     return {row_ids, col_ids, costs_reparam};
