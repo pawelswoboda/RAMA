@@ -4,7 +4,7 @@ project(parallel_gaec LANGUAGES CXX CUDA)
 
 cmake_minimum_required(VERSION 2.8.12)
 
-set(CMAKE_CUDA_ARCHITECTURES 75) #TODO
+# set(CMAKE_CUDA_ARCHITECTURES 75) #TODO
 
 include_directories(external/thrust/)
 include_directories(external/thrust/dependencies/cub)
