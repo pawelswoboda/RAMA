@@ -7,16 +7,24 @@
 #include "external/ECL-CC/ECLgraph.h"
 #include <thrust/transform_scan.h>
 #include <thrust/transform.h>
+#include "icp.h"
 
 int get_cuda_device()
+{   
+    // if(const char* cuda_env = std::getenv("CUDA_VISIBLE_DEVICES"))
+    // {
+    //     std::cout << "Cuda device number to use = " << std::stoi(cuda_env) << "\n";
+    //     return std::stoi(cuda_env); 
+    // }
+    // else
+    return 0; // Get first possible GPU. CUDA_VISIBLE_DEVICES automatically masks the rest of GPUs.
+}
+
+void print_gpu_memory_stats()
 {
-    if(const char* cuda_env = std::getenv("CUDA_VISIBLE_DEVICES"))
-    {
-        std::cout << "Cuda device number to use = " << std::stoi(cuda_env) << "\n";
-        return std::stoi(cuda_env); 
-    }
-    else
-        return 0; 
+    size_t free, total;
+    cudaMemGetInfo(&free, &total);
+    std::cout<<"Total memory(MB): "<<total / (1024 * 1024)<<", Free(MB): "<<free / (1024 * 1024)<<std::endl;
 }
 
 std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<float>> adjacency_edges(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs)
@@ -36,6 +44,46 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
     thrust::copy(costs.begin(), costs.end(), d_costs.begin() + costs.size());
 
     return {d_col_ids, d_row_ids, d_costs};
+}
+
+template<typename ITERATOR>
+std::tuple<thrust::host_vector<int>, thrust::host_vector<int>, thrust::host_vector<float>> separate_edges(ITERATOR entry_begin, ITERATOR entry_end)
+{
+    // TODO: make faster
+    const size_t nr_edges = std::distance(entry_begin, entry_end);
+    thrust::host_vector<int> col_ids(nr_edges);
+    thrust::host_vector<int> row_ids(nr_edges);
+    thrust::host_vector<float> cost(nr_edges);
+    for(auto it=entry_begin; it!=entry_end; ++it)
+    {
+        const int i = std::get<0>(*it);
+        const int j = std::get<1>(*it);
+        const float c = std::get<2>(*it);
+        col_ids[std::distance(entry_begin, it)] = i;
+        row_ids[std::distance(entry_begin, it)] = j;
+        cost[std::distance(entry_begin, it)] = c;
+    }
+    return {col_ids, row_ids, cost};
+}
+
+std::tuple<thrust::host_vector<int>, thrust::host_vector<int>, thrust::host_vector<float>> to_undirected(thrust::host_vector<int> col_ids, thrust::host_vector<int> row_ids, thrust::host_vector<float> cost) 
+{
+    // TODO: make faster
+    const size_t nr_edges = col_ids.size();
+    thrust::host_vector<int> col_ids_u(2 * nr_edges);
+    thrust::host_vector<int> row_ids_u(2 * nr_edges);
+    thrust::host_vector<float> cost_u(2 * nr_edges);
+    for(auto i = 0; i != nr_edges; ++i)
+    {
+        col_ids_u[2 * i] = col_ids[i];
+        row_ids_u[2 * i] = row_ids[i];
+        cost_u[2 * i] = cost[i];
+
+        col_ids_u[2 * i + 1] = row_ids[i];
+        row_ids_u[2 * i + 1] = col_ids[i];
+        cost_u[2 * i + 1] = cost[i];
+    }
+    return {col_ids_u, row_ids_u, cost_u};
 }
 
 thrust::device_vector<int> compress_label_sequence(const thrust::device_vector<int>& data)
@@ -223,7 +271,21 @@ std::vector<int> parallel_gaec_cuda(dCSR& A)
     return h_node_mapping;
 }
 
+void print_obj_original(const std::vector<int>& h_node_mapping, const std::vector<std::tuple<int,int,float>>& edges)
+{
+    float obj = 0;
+    const int nr_edges = edges.size();
+    for (int i = 0; i < nr_edges; i++)
+    {
+        const auto [e1, e2, c] = edges[i];
+        if (h_node_mapping[e1] != h_node_mapping[e2])
+            obj += c;
+    }
+    std::cout<<"Cost w.r.t original objective: "<<obj<<std::endl;
+}
+
 std::vector<int> parallel_gaec_cuda(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs)
+
 {
     const auto adj_edges = adjacency_edges(i,j,costs);
 
@@ -235,11 +297,29 @@ std::vector<int> parallel_gaec_cuda(const std::vector<int>& i, const std::vector
     cusparseHandle_t handle;
     checkCuSparseError(cusparseCreate(&handle), "cusparse init failed");
 
+    auto [col_ids_d, row_ids_d, costs_d] = separate_edges(edges.begin(), edges.end());
+
+    thrust::device_vector<int> col_ids_d_device = col_ids_d;
+    thrust::device_vector<int> row_ids_d_device = row_ids_d;
+    thrust::device_vector<float> costs_ids_d_device = costs_d;
+
+    const auto [row_ids_reparam, col_ids_reparam, costs_ids_reparam] = parallel_cycle_packing_cuda(row_ids_d_device, col_ids_d_device, costs_ids_d_device, 7);
+
+    const auto [col_ids, row_ids, costs] = to_undirected(row_ids_reparam, col_ids_reparam, costs_ids_reparam);
+
     dCSR A(handle, 
-            std::get<0>(adj_edges).begin(), std::get<0>(adj_edges).end(),
-            std::get<1>(adj_edges).begin(), std::get<1>(adj_edges).end(),
-            std::get<2>(adj_edges).begin(), std::get<2>(adj_edges).end());
+            col_ids.begin(), col_ids.end(),
+            row_ids.begin(), row_ids.end(),
+            costs.begin(), costs.end());
+
+    // dCSR A(handle, 
+    //     std::get<0>(adj_edges).begin(), std::get<0>(adj_edges).end(),
+    //     std::get<1>(adj_edges).begin(), std::get<1>(adj_edges).end(),
+    //     std::get<2>(adj_edges).begin(), std::get<2>(adj_edges).end());
     cusparseDestroy(handle);
 
-    return parallel_gaec_cuda(A); 
+    const std::vector<int> h_node_mapping = parallel_gaec_cuda(A);
+    print_obj_original(h_node_mapping, edges);
+
+    return h_node_mapping;
 }

@@ -312,11 +312,11 @@ void computeCC(const int nodes, const int edges, const int* const __restrict__ n
   cudaFree(nidx_d);
 }
 
-void computeCC_gpu(const int num_rows, const int nnz, const int* d_row_offsets, const int* d_col_ids, int* d_node_stat_out, const int device)
+void computeCC_gpu(const int num_rows, const int nnz, const int* const d_row_offsets, const int* const d_col_ids, int* d_node_stat_out, const int device)
 {
   cudaSetDevice(device);
   cudaDeviceProp deviceProp;
-  cudaGetDeviceProperties(&deviceProp, Device);
+  cudaGetDeviceProperties(&deviceProp, device);
   if ((deviceProp.major == 9999) && (deviceProp.minor == 9999)) {fprintf(stderr, "ERROR: there is no CUDA capable device\n\n");  exit(-1);}
   const int SMs = deviceProp.multiProcessorCount;
   const int mTSM = deviceProp.maxThreadsPerMultiProcessor;
