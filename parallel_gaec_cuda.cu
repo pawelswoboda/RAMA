@@ -226,7 +226,7 @@ std::vector<int> parallel_gaec_cuda(dCSR& A)
 
 void print_obj_original(const std::vector<int>& h_node_mapping, const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs)
 {
-    float obj = 0;
+    double obj = 0;
     const int nr_edges = costs.size();
     for (int e = 0; e < nr_edges; e++)
     {
