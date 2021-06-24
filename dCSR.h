@@ -9,6 +9,7 @@
 #include <thrust/gather.h>
 #include <thrust/generate.h>
 #include <cusparse.h>
+#include "time_measure_util.h"
 
 namespace {
 
@@ -56,7 +57,7 @@ class dCSR {
 
         friend dCSR multiply(cusparseHandle_t handle, dCSR& A, dCSR& B);
 
-        std::tuple<thrust::host_vector<int>, thrust::host_vector<int>, thrust::host_vector<float>> export_coo(cusparseHandle_t handle);
+        std::tuple<thrust::device_vector<int>, const thrust::device_vector<int>&, const thrust::device_vector<float>&> export_coo(cusparseHandle_t handle);
 
         thrust::device_vector<int> row_ids(cusparseHandle_t handle) const;
         void set_diagonal_to_zero(cusparseHandle_t handle);
@@ -79,59 +80,64 @@ class dCSR {
         thrust::device_vector<int> col_ids; 
 };
 
-inline void update_permutation(thrust::device_vector<int>& keys, thrust::device_vector<int>& permutation)
+inline void coo_sorting(cusparseHandle_t handle, thrust::device_vector<int>& col_ids, thrust::device_vector<int>& row_ids)
 {
-    // temporary storage for keys
-    thrust::device_vector<int> temp(keys.size());
-
-    // permute the keys with the current reordering
-    thrust::gather(permutation.begin(), permutation.end(), keys.begin(), temp.begin());
-
-    // stable_sort the permuted keys and update the permutation
-    thrust::stable_sort_by_key(temp.begin(), temp.end(), permutation.begin());
-}
-
-
-template<typename T>
-void apply_permutation(thrust::device_vector<T>& keys, thrust::device_vector<int>& permutation)
-{
-    // copy keys to temporary vector
-    thrust::device_vector<T> temp(keys.begin(), keys.end());
-
-    // permute the keys
-    thrust::gather(permutation.begin(), permutation.end(), temp.begin(), keys.begin());
-}
-
-inline void coo_sorting(thrust::device_vector<int>& col_ids, thrust::device_vector<int>& row_ids)
-{
+    MEASURE_FUNCTION_EXECUTION_TIME;
     assert(row_ids.size() == col_ids.size());
     const size_t N = row_ids.size();
-    thrust::device_vector<int> permutation(N);
-    thrust::sequence(permutation.begin(), permutation.end());
 
-    update_permutation(col_ids,  permutation);
-    update_permutation(row_ids, permutation);
+    size_t buffer_size_in_bytes = 0;
+    cusparseXcoosort_bufferSizeExt(handle, 1, 1, N,
+            thrust::raw_pointer_cast(row_ids.data()), thrust::raw_pointer_cast(col_ids.data()), 
+            &buffer_size_in_bytes);
 
-    apply_permutation(col_ids,  permutation);
-    apply_permutation(row_ids, permutation);
-    assert(thrust::is_sorted(row_ids.begin(), row_ids.end()));
+    thrust::device_vector<char> buffer(buffer_size_in_bytes);
+    thrust::device_vector<int> coo_cols(N);
+    thrust::device_vector<int> coo_rows(N);
+    thrust::device_vector<int> P(N); // permutation
+
+    cusparseCreateIdentityPermutation(handle, N, thrust::raw_pointer_cast(P.data()));
+
+    cusparseXcoosortByRow(handle, 1, 1, N, 
+            thrust::raw_pointer_cast(row_ids.data()), 
+            thrust::raw_pointer_cast(col_ids.data()), 
+            thrust::raw_pointer_cast(P.data()), 
+            thrust::raw_pointer_cast(buffer.data()));
 }
 
-inline void coo_sorting(thrust::device_vector<int>& col_ids, thrust::device_vector<int>& row_ids, thrust::device_vector<float>& data)
+inline void coo_sorting(cusparseHandle_t handle, thrust::device_vector<int>& col_ids, thrust::device_vector<int>& row_ids, thrust::device_vector<float>& data)
 {
+    MEASURE_FUNCTION_EXECUTION_TIME;
     assert(row_ids.size() == col_ids.size());
     assert(row_ids.size() == data.size());
     const size_t N = row_ids.size();
-    thrust::device_vector<int> permutation(N);
-    thrust::sequence(permutation.begin(), permutation.end());
 
-    update_permutation(col_ids,  permutation);
-    update_permutation(row_ids, permutation);
+    size_t buffer_size_in_bytes = 0;
+    cusparseXcoosort_bufferSizeExt(handle, 1, 1, data.size(),
+            thrust::raw_pointer_cast(row_ids.data()), thrust::raw_pointer_cast(col_ids.data()), 
+            &buffer_size_in_bytes);
 
-    apply_permutation(col_ids,  permutation);
-    apply_permutation(row_ids, permutation);
-    apply_permutation(data, permutation);
-    assert(thrust::is_sorted(row_ids.begin(), row_ids.end()));
+    thrust::device_vector<char> buffer(buffer_size_in_bytes);
+    thrust::device_vector<int> coo_cols(N);
+    thrust::device_vector<int> coo_rows(N);
+    thrust::device_vector<float> coo_data(N);
+    thrust::device_vector<int> P(N); // permutation
+
+    cusparseCreateIdentityPermutation(handle, N, thrust::raw_pointer_cast(P.data()));
+
+    cusparseXcoosortByRow(handle, 1, 1, N, 
+            thrust::raw_pointer_cast(row_ids.data()), 
+            thrust::raw_pointer_cast(col_ids.data()), 
+            thrust::raw_pointer_cast(P.data()), 
+            thrust::raw_pointer_cast(buffer.data()));
+
+    // TODO: deprecated, replace by cusparseGather
+    cusparseSgthr(handle, N,
+            thrust::raw_pointer_cast(data.data()),
+            thrust::raw_pointer_cast(coo_data.data()),
+            thrust::raw_pointer_cast(P.data()), 
+            CUSPARSE_INDEX_BASE_ZERO); 
+    data = coo_data;
 }
 
     template<typename COL_ITERATOR, typename ROW_ITERATOR, typename DATA_ITERATOR>
@@ -169,7 +175,7 @@ void dCSR::init(cusparseHandle_t handle,
     data = thrust::device_vector<float>(data_begin, data_end);
     thrust::device_vector<int> row_ids(row_id_begin, row_id_end);
 
-    coo_sorting(col_ids, row_ids, data);
+    coo_sorting(handle, col_ids, row_ids, data);
 
     // now row indices are non-decreasing
     assert(thrust::is_sorted(row_ids.begin(), row_ids.end()));

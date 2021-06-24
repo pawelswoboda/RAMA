@@ -19,7 +19,7 @@ int get_cuda_device()
         return 0; 
 }
 
-std::tuple<thrust::host_vector<int>, thrust::host_vector<int>, thrust::host_vector<float>> adjacency_edges(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs)
+std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<float>> adjacency_edges(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs)
 {
     // TODO: make faster
     assert(i.size() == j.size() && i.size() == costs.size());
@@ -64,7 +64,7 @@ std::tuple<dCSR,thrust::device_vector<int>> edge_contraction_matrix_cuda(cuspars
     assert(n > *thrust::max_element(col_ids.begin(), col_ids.end()));
     assert(n > *thrust::max_element(row_ids.begin(), row_ids.end()));
 
-    coo_sorting(col_ids, row_ids);
+    coo_sorting(handle, col_ids, row_ids);
     thrust::device_vector<int> row_offsets = dCSR::compute_row_offsets(handle, n, col_ids, row_ids);
 
     thrust::device_vector<int> cc_labels(n);
@@ -115,10 +115,14 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> edges_to_cont
 {
     MEASURE_FUNCTION_EXECUTION_TIME;
     assert(max_contractions > 0);
-    thrust::device_vector<int> col_ids;
     thrust::device_vector<int> row_ids;
+    thrust::device_vector<int> col_ids;
     thrust::device_vector<float> data;
-    std::tie(col_ids, row_ids, data) = A.export_coo(handle);
+    {
+    MEASURE_FUNCTION_EXECUTION_TIME;
+    std::tie(row_ids, col_ids, data) = A.export_coo(handle);
+    std::cout << "coo sorting time:\n";
+    }
 
     auto first = thrust::make_zip_iterator(thrust::make_tuple(col_ids.begin(), row_ids.begin(), data.begin()));
     auto last = thrust::make_zip_iterator(thrust::make_tuple(col_ids.end(), row_ids.end(), data.end()));
@@ -131,13 +135,14 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> edges_to_cont
 
     if(max_contractions < nr_positive_edges)
     {
+    MEASURE_FUNCTION_EXECUTION_TIME;
         auto first = thrust::make_zip_iterator(thrust::make_tuple(col_ids.begin(), row_ids.begin(), data.begin()));
         auto last = thrust::make_zip_iterator(thrust::make_tuple(col_ids.end(), row_ids.end(), data.end()));
         thrust::sort(first, last, edge_comparator_func()); // TODO: faster through sort by keys?
 
         col_ids.resize(max_contractions);
         row_ids.resize(max_contractions);
-        data.resize(max_contractions); //TODO: Is this data used?
+    std::cout << "sort by edge weight time:\n";
     }
 
     // add reverse edges

@@ -78,7 +78,7 @@ void dCSR::compress(cusparseHandle_t handle, const float tol)
     _row_ids.resize(nr_non_zeros);
     data.resize(nr_non_zeros);
 
-    coo_sorting(col_ids, _row_ids, data);
+    coo_sorting(handle, col_ids, _row_ids, data);
 
     // now row indices are non-decreasing
     assert(thrust::is_sorted(_row_ids.begin(), _row_ids.end()));
@@ -255,17 +255,14 @@ dCSR multiply(cusparseHandle_t handle, dCSR& A, dCSR& B)
     return C;
 }
 
-std::tuple<thrust::host_vector<int>, thrust::host_vector<int>, thrust::host_vector<float>> dCSR::export_coo(cusparseHandle_t handle)
+        std::tuple<thrust::device_vector<int>, const thrust::device_vector<int>&, const thrust::device_vector<float>&> dCSR::export_coo(cusparseHandle_t handle)
+
 {
-    thrust::host_vector<int> h_col_ids(col_ids);
-    thrust::host_vector<float> h_data(data);
     thrust::device_vector<int> row_ids(nnz());
 
-    cusparseXcsr2coo(handle, thrust::raw_pointer_cast(row_offsets.data()), nnz(), cols(), thrust::raw_pointer_cast(row_ids.data()), CUSPARSE_INDEX_BASE_ZERO);
+    cusparseXcsr2coo(handle, thrust::raw_pointer_cast(row_offsets.data()), nnz(), cols(), thrust::raw_pointer_cast(row_ids.data()), CUSPARSE_INDEX_BASE_ZERO); // TODO: should be rows?
             
-    thrust::host_vector<int> h_row_ids(row_ids);
-
-    return {h_col_ids, h_row_ids, h_data}; 
+    return {row_ids, col_ids, data}; 
 }
 
 thrust::device_vector<int> dCSR::row_ids(cusparseHandle_t handle) const
