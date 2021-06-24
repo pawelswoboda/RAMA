@@ -2,6 +2,7 @@
 #include "icp.h"
 #include <thrust/reduce.h>
 #include <stdio.h>
+#include "time_measure_util.h"
 
 static const float tol = 1e-3;
 
@@ -209,6 +210,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
     const int max_cycle_length)
 {
     // thrust::host_vector<float> costs_h = costs;
+    MEASURE_FUNCTION_EXECUTION_TIME;
 
     int num_nodes = std::max(*thrust::max_element(row_ids.begin(), row_ids.end()), *thrust::max_element(col_ids.begin(), col_ids.end())) + 1;
     int num_edges = row_ids.size();

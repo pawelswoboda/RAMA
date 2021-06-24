@@ -268,7 +268,7 @@ std::vector<int> parallel_gaec_cuda(const std::vector<int>& i, const std::vector
     cusparseDestroy(handle);
 
     const std::vector<int> h_node_mapping = parallel_gaec_cuda(A);
-    print_obj_original(h_node_mapping, i, j, costs);
+    print_obj_original(h_node_mapping, i, j, costs); //TODO: Why is this cost not equal to adj?
 
     return h_node_mapping;
 }
