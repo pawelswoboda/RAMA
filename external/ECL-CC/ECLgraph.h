@@ -30,4 +30,4 @@ Author: Martin Burtscher
 
 #pragma once
 
-void computeCC_gpu(const int num_rows, const int nnz, const int* d_row_offsets, const int* d_col_ids, int* d_node_stat_out, const int device);
+void computeCC_gpu(const int num_rows, const int nnz, const int* const d_row_offsets, const int* const d_col_ids, int* d_node_stat_out, const int device);
