@@ -1,4 +1,4 @@
-#include "parallel_gaec_cuda.h"
+#include "parallel_gaec_eigen.h"
 
 int main(int argc, char** argv)
 {
@@ -6,6 +6,5 @@ int main(int argc, char** argv)
     std::vector<int> j = {1,2,2};
     std::vector<float> costs = {1.5,-3.0,1.0};
 
-    parallel_gaec_cuda(i,j,costs); 
+    parallel_gaec_eigen(i,j,costs); 
 }
-

@@ -5,7 +5,7 @@
 #include "union_find.hxx"
 #include "time_measure_util.h"
 
-#include "parallel-gaec-eigen.h"
+#include "parallel_gaec_eigen.h"
 
 std::tuple<Eigen::SparseMatrix<float>,std::vector<int>> edge_contraction_matrix(const std::vector<std::array<int,2>>& edges, const int n)
 {
@@ -58,7 +58,7 @@ std::vector<std::array<int,2>> edges_to_contract(Eigen::SparseMatrix<float>& A, 
 {
     MEASURE_FUNCTION_EXECUTION_TIME;
     assert(max_contractions > 0);
-    std::vector<weighted_edge> positive_edges;
+    std::vector<std::tuple<int,int,float>> positive_edges;
     for(int i=0; i<A.outerSize(); ++i)
     {
         for(Eigen::SparseMatrix<float>::InnerIterator it(A,i); it; ++it)
@@ -71,7 +71,7 @@ std::vector<std::array<int,2>> edges_to_contract(Eigen::SparseMatrix<float>& A, 
     }
     if(max_contractions < positive_edges.size())
     {
-        std::nth_element(positive_edges.begin(), positive_edges.begin() + max_contractions, positive_edges.end(), [](const auto& a, const auto& b) { return a.val > b.val; });
+        std::nth_element(positive_edges.begin(), positive_edges.begin() + max_contractions, positive_edges.end(), [](const auto& a, const auto& b) { return std::get<2>(a) > std::get<2>(b); });
         positive_edges.resize(max_contractions);
     }
 
@@ -139,28 +139,29 @@ std::vector<int> parallel_gaec(Eigen::SparseMatrix<float> A)
     return node_mapping;
 }
 
-Eigen::SparseMatrix<float> construct_adjacency_matrix(const std::vector<weighted_edge>& edges)
+Eigen::SparseMatrix<float> construct_adjacency_matrix(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs)
 {
     MEASURE_FUNCTION_EXECUTION_TIME;
+    assert(i.size() == j.size() && i.size() == costs.size());
     using T = Eigen::Triplet<float>;
     std::vector<T> coeffs;
-    coeffs.reserve(edges.size()*2);
+    coeffs.reserve(i.size()*2);
     int n = 0;
-    for(const auto [i,j,val] : edges)
+    for(size_t c=0; c<i.size(); ++c)
     {
         assert(i != j);
-        coeffs.push_back(T(i,j,val));
-        coeffs.push_back(T(j,i,val));
-        n = std::max({n,i+1,j+1});
+        coeffs.push_back(T(i[c],j[c],costs[c]));
+        coeffs.push_back(T(j[c],i[c],costs[c]));
+        n = std::max({n,i[c]+1,j[c]+1});
     }
     Eigen::SparseMatrix<float> A(n, n);
     A.setFromTriplets(coeffs.begin(), coeffs.end());
     return A; 
 }
 
-std::vector<int> parallel_gaec(const std::vector<weighted_edge>& edges)
+std::vector<int> parallel_gaec_eigen(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs)
 {
     MEASURE_FUNCTION_EXECUTION_TIME;
-    Eigen::SparseMatrix<float> A = construct_adjacency_matrix(edges);
+    Eigen::SparseMatrix<float> A = construct_adjacency_matrix(i,j,costs);
     return parallel_gaec(A); 
 }

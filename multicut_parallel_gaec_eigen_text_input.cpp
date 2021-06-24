@@ -1,4 +1,4 @@
-#include "parallel-gaec-eigen.h"
+#include "parallel_gaec_eigen.h"
 #include "multicut_text_parser.h"
 #include<stdexcept>
 
@@ -6,11 +6,10 @@ int main(int argc, char** argv)
 {
     if(argc != 2)
         throw std::runtime_error("no filename given");
-    const auto e = read_file(argv[1]);
-    std::vector<weighted_edge> e2;
-    e2.reserve(e.size());
-    for(const auto [i,j,c] : e)
-        e2.push_back({i,j,c});
-    parallel_gaec(e2); 
+    std::vector<int> i;
+    std::vector<int> j;
+    std::vector<float> costs;
+    std::tie(i,j,costs) = read_file(argv[1]);
+    parallel_gaec_eigen(i,j,costs); 
 }
 

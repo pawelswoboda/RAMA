@@ -1,5 +1,5 @@
 #include <string>
-#include "parallel-gaec-eigen.h"
+#include <vector>
 
-std::vector<weighted_edge> read_file(const std::string& filename);
+std::tuple<std::vector<int>, std::vector<int>, std::vector<float>> read_file(const std::string& filename);
 

@@ -19,27 +19,23 @@ int get_cuda_device()
         return 0; 
 }
 
-template<typename ITERATOR>
-std::tuple<thrust::host_vector<int>, thrust::host_vector<int>, thrust::host_vector<float>> adjacency_edges(ITERATOR entry_begin, ITERATOR entry_end)
+std::tuple<thrust::host_vector<int>, thrust::host_vector<int>, thrust::host_vector<float>> adjacency_edges(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs)
 {
     // TODO: make faster
-    const size_t nr_edges = std::distance(entry_begin, entry_end);
-    thrust::host_vector<int> col_ids(2*nr_edges);
-    thrust::host_vector<int> row_ids(2*nr_edges);
-    thrust::host_vector<float> cost(2*nr_edges);
-    for(auto it=entry_begin; it!=entry_end; ++it)
-    {
-        const int i = std::get<0>(*it);
-        const int j = std::get<1>(*it);
-        const float c = std::get<2>(*it);
-        col_ids[2*std::distance(entry_begin, it)] = i;
-        row_ids[2*std::distance(entry_begin, it)] = j;
-        cost[2*std::distance(entry_begin, it)] = c;
-        col_ids[2*std::distance(entry_begin, it)+1] = j;
-        row_ids[2*std::distance(entry_begin, it)+1] = i;
-        cost[2*std::distance(entry_begin, it)+1] = c;
-    }
-    return {col_ids, row_ids, cost};
+    assert(i.size() == j.size() && i.size() == costs.size());
+    const size_t nr_edges = i.size();
+    thrust::device_vector<int> d_col_ids(2*nr_edges);
+    thrust::device_vector<int> d_row_ids(2*nr_edges);
+    thrust::device_vector<float> d_costs(2*nr_edges);
+
+    thrust::copy(i.begin(), i.end(), d_col_ids.begin());
+    thrust::copy(j.begin(), j.end(), d_row_ids.begin());
+    thrust::copy(i.begin(), i.end(), d_row_ids.begin() + i.size());
+    thrust::copy(j.begin(), j.end(), d_col_ids.begin() + j.size());
+    thrust::copy(costs.begin(), costs.end(), d_costs.begin());
+    thrust::copy(costs.begin(), costs.end(), d_costs.begin() + costs.size());
+
+    return {d_col_ids, d_row_ids, d_costs};
 }
 
 thrust::device_vector<int> compress_label_sequence(const thrust::device_vector<int>& data)
@@ -158,6 +154,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> edges_to_cont
 
 std::vector<int> parallel_gaec_cuda(dCSR& A)
 {
+    MEASURE_FUNCTION_EXECUTION_TIME;
     cusparseHandle_t handle;
     checkCuSparseError(cusparseCreate(&handle), "cusparse init failed");
 
@@ -208,7 +205,7 @@ std::vector<int> parallel_gaec_cuda(dCSR& A)
         }
 
         A.set_diagonal_to_zero(handle);
-        A.compress(handle); 
+        //A.compress(handle); 
         std::cout << "energy after iteration " << iter << ": " << A.sum()/2.0 << "\n";
     }
 
@@ -221,11 +218,9 @@ std::vector<int> parallel_gaec_cuda(dCSR& A)
     return h_node_mapping;
 }
 
-std::vector<int> parallel_gaec_cuda(const std::vector<std::tuple<int,int,float>>& edges)
+std::vector<int> parallel_gaec_cuda(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs)
 {
-    MEASURE_FUNCTION_EXECUTION_TIME;
-
-    const auto adj_edges = adjacency_edges(edges.begin(), edges.end());
+    const auto adj_edges = adjacency_edges(i,j,costs);
 
     const int cuda_device = get_cuda_device();
     cudaSetDevice(cuda_device);
