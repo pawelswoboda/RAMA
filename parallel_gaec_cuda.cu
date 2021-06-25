@@ -119,11 +119,8 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> edges_to_cont
     thrust::device_vector<int> row_ids;
     thrust::device_vector<int> col_ids;
     thrust::device_vector<float> data;
-    {
-    MEASURE_FUNCTION_EXECUTION_TIME;
+
     std::tie(row_ids, col_ids, data) = A.export_coo(handle);
-    std::cout << "coo sorting time:\n";
-    }
 
     auto first = thrust::make_zip_iterator(thrust::make_tuple(col_ids.begin(), row_ids.begin(), data.begin()));
     auto last = thrust::make_zip_iterator(thrust::make_tuple(col_ids.end(), row_ids.end(), data.end()));
@@ -143,7 +140,6 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> edges_to_cont
 
         col_ids.resize(max_contractions);
         row_ids.resize(max_contractions);
-    std::cout << "sort by edge weight time:\n";
     }
 
     // add reverse edges
@@ -195,24 +191,16 @@ std::vector<int> parallel_gaec_cuda(dCSR& A)
             MEASURE_FUNCTION_EXECUTION_TIME;
 
             assert(A.cols() == A.rows());
-            std::cout << "A dim = " << A.cols() << "x" << A.rows() << "\n";
-            std::cout << "A nnz = " << A.nnz() << ", sparsity = " << 100.0 * double(A.nnz()) / double(A.cols() * A.rows()) << "%\n";
-            std::cout << "A*C multiply time:\n";
             dCSR intermed = multiply(handle, A, C);
-            std::cout << "A C dim = " << intermed.rows() << "x" << intermed.cols() << "\n"; 
-            std::cout << "C' transpose time:\n";
             dCSR C_trans = C.transpose(handle);
-            std::cout << "C' * (AC) multiply time:\n";
             dCSR new_A = multiply(handle, C_trans, intermed);
-            std::cout << "C' A C dim = " << new_A.rows() << "x" << new_A.cols() << "\n"; 
             A = new_A;
             assert(A.rows() == A.cols());
-            std::cout << "execution time for matrix multiplication:\n";
         }
 
         A.set_diagonal_to_zero(handle);
         //A.compress(handle); 
-        std::cout << "energy after iteration " << iter << ": " << A.sum()/2.0 << "\n";
+        std::cout << "energy after iteration " << iter << ": " << A.sum()/2.0 << ", #components = " << A.cols() << "\n";
     }
 
     const double lb = A.sum()/2.0;
@@ -253,12 +241,19 @@ std::vector<int> parallel_gaec_cuda(const std::vector<int>& i, const std::vector
     const thrust::device_vector<int> j_d = j;
     const thrust::device_vector<float> costs_d = costs;
 
-    const auto [i_d_reparam, j_d_reparam, costs_d_reparam] = parallel_cycle_packing_cuda(i_d, j_d, costs_d, 7, 10);
+    thrust::device_vector<int> i_d_reparam;
+    thrust::device_vector<int> j_d_reparam;
+    thrust::device_vector<int> costs_d_reparam;
+    std::tie(i_d_reparam, j_d_reparam, costs_d_reparam) = parallel_cycle_packing_cuda(i_d, j_d, costs_d, 7);
+
     //TODO: 
     // 1. How to use the costs?
     // 2. Should zero edges be removed?
 
-    const auto [col_ids_u, row_ids_u, costs_u] = to_undirected(i_d, j_d, costs_d);
+    thrust::device_vector<int> col_ids_u;
+    thrust::device_vector<int> row_ids_u;
+    thrust::device_vector<float> costs_u;
+    std::tie(col_ids_u, row_ids_u, costs_u) = to_undirected(i_d, j_d, costs_d);
 
     dCSR A(handle, 
             col_ids_u.begin(), col_ids_u.end(),
