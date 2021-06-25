@@ -4,7 +4,7 @@ project(parallel_gaec LANGUAGES CXX CUDA)
 
 cmake_minimum_required(VERSION 2.8.12)
 
-set(CMAKE_CUDA_ARCHITECTURES 75)
+# set(CMAKE_CUDA_ARCHITECTURES 75) #Use JIT compilation? 
 
 include_directories(external/thrust/)
 include_directories(external/thrust/dependencies/cub)
@@ -44,8 +44,10 @@ target_include_directories(ECL-CC_11 INTERFACE external/ECL-CC)
 add_executable(cc_gpu_test cc_gpu_test.cu)
 target_link_libraries(cc_gpu_test ECL-CC_11)
 
+add_library(icp icp.cu)
+
 add_library(parallel_gaec_cuda parallel_gaec_cuda.cu)
-target_link_libraries(parallel_gaec_cuda dCSR cusparse)
+target_link_libraries(parallel_gaec_cuda dCSR cusparse icp)
 
 add_executable(parallel_gaec_cuda_test parallel_gaec_cuda_test.cpp)
 target_link_libraries(parallel_gaec_cuda_test parallel_gaec_cuda)
