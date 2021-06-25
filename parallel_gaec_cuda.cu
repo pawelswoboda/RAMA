@@ -253,7 +253,7 @@ std::vector<int> parallel_gaec_cuda(const std::vector<int>& i, const std::vector
     const thrust::device_vector<int> j_d = j;
     const thrust::device_vector<float> costs_d = costs;
 
-    const auto [i_d_reparam, j_d_reparam, costs_d_reparam] = parallel_cycle_packing_cuda(i_d, j_d, costs_d, 7);
+    const auto [i_d_reparam, j_d_reparam, costs_d_reparam] = parallel_cycle_packing_cuda(i_d, j_d, costs_d, 7, 10);
     //TODO: 
     // 1. How to use the costs?
     // 2. Should zero edges be removed?

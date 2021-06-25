@@ -208,7 +208,7 @@ __global__ void reparameterize(int num_edges, int cycle_length, const int* const
 // row_ids, col_ids, values should be directed thus containing same number of elements as in original problem.
 std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<float>> parallel_cycle_packing_cuda(
     const thrust::device_vector<int>& row_ids, const thrust::device_vector<int>& col_ids, const thrust::device_vector<float>& costs,
-    const int max_cycle_length)
+    const int max_cycle_length, const int max_tries)
 {
     // thrust::host_vector<float> costs_h = costs;
     MEASURE_FUNCTION_EXECUTION_TIME;
@@ -227,7 +227,6 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
     int threadCount = 256;
     int blockCount = ceil(num_edges / (float) threadCount);
     int l = 3;
-    int max_tries = 10;
 
     int try_idx = 0;
     while(l <= max_cycle_length)
@@ -268,7 +267,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
         }
 
         try_idx++;
-        if (!still_running_h || try_idx >= max_tries)
+        if (!still_running_h || try_idx > max_tries)
         {
             thrust::fill(thrust::device, e_used.begin(), e_used.end(), false);
             thrust::fill(thrust::device, num_cycles_packed.begin(), num_cycles_packed.end(), 0);
