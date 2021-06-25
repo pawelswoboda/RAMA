@@ -49,6 +49,9 @@ add_library(icp icp.cu)
 add_library(parallel_gaec_cuda parallel_gaec_cuda.cu)
 target_link_libraries(parallel_gaec_cuda dCSR cusparse icp)
 
+add_executable(icp_test icp_test.cpp)
+target_link_libraries(icp_test icp)
+
 add_executable(parallel_gaec_cuda_test parallel_gaec_cuda_test.cpp)
 target_link_libraries(parallel_gaec_cuda_test parallel_gaec_cuda)
 
