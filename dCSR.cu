@@ -97,7 +97,7 @@ struct keep_geq
     keep_geq(T thresh): _thresh(thresh) {} 
    __host__ __device__ float operator()(const T &x) const
    {
-     return x > _thresh ? x : 0;
+     return x >= _thresh ? x : 0;
    }
 };
 

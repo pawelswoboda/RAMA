@@ -16,14 +16,14 @@ namespace {
 void checkCuSparseError(cusparseStatus_t status, std::string errorMsg)
 {
     if (status != CUSPARSE_STATUS_SUCCESS) {
-        std::cout << "CuSparse error: " << errorMsg; // << "status: "<< cusparseGetErrorString(status) << std::endl;
+        std::cout << "CuSparse error: " << errorMsg << ", status: "<< cusparseGetErrorString(status) << std::endl;
         throw std::exception();
     }
 }
 void checkCudaError(cudaError_t status, std::string errorMsg)
 {
     if (status != cudaSuccess) {
-        std::cout << "CUDA error: " << errorMsg; // << "status" <<cudaGetErrorString(status) << std::endl;
+        std::cout << "CUDA error: " << errorMsg << ", status" <<cudaGetErrorString(status) << std::endl;
         throw std::exception();
     }
 }

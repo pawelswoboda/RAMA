@@ -42,7 +42,7 @@ add_library(ECL-CC_11 external/ECL-CC/ECL-CC_11.cu)
 target_include_directories(ECL-CC_11 INTERFACE external/ECL-CC)
 
 add_executable(cc_gpu_test cc_gpu_test.cu)
-target_link_libraries(cc_gpu_test ECL-CC_11)
+target_link_libraries(cc_gpu_test ECL-CC_11 dCSR)
 
 add_library(icp icp.cu)
 
