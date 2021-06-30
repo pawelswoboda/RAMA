@@ -46,7 +46,7 @@ class dCSR {
                     ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
                     DATA_ITERATOR data_begin, DATA_ITERATOR data_end);
 
-        dCSR transpose(cusparseHandle_t handle);
+        dCSR transpose(cusparseHandle_t handle) const;
         void compress(cusparseHandle_t handle, const float tol = 1e-4);
         dCSR keep_top_k_positive_values(cusparseHandle_t handle, const int top_k);
         thrust::device_vector<int> compute_cc(const int device);
@@ -56,8 +56,9 @@ class dCSR {
         size_t nnz() const { return data.size(); }
 
         friend dCSR multiply(cusparseHandle_t handle, dCSR& A, dCSR& B);
+        friend thrust::device_vector<float> multiply(cusparseHandle_t handle, const dCSR& A, const thrust::device_vector<float>& x);
 
-        std::tuple<thrust::device_vector<int>, const thrust::device_vector<int>&, const thrust::device_vector<float>&> export_coo(cusparseHandle_t handle);
+        std::tuple<thrust::device_vector<int>, const thrust::device_vector<int>&, const thrust::device_vector<float>&> export_coo(cusparseHandle_t handle) const;
 
         thrust::device_vector<int> row_ids(cusparseHandle_t handle) const;
         void set_diagonal_to_zero(cusparseHandle_t handle);
@@ -66,6 +67,8 @@ class dCSR {
         void print_info_of(const int i) const;
 
         static thrust::device_vector<int> compute_row_offsets(cusparseHandle_t handle, const int rows, const thrust::device_vector<int>& col_ids, const thrust::device_vector<int>& row_ids);
+
+        thrust::device_vector<float> diagonal(cusparseHandle_t) const;
 
     private:
         template<typename COL_ITERATOR, typename ROW_ITERATOR, typename DATA_ITERATOR>
@@ -82,7 +85,7 @@ class dCSR {
 
 inline void coo_sorting(cusparseHandle_t handle, thrust::device_vector<int>& col_ids, thrust::device_vector<int>& row_ids)
 {
-    MEASURE_FUNCTION_EXECUTION_TIME;
+    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
     assert(row_ids.size() == col_ids.size());
     const size_t N = row_ids.size();
 
@@ -107,7 +110,7 @@ inline void coo_sorting(cusparseHandle_t handle, thrust::device_vector<int>& col
 
 inline void coo_sorting(cusparseHandle_t handle, thrust::device_vector<int>& col_ids, thrust::device_vector<int>& row_ids, thrust::device_vector<float>& data)
 {
-    MEASURE_FUNCTION_EXECUTION_TIME;
+    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
     assert(row_ids.size() == col_ids.size());
     assert(row_ids.size() == data.size());
     const size_t N = row_ids.size();
@@ -192,4 +195,5 @@ void dCSR::init(cusparseHandle_t handle,
 
 
 
-dCSR multiply(cusparseHandle_t handle, const dCSR& A, const dCSR& B);
+dCSR multiply(cusparseHandle_t handle, dCSR& A, dCSR& B);
+thrust::device_vector<float> multiply(cusparseHandle_t handle, const dCSR& A, const thrust::device_vector<float>& x);

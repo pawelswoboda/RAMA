@@ -269,7 +269,7 @@ void computeCC(const int nodes, const int edges, const int* const __restrict__ n
   if ((deviceProp.major == 9999) && (deviceProp.minor == 9999)) {fprintf(stderr, "ERROR: there is no CUDA capable device\n\n");  exit(-1);}
   const int SMs = deviceProp.multiProcessorCount;
   const int mTSM = deviceProp.maxThreadsPerMultiProcessor;
-  printf("gpu: %s with %d SMs and %d mTpSM (%.1f MHz and %.1f MHz)\n", deviceProp.name, SMs, mTSM, deviceProp.clockRate * 0.001, deviceProp.memoryClockRate * 0.001);
+  //printf("gpu: %s with %d SMs and %d mTpSM (%.1f MHz and %.1f MHz)\n", deviceProp.name, SMs, mTSM, deviceProp.clockRate * 0.001, deviceProp.memoryClockRate * 0.001);
 
   int* nidx_d;
   int* nlist_d;
@@ -300,9 +300,9 @@ void computeCC(const int nodes, const int edges, const int* const __restrict__ n
   flatten<<<blocks, ThreadsPerBlock>>>(nodes, nidx_d, nlist_d, nstat_d);
   double runtime = timer.stop();
 
-  printf("compute time: %.4f s\n", runtime);
-  printf("throughput: %.3f Mnodes/s\n", nodes * 0.000001 / runtime);
-  printf("throughput: %.3f Medges/s\n", edges * 0.000001 / runtime);
+  //printf("compute time: %.4f s\n", runtime);
+  //printf("throughput: %.3f Mnodes/s\n", nodes * 0.000001 / runtime);
+  //printf("throughput: %.3f Medges/s\n", edges * 0.000001 / runtime);
 
   if (cudaSuccess != cudaMemcpy(nstat, nstat_d, nodes * sizeof(int), cudaMemcpyDeviceToHost)) {fprintf(stderr, "ERROR: copying from device failed\n\n");  exit(-1);}
 
@@ -320,7 +320,7 @@ void computeCC_gpu(const int num_rows, const int nnz, const int* const d_row_off
   if ((deviceProp.major == 9999) && (deviceProp.minor == 9999)) {fprintf(stderr, "ERROR: there is no CUDA capable device\n\n");  exit(-1);}
   const int SMs = deviceProp.multiProcessorCount;
   const int mTSM = deviceProp.maxThreadsPerMultiProcessor;
-  printf("gpu: %s with %d SMs and %d mTpSM (%.1f MHz and %.1f MHz)\n", deviceProp.name, SMs, mTSM, deviceProp.clockRate * 0.001, deviceProp.memoryClockRate * 0.001);
+  //printf("gpu: %s with %d SMs and %d mTpSM (%.1f MHz and %.1f MHz)\n", deviceProp.name, SMs, mTSM, deviceProp.clockRate * 0.001, deviceProp.memoryClockRate * 0.001);
 
   int* wl_d;
 
@@ -342,9 +342,9 @@ void computeCC_gpu(const int num_rows, const int nnz, const int* const d_row_off
   flatten<<<blocks, ThreadsPerBlock>>>(num_rows, d_row_offsets, d_col_ids, d_node_stat_out);
   double runtime = timer.stop();
 
-  printf("compute time: %.4f s\n", runtime);
-  printf("throughput: %.3f Mnodes/s\n", num_rows * 0.000001 / runtime);
-  printf("throughput: %.3f Medges/s\n", nnz * 0.000001 / runtime);
+  //printf("compute time: %.4f s\n", runtime);
+  //printf("throughput: %.3f Mnodes/s\n", num_rows * 0.000001 / runtime);
+  //printf("throughput: %.3f Medges/s\n", nnz * 0.000001 / runtime);
 
   cudaFree(wl_d);
 }

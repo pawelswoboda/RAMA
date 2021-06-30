@@ -1,4 +1,5 @@
 #include "icp.h"
+#include <thrust/host_vector.h>
 
 int main(int argc, char** argv)
 {
