@@ -16,9 +16,9 @@ void dCSR::print() const
             std::cout << i << ", " << col_ids[l] << ", " << data[l] << "\n"; 
 }
 
-dCSR dCSR::transpose(cusparseHandle_t handle)
+dCSR dCSR::transpose(cusparseHandle_t handle) const
 {
-    MEASURE_FUNCTION_EXECUTION_TIME
+    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
     dCSR t;
     t.cols_ = rows();
     t.rows_ = cols();
@@ -65,7 +65,7 @@ struct non_zero_indicator_func
 
 void dCSR::compress(cusparseHandle_t handle, const float tol)
 {
-    MEASURE_FUNCTION_EXECUTION_TIME
+    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
     thrust::device_vector<int> _row_ids = row_ids(handle);
     
     auto first = thrust::make_zip_iterator(thrust::make_tuple(col_ids.begin(), _row_ids.begin(), data.begin()));
@@ -113,7 +113,7 @@ struct is_positive
 
 dCSR dCSR::keep_top_k_positive_values(cusparseHandle_t handle, const int top_k)
 {
-    MEASURE_FUNCTION_EXECUTION_TIME
+    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
     // Create copy of self:
     dCSR p;
     p.rows_ = rows();
@@ -229,7 +229,7 @@ dCSR multiply_slow(cusparseHandle_t handle, dCSR& A, dCSR& B)
 
 dCSR multiply(cusparseHandle_t handle, dCSR& A, dCSR& B)
 {
-    MEASURE_FUNCTION_EXECUTION_TIME
+    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
     assert(A.cols() == B.rows());
     float duration;
     dCSR C;
@@ -343,7 +343,13 @@ dCSR multiply(cusparseHandle_t handle, dCSR& A, dCSR& B)
     return C;
 }
 
-std::tuple<thrust::device_vector<int>, const thrust::device_vector<int>&, const thrust::device_vector<float>&> dCSR::export_coo(cusparseHandle_t handle)
+thrust::device_vector<float> multiply(cusparseHandle_t handle, const dCSR& A, const thrust::device_vector<float>& x)
+{
+    throw std::runtime_error("not implemented yet"); 
+    return thrust::device_vector<float>(0);
+}
+
+std::tuple<thrust::device_vector<int>, const thrust::device_vector<int>&, const thrust::device_vector<float>&> dCSR::export_coo(cusparseHandle_t handle) const
 {
     thrust::device_vector<int> row_ids(nnz());
 
@@ -378,6 +384,34 @@ void dCSR::set_diagonal_to_zero(cusparseHandle_t handle)
      auto end = thrust::make_zip_iterator(thrust::make_tuple(col_ids.end(), _row_ids.end(), data.end()));
 
      thrust::for_each(thrust::device, begin, end, diag_to_zero_func());
+}
+
+struct diag_func
+{
+    float* d;
+    __host__ __device__
+        void operator()(thrust::tuple<int,int,float> t)
+        {
+            if(thrust::get<0>(t) == thrust::get<1>(t))
+            {
+                assert(d[thrust::get<0>(t)] == 0.0);
+                d[thrust::get<0>(t)] = thrust::get<2>(t);
+            }
+        }
+};
+thrust::device_vector<float> dCSR::diagonal(cusparseHandle_t handle) const
+{
+    assert(cols() == rows());
+    thrust::device_vector<float> d(rows(), 0.0);
+
+    thrust::device_vector<int> _row_ids = row_ids(handle);
+
+    auto begin = thrust::make_zip_iterator(thrust::make_tuple(col_ids.begin(), _row_ids.begin(), data.begin()));
+    auto end = thrust::make_zip_iterator(thrust::make_tuple(col_ids.end(), _row_ids.end(), data.end()));
+
+    thrust::for_each(begin, end, diag_func({thrust::raw_pointer_cast(d.data())})); 
+
+    return d;
 }
 
 float dCSR::sum()
