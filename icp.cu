@@ -3,8 +3,9 @@
 #include <thrust/reduce.h>
 #include <stdio.h>
 #include "time_measure_util.h"
+#include "utils.h"
 
-static const float tol = 1e-3;
+static const float tol = 1e-8;
 
 // https://stackoverflow.com/questions/62091548/atomiccas-for-bool-implementation
 static __inline__ __device__ bool atomicCAS(bool *address, bool compare, bool val)
@@ -79,7 +80,8 @@ __device__ void propagate(const int itr, const int edge, const int src_v, const 
 
     if (src_seed_edge == v_seed_edge[dst_v]) // winner thread continues onward, 
     {
-        e_valid_seeds[dst_seed_edge] = false; // Overridden by a higher priority path. 
+        if (dst_seed_edge >= 0)
+            e_valid_seeds[dst_seed_edge] = false; // Overridden by a higher priority path. 
         v_parent_edge[dst_v] = edge;
         v_dist[dst_v] = itr + 1;
         *still_running = true;
@@ -227,6 +229,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
     int threadCount = 256;
     int blockCount = ceil(num_edges / (float) threadCount);
     int l = 3;
+    std::cout<<"Initial lb: "<<get_lb(costs_reparam)<<std::endl;
 
     int try_idx = 0;
     while(l <= max_cycle_length)
@@ -286,8 +289,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
                                             thrust::raw_pointer_cast(num_cycles_packed.data()));
 
         thrust::transform(e_used.begin(), e_used.end(), e_valid_seeds.begin(), e_used.begin(), thrust::maximum<bool>());
-        std::cout<<"cycle length: "<<l<<", cumulative # used -ive edges: "<<thrust::reduce(e_used.begin(), e_used.end(), 0)<<" cumulative # cycles packed: "<<num_cycles_packed[0]<<std::endl;
-
+        std::cout<<"cycle length: "<<l<<", lb: "<<get_lb(costs_reparam)<<", cumulative # used -ive edges: "<<thrust::reduce(e_used.begin(), e_used.end(), 0)<<" cumulative # cycles packed: "<<num_cycles_packed[0]<<std::endl;
     }
 
     return {row_ids, col_ids, costs_reparam};

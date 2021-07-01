@@ -16,14 +16,14 @@ namespace {
 void checkCuSparseError(cusparseStatus_t status, std::string errorMsg)
 {
     if (status != CUSPARSE_STATUS_SUCCESS) {
-        std::cout << "CuSparse error: " << errorMsg; // << "status: "<< cusparseGetErrorString(status) << std::endl;
+        std::cout << "CuSparse error: " << errorMsg << ", status: "<< cusparseGetErrorString(status) << std::endl;
         throw std::exception();
     }
 }
 void checkCudaError(cudaError_t status, std::string errorMsg)
 {
     if (status != cudaSuccess) {
-        std::cout << "CUDA error: " << errorMsg; // << "status" <<cudaGetErrorString(status) << std::endl;
+        std::cout << "CUDA error: " << errorMsg << ", status" <<cudaGetErrorString(status) << std::endl;
         throw std::exception();
     }
 }
@@ -56,6 +56,7 @@ class dCSR {
         size_t nnz() const { return data.size(); }
 
         friend dCSR multiply(cusparseHandle_t handle, dCSR& A, dCSR& B);
+        friend dCSR multiply_slow(cusparseHandle_t handle, dCSR& A, dCSR& B);
         friend thrust::device_vector<float> multiply(cusparseHandle_t handle, const dCSR& A, const thrust::device_vector<float>& x);
 
         std::tuple<thrust::device_vector<int>, const thrust::device_vector<int>&, const thrust::device_vector<float>&> export_coo(cusparseHandle_t handle) const;
@@ -67,6 +68,13 @@ class dCSR {
         void print_info_of(const int i) const;
 
         static thrust::device_vector<int> compute_row_offsets(cusparseHandle_t handle, const int rows, const thrust::device_vector<int>& col_ids, const thrust::device_vector<int>& row_ids);
+        void normalize_rows();
+
+        const int* get_row_offsets_ptr() const { return thrust::raw_pointer_cast(row_offsets.data()); }
+        const int* get_col_ids_ptr() const { return thrust::raw_pointer_cast(col_ids.data()); }
+        const float* get_data_ptr() const { return thrust::raw_pointer_cast(data.data()); }
+        float* get_writeable_data_ptr() { return thrust::raw_pointer_cast(data.data()); }
+        const thrust::device_vector<float> get_data() const { return data; }
 
         thrust::device_vector<float> diagonal(cusparseHandle_t) const;
 
@@ -195,5 +203,6 @@ void dCSR::init(cusparseHandle_t handle,
 
 
 
-dCSR multiply(cusparseHandle_t handle, dCSR& A, dCSR& B);
+dCSR multiply(cusparseHandle_t handle, const dCSR& A, const dCSR& B);
+dCSR multiply_slow(cusparseHandle_t handle, const dCSR& A, const dCSR& B);
 thrust::device_vector<float> multiply(cusparseHandle_t handle, const dCSR& A, const thrust::device_vector<float>& x);

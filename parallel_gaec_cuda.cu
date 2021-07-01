@@ -7,36 +7,9 @@
 #include "external/ECL-CC/ECLgraph.h"
 #include <thrust/transform_scan.h>
 #include <thrust/transform.h>
-
-int get_cuda_device()
-{   
-    return 0; // Get first possible GPU. CUDA_VISIBLE_DEVICES automatically masks the rest of GPUs.
-}
-
-void print_gpu_memory_stats()
-{
-    size_t free, total;
-    cudaMemGetInfo(&free, &total);
-    std::cout<<"Total memory(MB): "<<total / (1024 * 1024)<<", Free(MB): "<<free / (1024 * 1024)<<std::endl;
-}
-
-std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<float>> to_undirected(const thrust::device_vector<int>& i, const thrust::device_vector<int>& j, const thrust::device_vector<float>& costs)
-{
-    assert(i.size() == j.size() && i.size() == costs.size());
-    const size_t nr_edges = i.size();
-    thrust::device_vector<int> col_ids_u(2*nr_edges);
-    thrust::device_vector<int> row_ids_u(2*nr_edges);
-    thrust::device_vector<float> costs_u(2*nr_edges);
-
-    thrust::copy(i.begin(), i.end(), col_ids_u.begin());
-    thrust::copy(j.begin(), j.end(), row_ids_u.begin());
-    thrust::copy(i.begin(), i.end(), row_ids_u.begin() + i.size());
-    thrust::copy(j.begin(), j.end(), col_ids_u.begin() + j.size());
-    thrust::copy(costs.begin(), costs.end(), costs_u.begin());
-    thrust::copy(costs.begin(), costs.end(), costs_u.begin() + costs.size());
-
-    return {col_ids_u, row_ids_u, costs_u};
-}
+#include "icp.h"
+#include "icp_small_cycles.h"
+#include "utils.h"
 
 thrust::device_vector<int> compress_label_sequence(const thrust::device_vector<int>& data)
 {
@@ -339,6 +312,17 @@ void print_obj_original(const std::vector<int>& h_node_mapping, const std::vecto
     std::cout<<"Cost w.r.t original objective: "<<obj<<std::endl;
 }
 
+struct combine_costs
+{
+    const float a;
+    combine_costs(float _a) : a(_a) {}
+
+    __host__ __device__
+        float operator()(const float& orig, const float& reparam) const { 
+            return a * orig + (1.0f - a) * reparam;
+        }
+};
+
 std::vector<int> parallel_gaec_cuda(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs)
 {
     const int cuda_device = get_cuda_device();
@@ -356,15 +340,18 @@ std::vector<int> parallel_gaec_cuda(const std::vector<int>& i, const std::vector
     thrust::device_vector<int> i_d_reparam;
     thrust::device_vector<int> j_d_reparam;
     thrust::device_vector<float> costs_d_reparam;
-    //std::tie(i_d_reparam, j_d_reparam, costs_d_reparam) = parallel_cycle_packing_cuda(i_d, j_d, costs_d, 7);
-    //TODO: 
-    // 1. How to use the costs?
-    // 2. Should zero edges be removed?
+
+    // std::tie(i_d_reparam, j_d_reparam, costs_d_reparam) = parallel_cycle_packing_cuda(i_d, j_d, costs_d, 5, 1000);
+    std::tie(i_d_reparam, j_d_reparam, costs_d_reparam) = parallel_small_cycle_packing_cuda(handle, i_d, j_d, costs_d, 1);
+
+    // To combine costs:
+    // thrust::transform(costs_d.begin(), costs_d.end(), costs_d_reparam.begin(), costs_d_reparam.begin(), combine_costs(0.5));
 
     thrust::device_vector<int> col_ids_u;
     thrust::device_vector<int> row_ids_u;
     thrust::device_vector<float> costs_u;
-    std::tie(col_ids_u, row_ids_u, costs_u) = to_undirected(i_d, j_d, costs_d);
+    std::tie(col_ids_u, row_ids_u, costs_u) = to_undirected(i_d_reparam, j_d_reparam, costs_d_reparam);
+    // std::tie(col_ids_u, row_ids_u, costs_u) = to_undirected(i_d, j_d, costs_d);
 
     dCSR A(handle, 
             col_ids_u.begin(), col_ids_u.end(),

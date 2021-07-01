@@ -42,12 +42,15 @@ add_library(ECL-CC_11 external/ECL-CC/ECL-CC_11.cu)
 target_include_directories(ECL-CC_11 INTERFACE external/ECL-CC)
 
 add_executable(cc_gpu_test cc_gpu_test.cu)
-target_link_libraries(cc_gpu_test ECL-CC_11)
+target_link_libraries(cc_gpu_test ECL-CC_11 dCSR)
 
 add_library(icp icp.cu)
 
+add_library(icp_small_cycles icp_small_cycles.cu)
+target_link_libraries(icp_small_cycles dCSR)
+
 add_library(parallel_gaec_cuda parallel_gaec_cuda.cu)
-target_link_libraries(parallel_gaec_cuda dCSR cusparse icp)
+target_link_libraries(parallel_gaec_cuda dCSR cusparse icp icp_small_cycles)
 
 add_executable(icp_test icp_test.cpp)
 target_link_libraries(icp_test icp)
