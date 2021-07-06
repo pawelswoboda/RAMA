@@ -26,6 +26,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(PYBIND11_CPP_STANDARD -std=c++17)
 set(PYBIND11_INSTALL ON CACHE BOOL "enable pybind11 bindings.")
 add_subdirectory(external/pybind11)
+add_subdirectory(external/parallel-graph-matching)
 
 add_library(multicut_text_parser multicut_text_parser.cpp)
 
@@ -46,8 +47,10 @@ target_link_libraries(cc_gpu_test ECL-CC_11)
 
 add_library(icp icp.cu)
 
+add_library(maximum_matching maximum_matching/maximum_matching.cu)
+
 add_library(parallel_gaec_cuda parallel_gaec_cuda.cu)
-target_link_libraries(parallel_gaec_cuda dCSR cusparse icp)
+target_link_libraries(parallel_gaec_cuda dCSR cusparse maximum_matching)
 
 add_executable(icp_test icp_test.cpp)
 target_link_libraries(icp_test icp)

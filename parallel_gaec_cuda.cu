@@ -7,6 +7,8 @@
 #include "external/ECL-CC/ECLgraph.h"
 #include <thrust/transform_scan.h>
 #include <thrust/transform.h>
+//#include "external/parallel-graph-matching/src/strongwrapper.hpp"
+#include "maximum_matching/maximum_matching.h"
 
 int get_cuda_device()
 {   
@@ -59,6 +61,99 @@ thrust::device_vector<int> compress_label_sequence(const thrust::device_vector<i
     return result;
 }
 
+struct cost_scaling_func {
+    const float scaling_factor;
+    __host__ __device__
+        inline int operator()(const float x)
+        {
+            return int(scaling_factor * x);
+        } 
+};
+
+struct remove_negative_edges_func {
+    __host__ __device__
+        inline int operator()(const thrust::tuple<int,int,float> e)
+        {
+            if(thrust::get<0>(e) == thrust::get<1>(e))
+                return true;
+            else if(thrust::get<2>(e) <= 0.0)
+                return true;
+            else
+                return false;
+        }
+};
+
+struct remove_reverse_edges_func {
+    __host__ __device__
+        inline int operator()(const thrust::tuple<int,int,float> e)
+        {
+            return thrust::get<0>(e) > thrust::get<1>(e);
+        }
+};
+
+std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> filter_edges_by_matching(cusparseHandle_t handle, thrust::device_vector<int> i, thrust::device_vector<int> j, thrust::device_vector<float> w)
+{
+    assert(i.size() == j.size());
+    assert(i.size() == w.size());
+    assert(*thrust::max_element(i.begin(), i.end()) == *thrust::max_element(i.begin(), i.end())); 
+
+    // remove negative edges
+    {
+        auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin(), w.begin()));
+        auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end(), w.end()));
+        auto new_last = thrust::remove_if(first, last, remove_negative_edges_func());
+        i.resize(std::distance(first, new_last));
+        j.resize(std::distance(first, new_last));
+        w.resize(std::distance(first, new_last)); 
+    }
+
+    // remove reverse edges
+    {
+    //    auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin(), w.begin()));
+    //    auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end(), w.end()));
+
+    //    auto new_last = thrust::remove_if(first, last, remove_reverse_edges_func());
+    //    i.resize(std::distance(first, new_last));
+    //    j.resize(std::distance(first, new_last));
+    //    w.resize(std::distance(first, new_last)); 
+    }
+
+    coo_sorting(handle,j,i,w);
+
+    /*
+    std::cout << "# edges for maximum matching: " << i.size() << "\n";
+    for(size_t c=0; c<i.size(); ++c)
+        std::cout << i[c] << " -> " << j[c] << "; " << w[c] << "\n";
+        */
+
+    // TODO: only needed for non-reverse copies of edges
+    const int num_nodes = std::max(*thrust::max_element(i.begin(), i.end()) + 1, *thrust::max_element(j.begin(), j.end()) + 1);
+    const int num_edges = i.size();
+
+    thrust::device_vector<int> w_scaled(w.size());
+
+    // TODO: put larger factor below
+    const float scaling_factor = 1024.0 / *thrust::max_element(w.begin(), w.end());
+
+    thrust::transform(w.begin(), w.end(), w_scaled.begin(), cost_scaling_func({scaling_factor}));
+
+    thrust::device_vector<int> i_matched, j_matched;
+    std::tie(i_matched, j_matched) = maximum_matching(
+            num_nodes, num_edges,
+            thrust::raw_pointer_cast(i.data()),
+            thrust::raw_pointer_cast(j.data()),
+            thrust::raw_pointer_cast(w_scaled.data()));
+
+    /*
+    std::cout << "edges to match:\n";
+    for(size_t c=0; c<i_matched.size(); ++c)
+        std::cout << i_matched[c] << " -> " << j_matched[c] << "\n";
+    std::cout << "\n";
+    */
+
+    return {i_matched, j_matched}; 
+}
+
 std::tuple<dCSR,thrust::device_vector<int>> edge_contraction_matrix_cuda(cusparseHandle_t handle, thrust::device_vector<int>& col_ids, thrust::device_vector<int>& row_ids, const int n)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
@@ -83,13 +178,13 @@ std::tuple<dCSR,thrust::device_vector<int>> edge_contraction_matrix_cuda(cuspars
     // construct contraction matrix
     thrust::device_vector<int> c_row_ids(n);
     thrust::sequence(c_row_ids.begin(), c_row_ids.end());
-    thrust::device_vector<int> c_col_ids = node_mapping;
+    //thrust::device_vector<int> c_col_ids = node_mapping;
 
-    assert(nr_ccs > *thrust::max_element(c_col_ids.begin(), c_col_ids.end()));
+    //assert(nr_ccs > *thrust::max_element(c_col_ids.begin(), c_col_ids.end()));
     assert(n > *thrust::max_element(c_row_ids.begin(), c_row_ids.end()));
 
     thrust::device_vector<int> ones(c_row_ids.size(), 1);
-    dCSR C(handle, n, nr_ccs, c_col_ids.begin(), c_col_ids.end(), c_row_ids.begin(), c_row_ids.end(), ones.begin(), ones.end());
+    dCSR C(handle, n, nr_ccs, node_mapping.begin(), node_mapping.end(), c_row_ids.begin(), c_row_ids.end(), ones.begin(), ones.end());
 
     return {C, node_mapping};
 }
@@ -188,6 +283,9 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> edges_to_cont
 
     std::tie(row_ids, col_ids, data) = A.export_coo(handle);
 
+    std::tie(col_ids, row_ids) = filter_edges_by_matching(handle, col_ids, row_ids, data);
+
+    /*
     auto first = thrust::make_zip_iterator(thrust::make_tuple(col_ids.begin(), row_ids.begin(), data.begin()));
     auto last = thrust::make_zip_iterator(thrust::make_tuple(col_ids.end(), row_ids.end(), data.end()));
 
@@ -196,6 +294,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> edges_to_cont
     col_ids.resize(nr_positive_edges);
     row_ids.resize(nr_positive_edges);
     data.resize(nr_positive_edges);
+
 
     const double smallest_edge_weight = *thrust::min_element(data.begin(), data.end());
     const double largest_edge_weight = *thrust::max_element(data.begin(), data.end());
@@ -206,6 +305,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> edges_to_cont
     const size_t nr_remaining_edges = std::distance(first, new_last);
     col_ids.resize(nr_remaining_edges);
     row_ids.resize(nr_remaining_edges);
+    */
 
     /*
     if(max_contractions < nr_positive_edges)
