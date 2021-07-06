@@ -8,7 +8,7 @@
 #include <thrust/transform_scan.h>
 #include <thrust/transform.h>
 #include "maximum_matching/maximum_matching.h"
-#include "maximum_matching/maximum_matching_edge_based.h"
+#include "maximum_matching/maximum_matching_vertex_based.h"
 #include "icp.h"
 #include "icp_small_cycles.h"
 
@@ -119,18 +119,16 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> filter_edges_
     thrust::device_vector<int> w_scaled(w.size());
 
     // TODO: put larger factor below
-    const float scaling_factor = 1048576 / *thrust::max_element(w.begin(), w.end());
+    const float scaling_factor = 1024 / *thrust::max_element(w.begin(), w.end());
 
     thrust::transform(w.begin(), w.end(), w_scaled.begin(), cost_scaling_func({scaling_factor}));
 
     thrust::device_vector<int> i_matched, j_matched;
-    // std::tie(i_matched, j_matched) = maximum_matching(
-    //         num_nodes, num_edges,
-    //         thrust::raw_pointer_cast(i.data()),
-    //         thrust::raw_pointer_cast(j.data()),
-    //         thrust::raw_pointer_cast(w_scaled.data()));
-
-    std::tie(i_matched, j_matched) = maximum_matching_edge_based(num_nodes, num_edges, i, j, w_scaled);
+    std::tie(i_matched, j_matched) = maximum_matching(
+            num_nodes, num_edges,
+            thrust::raw_pointer_cast(i.data()),
+            thrust::raw_pointer_cast(j.data()),
+            thrust::raw_pointer_cast(w_scaled.data()));
 
     return {i_matched, j_matched}; 
 }
@@ -328,6 +326,13 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> edges_to_cont
     return {col_ids, row_ids};
 }
 
+std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> edges_to_contract_by_maximum_matching_vertex_based(cusparseHandle_t handle, dCSR& A)
+{
+    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
+    MEASURE_FUNCTION_EXECUTION_TIME;
+    return filter_edges_by_matching_vertex_based(A);
+}
+
 dCSR contract(cusparseHandle_t handle, dCSR& A, dCSR& C)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
@@ -362,7 +367,8 @@ std::vector<int> parallel_gaec_cuda(dCSR& A)
         thrust::device_vector<int> contract_cols, contract_rows;
         if(try_edges_to_contract_by_maximum_matching)
         {
-            std::tie(contract_cols, contract_rows) = edges_to_contract_by_maximum_matching(handle, A);
+            // std::tie(contract_cols, contract_rows) = edges_to_contract_by_maximum_matching(handle, A);
+            std::tie(contract_cols, contract_rows) = edges_to_contract_by_maximum_matching_vertex_based(handle, A);
             if(contract_cols.size() < A.rows()*0.1)
             {
                 std::cout << "# edges to contract = " << contract_cols.size() << ", # vertices = " << A.rows() << "\n";
