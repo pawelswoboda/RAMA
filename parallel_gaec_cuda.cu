@@ -8,6 +8,7 @@
 #include <thrust/transform_scan.h>
 #include <thrust/transform.h>
 #include "maximum_matching/maximum_matching.h"
+#include "maximum_matching/maximum_matching_edge_based.h"
 #include "icp.h"
 #include "icp_small_cycles.h"
 
@@ -118,16 +119,18 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> filter_edges_
     thrust::device_vector<int> w_scaled(w.size());
 
     // TODO: put larger factor below
-    const float scaling_factor = 1024.0 / *thrust::max_element(w.begin(), w.end());
+    const float scaling_factor = 1048576 / *thrust::max_element(w.begin(), w.end());
 
     thrust::transform(w.begin(), w.end(), w_scaled.begin(), cost_scaling_func({scaling_factor}));
 
     thrust::device_vector<int> i_matched, j_matched;
-    std::tie(i_matched, j_matched) = maximum_matching(
-            num_nodes, num_edges,
-            thrust::raw_pointer_cast(i.data()),
-            thrust::raw_pointer_cast(j.data()),
-            thrust::raw_pointer_cast(w_scaled.data()));
+    // std::tie(i_matched, j_matched) = maximum_matching(
+    //         num_nodes, num_edges,
+    //         thrust::raw_pointer_cast(i.data()),
+    //         thrust::raw_pointer_cast(j.data()),
+    //         thrust::raw_pointer_cast(w_scaled.data()));
+
+    std::tie(i_matched, j_matched) = maximum_matching_edge_based(num_nodes, num_edges, i, j, w_scaled);
 
     return {i_matched, j_matched}; 
 }
@@ -305,7 +308,6 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> edges_to_cont
 std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> edges_to_contract_by_maximum_matching(cusparseHandle_t handle, dCSR& A)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
-    assert(retain_ratio < 1.0 && 0.0 < retain_ratio);
     thrust::device_vector<int> row_ids;
     thrust::device_vector<int> col_ids;
     thrust::device_vector<float> data;

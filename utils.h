@@ -16,6 +16,27 @@ static void print_gpu_memory_stats()
     std::cout<<"Total memory(MB): "<<total / (1024 * 1024)<<", Free(MB): "<<free / (1024 * 1024)<<std::endl;
 }
 
+template<typename ROW_ITERATOR, typename COL_ITERATOR>
+static std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> to_undirected(
+        ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
+        COL_ITERATOR col_id_begin, COL_ITERATOR col_id_end)
+{
+    assert(std::distance(row_id_begin, row_id_end) == std::distance(col_id_begin, col_id_end));
+
+    const size_t nr_edges = std::distance(row_id_begin, row_id_end);
+    thrust::device_vector<int> row_ids_u(2 * nr_edges);
+    thrust::device_vector<int> col_ids_u(2 * nr_edges);
+
+    thrust::copy(row_id_begin, row_id_end, row_ids_u.begin());
+    thrust::copy(row_id_begin, row_id_end, col_ids_u.begin() + nr_edges);
+
+    thrust::copy(col_id_begin, col_id_end, col_ids_u.begin());
+    thrust::copy(col_id_begin, col_id_end, row_ids_u.begin() + nr_edges);
+
+    return {row_ids_u, col_ids_u};
+}
+
+
 template<typename ROW_ITERATOR, typename COL_ITERATOR, typename DATA_ITERATOR>
 static std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<float>> to_undirected(
         ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
@@ -40,6 +61,12 @@ static std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust
     thrust::copy(data_begin, data_end, costs_u.begin() + nr_edges);
 
     return {row_ids_u, col_ids_u, costs_u};
+}
+
+static std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> to_undirected(const thrust::device_vector<int>& i, const thrust::device_vector<int>& j)
+{
+    assert(i.size() == j.size());
+    return to_undirected(i.begin(), i.end(), j.begin(), j.end());
 }
 
 static std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<float>> to_undirected(const thrust::device_vector<int>& i, const thrust::device_vector<int>& j, const thrust::device_vector<float>& costs)
