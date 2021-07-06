@@ -13,7 +13,7 @@ void dCSR::print() const
     std::cout << "dimension = " << rows() << "," << cols() << "\n";
     for(size_t i=0; i<rows(); ++i)
         for(size_t l=row_offsets[i]; l<row_offsets[i+1]; ++l)
-            std::cout << i << "," << col_ids[l] << "," << data[l] << "\n"; 
+            std::cout << i << ", " << col_ids[l] << ", " << data[l] << "\n"; 
 }
 
 dCSR dCSR::transpose(cusparseHandle_t handle) const
@@ -78,10 +78,11 @@ void dCSR::compress(cusparseHandle_t handle, const float tol)
     _row_ids.resize(nr_non_zeros);
     data.resize(nr_non_zeros);
 
-    coo_sorting(handle, col_ids, _row_ids, data);
+    // remove_if is stable so sorting should not be required.
+    // coo_sorting(handle, col_ids, _row_ids, data);
 
-    // now row indices are non-decreasing
-    assert(thrust::is_sorted(_row_ids.begin(), _row_ids.end()));
+    // // now row indices are non-decreasing
+    // assert(thrust::is_sorted(_row_ids.begin(), _row_ids.end()));
 
     cols_ = *thrust::max_element(col_ids.begin(), col_ids.end()) + 1;
     rows_ = _row_ids.back() + 1;
@@ -97,7 +98,7 @@ struct keep_geq
     keep_geq(T thresh): _thresh(thresh) {} 
    __host__ __device__ float operator()(const T &x) const
    {
-     return x > _thresh ? x : 0;
+     return x >= _thresh ? x : 0;
    }
 };
 
@@ -137,6 +138,93 @@ dCSR dCSR::keep_top_k_positive_values(cusparseHandle_t handle, const int top_k)
     p.compress(handle);
 
     return p;
+}
+
+dCSR multiply_slow(cusparseHandle_t handle, dCSR& A, dCSR& B)
+{
+    float alpha = 1.0;
+    MEASURE_FUNCTION_EXECUTION_TIME
+    assert(A.cols() == B.rows());
+    dCSR C;
+
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cusparseMatDescr_t desc;
+    cusparseCreateMatDescr(&desc);
+    cusparseSetMatType(desc, CUSPARSE_MATRIX_TYPE_GENERAL);
+    cusparseSetMatIndexBase(desc, CUSPARSE_INDEX_BASE_ZERO);
+
+    csrgemm2Info_t info = NULL;
+    cusparseCreateCsrgemm2Info(&info);
+
+    size_t buffer_size;
+    cusparseScsrgemm2_bufferSizeExt(handle, A.rows(), B.cols(), A.cols(), 
+                                &alpha,
+                                desc, A.nnz(), 
+                                thrust::raw_pointer_cast(A.row_offsets.data()), 
+                                thrust::raw_pointer_cast(A.col_ids.data()),
+                                desc, B.nnz(),
+                                thrust::raw_pointer_cast(B.row_offsets.data()), 
+                                thrust::raw_pointer_cast(B.col_ids.data()),
+                                NULL,
+                                desc, B.nnz(), 
+                                thrust::raw_pointer_cast(B.row_offsets.data()), 
+                                thrust::raw_pointer_cast(B.col_ids.data()),
+                                info, &buffer_size);
+    void* buffer = NULL;
+    cudaMalloc(&buffer, buffer_size);
+
+    // Allocate memory for C
+    C.rows_ = A.rows();
+    C.cols_ = B.cols();
+    C.row_offsets = thrust::device_vector<int>(A.rows()+1);
+    int nnzC;
+    int *nnzTotalDevHostPtr = &nnzC;
+    cusparseXcsrgemm2Nnz(handle, A.rows(), B.cols(), A.cols(),
+                        desc, A.nnz(),
+                        thrust::raw_pointer_cast(A.row_offsets.data()), 
+                        thrust::raw_pointer_cast(A.col_ids.data()),
+                        desc, B.nnz(), 
+                        thrust::raw_pointer_cast(B.row_offsets.data()), 
+                        thrust::raw_pointer_cast(B.col_ids.data()),
+                        desc, B.nnz(), 
+                        thrust::raw_pointer_cast(B.row_offsets.data()), 
+                        thrust::raw_pointer_cast(B.col_ids.data()),
+                        desc, 
+                        thrust::raw_pointer_cast(C.row_offsets.data()), 
+                        nnzTotalDevHostPtr,
+                        info, buffer);
+
+    C.col_ids = thrust::device_vector<int>(nnzC);
+    C.data = thrust::device_vector<float>(nnzC);
+
+    cusparseScsrgemm2(handle, A.rows(), B.cols(), A.cols(), &alpha,
+                            desc, A.nnz(), 
+                            thrust::raw_pointer_cast(A.data.data()), 
+                            thrust::raw_pointer_cast(A.row_offsets.data()), 
+                            thrust::raw_pointer_cast(A.col_ids.data()),
+                            desc, B.nnz(), 
+                            thrust::raw_pointer_cast(B.data.data()), 
+                            thrust::raw_pointer_cast(B.row_offsets.data()), 
+                            thrust::raw_pointer_cast(B.col_ids.data()),
+                            NULL,
+                            desc, B.nnz(), 
+                            thrust::raw_pointer_cast(B.data.data()), 
+                            thrust::raw_pointer_cast(B.row_offsets.data()), 
+                            thrust::raw_pointer_cast(B.col_ids.data()),
+                            desc, 
+                            thrust::raw_pointer_cast(C.data.data()), 
+                            thrust::raw_pointer_cast(C.row_offsets.data()), 
+                            thrust::raw_pointer_cast(C.col_ids.data()),
+                            info, buffer);
+
+    cusparseDestroyCsrgemm2Info(info);
+    cusparseDestroyMatDescr(desc);
+    cudaFree(buffer);
+
+    return C;
 }
 
 dCSR multiply(cusparseHandle_t handle, dCSR& A, dCSR& B)
@@ -359,3 +447,31 @@ void dCSR::print_info_of(const int i) const
         std::cout << i << "," << col_ids[l] << "," << data[l] << "\n"; 
 }
 
+__global__ void normalize_rows_cuda(const int num_rows, const int* const __restrict__ row_offsets, const int* const __restrict__ col_ids, float* __restrict__ data)
+{
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int num_threads = blockDim.x * gridDim.x;
+
+    for (int r = tid; r < num_rows; r += num_threads) 
+    {
+        float sum = 0.0;
+        for(int l = row_offsets[r]; l < row_offsets[r + 1]; ++l)
+            sum += data[l];
+
+        for(int l = row_offsets[r]; l < row_offsets[r + 1]; ++l)
+            data[l] /= sum;
+
+        __syncthreads();
+    }
+}
+
+void dCSR::normalize_rows()
+{
+    int threadCount = 256;
+    int blockCount = ceil(rows_ / (float) threadCount);
+
+    normalize_rows_cuda<<<blockCount, threadCount>>>(rows_, 
+        thrust::raw_pointer_cast(row_offsets.data()), 
+        thrust::raw_pointer_cast(col_ids.data()), 
+        thrust::raw_pointer_cast(data.data()));
+}

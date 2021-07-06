@@ -7,7 +7,6 @@
 #include "external/ECL-CC/ECLgraph.h"
 #include <thrust/transform_scan.h>
 #include <thrust/transform.h>
-//#include "external/parallel-graph-matching/src/strongwrapper.hpp"
 #include "maximum_matching/maximum_matching.h"
 
 int get_cuda_device()
@@ -439,6 +438,17 @@ void print_obj_original(const std::vector<int>& h_node_mapping, const std::vecto
     std::cout<<"Cost w.r.t original objective: "<<obj<<std::endl;
 }
 
+struct combine_costs
+{
+    const float a;
+    combine_costs(float _a) : a(_a) {}
+
+    __host__ __device__
+        float operator()(const float& orig, const float& reparam) const { 
+            return a * orig + (1.0f - a) * reparam;
+        }
+};
+
 std::vector<int> parallel_gaec_cuda(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs)
 {
     const int cuda_device = get_cuda_device();
@@ -456,15 +466,18 @@ std::vector<int> parallel_gaec_cuda(const std::vector<int>& i, const std::vector
     thrust::device_vector<int> i_d_reparam;
     thrust::device_vector<int> j_d_reparam;
     thrust::device_vector<float> costs_d_reparam;
-    //std::tie(i_d_reparam, j_d_reparam, costs_d_reparam) = parallel_cycle_packing_cuda(i_d, j_d, costs_d, 7);
-    //TODO: 
-    // 1. How to use the costs?
-    // 2. Should zero edges be removed?
+
+    // std::tie(i_d_reparam, j_d_reparam, costs_d_reparam) = parallel_cycle_packing_cuda(i_d, j_d, costs_d, 5, 1000);
+    std::tie(i_d_reparam, j_d_reparam, costs_d_reparam) = parallel_small_cycle_packing_cuda(handle, i_d, j_d, costs_d, 1);
+
+    // To combine costs:
+    // thrust::transform(costs_d.begin(), costs_d.end(), costs_d_reparam.begin(), costs_d_reparam.begin(), combine_costs(0.5));
 
     thrust::device_vector<int> col_ids_u;
     thrust::device_vector<int> row_ids_u;
     thrust::device_vector<float> costs_u;
-    std::tie(col_ids_u, row_ids_u, costs_u) = to_undirected(i_d, j_d, costs_d);
+    std::tie(col_ids_u, row_ids_u, costs_u) = to_undirected(i_d_reparam, j_d_reparam, costs_d_reparam);
+    // std::tie(col_ids_u, row_ids_u, costs_u) = to_undirected(i_d, j_d, costs_d);
 
     dCSR A(handle, 
             col_ids_u.begin(), col_ids_u.end(),

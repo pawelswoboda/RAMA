@@ -4,13 +4,7 @@
 
 int get_cuda_device()
 {
-    if(const char* cuda_env = std::getenv("CUDA_VISIBLE_DEVICES"))
-    {
-        std::cout << "Cuda device number to use = " << std::stoi(cuda_env) << "\n";
-        return std::stoi(cuda_env); 
-    }
-    else
-        return 0; 
+    return 0; 
 }
 
 void test_cc(const std::vector<int> row_offsets, const std::vector<int> col_ids, const int expected_nr_ccs)
