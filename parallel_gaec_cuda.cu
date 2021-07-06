@@ -8,6 +8,8 @@
 #include <thrust/transform_scan.h>
 #include <thrust/transform.h>
 #include "maximum_matching/maximum_matching.h"
+#include "icp.h"
+#include "icp_small_cycles.h"
 
 int get_cuda_device()
 {   
@@ -92,6 +94,8 @@ struct remove_reverse_edges_func {
 
 std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> filter_edges_by_matching(cusparseHandle_t handle, thrust::device_vector<int> i, thrust::device_vector<int> j, thrust::device_vector<float> w)
 {
+    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
+    MEASURE_FUNCTION_EXECUTION_TIME;
     assert(i.size() == j.size());
     assert(i.size() == w.size());
     assert(*thrust::max_element(i.begin(), i.end()) == *thrust::max_element(i.begin(), i.end())); 
@@ -106,27 +110,9 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> filter_edges_
         w.resize(std::distance(first, new_last)); 
     }
 
-    // remove reverse edges
-    {
-    //    auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin(), w.begin()));
-    //    auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end(), w.end()));
-
-    //    auto new_last = thrust::remove_if(first, last, remove_reverse_edges_func());
-    //    i.resize(std::distance(first, new_last));
-    //    j.resize(std::distance(first, new_last));
-    //    w.resize(std::distance(first, new_last)); 
-    }
-
     coo_sorting(handle,j,i,w);
 
-    /*
-    std::cout << "# edges for maximum matching: " << i.size() << "\n";
-    for(size_t c=0; c<i.size(); ++c)
-        std::cout << i[c] << " -> " << j[c] << "; " << w[c] << "\n";
-        */
-
-    // TODO: only needed for non-reverse copies of edges
-    const int num_nodes = std::max(*thrust::max_element(i.begin(), i.end()) + 1, *thrust::max_element(j.begin(), j.end()) + 1);
+    const int num_nodes = *thrust::max_element(i.begin(), i.end()) + 1;
     const int num_edges = i.size();
 
     thrust::device_vector<int> w_scaled(w.size());
@@ -142,13 +128,6 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> filter_edges_
             thrust::raw_pointer_cast(i.data()),
             thrust::raw_pointer_cast(j.data()),
             thrust::raw_pointer_cast(w_scaled.data()));
-
-    /*
-    std::cout << "edges to match:\n";
-    for(size_t c=0; c<i_matched.size(); ++c)
-        std::cout << i_matched[c] << " -> " << j_matched[c] << "\n";
-    std::cout << "\n";
-    */
 
     return {i_matched, j_matched}; 
 }
@@ -272,19 +251,14 @@ struct edge_comparator_func {
         } 
 };
 
-std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> edges_to_contract_cuda(cusparseHandle_t handle, dCSR& A, const float retain_ratio)
+std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> edges_to_contract_by_sorting(cusparseHandle_t handle, dCSR& A, const float retain_ratio)
 {
-    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
-    assert(retain_ratio < 1.0 && 0.0 < retain_ratio);
     thrust::device_vector<int> row_ids;
     thrust::device_vector<int> col_ids;
     thrust::device_vector<float> data;
 
     std::tie(row_ids, col_ids, data) = A.export_coo(handle);
 
-    std::tie(col_ids, row_ids) = filter_edges_by_matching(handle, col_ids, row_ids, data);
-
-    /*
     auto first = thrust::make_zip_iterator(thrust::make_tuple(col_ids.begin(), row_ids.begin(), data.begin()));
     auto last = thrust::make_zip_iterator(thrust::make_tuple(col_ids.end(), row_ids.end(), data.end()));
 
@@ -294,17 +268,14 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> edges_to_cont
     row_ids.resize(nr_positive_edges);
     data.resize(nr_positive_edges);
 
-
     const double smallest_edge_weight = *thrust::min_element(data.begin(), data.end());
     const double largest_edge_weight = *thrust::max_element(data.begin(), data.end());
-    std::cout << "contraction edges min/max: " << smallest_edge_weight << ", " << largest_edge_weight << "\n";
     const float mid_edge_weight = retain_ratio * largest_edge_weight;
 
     new_last = thrust::remove_if(first, last, negative_edge_indicator_func({mid_edge_weight}));
     const size_t nr_remaining_edges = std::distance(first, new_last);
     col_ids.resize(nr_remaining_edges);
     row_ids.resize(nr_remaining_edges);
-    */
 
     /*
     if(max_contractions < nr_positive_edges)
@@ -319,8 +290,29 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> edges_to_cont
     }
     */
 
-    //const double smallest_weight = *thrust::max_element(data.begin(), data.end());
-    //std::cout << "smallest edge weight: " << smallest_edge_weight
+    // add reverse edges
+    const int old_size = col_ids.size();
+    const int new_size = 2*col_ids.size();
+    col_ids.resize(new_size);
+    row_ids.resize(new_size);
+
+    thrust::copy(col_ids.begin(), col_ids.begin() + old_size, row_ids.begin() + old_size);
+    thrust::copy(row_ids.begin(), row_ids.begin() + old_size, col_ids.begin() + old_size);
+
+    return {col_ids, row_ids};
+}
+
+std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> edges_to_contract_by_maximum_matching(cusparseHandle_t handle, dCSR& A)
+{
+    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
+    assert(retain_ratio < 1.0 && 0.0 < retain_ratio);
+    thrust::device_vector<int> row_ids;
+    thrust::device_vector<int> col_ids;
+    thrust::device_vector<float> data;
+
+    std::tie(row_ids, col_ids, data) = A.export_coo(handle);
+
+    std::tie(col_ids, row_ids) = filter_edges_by_matching(handle, col_ids, row_ids, data);
 
     // add reverse edges
     const int old_size = col_ids.size();
@@ -359,12 +351,27 @@ std::vector<int> parallel_gaec_cuda(dCSR& A)
     double contract_ratio = 0.5;
     assert(A.rows() == A.cols());
 
+    bool try_edges_to_contract_by_maximum_matching = true;
+
     for(size_t iter=0;; ++iter)
     {
         //const size_t nr_edges_to_contract = std::max(size_t(1), size_t(A.rows() * contract_ratio));
 
         thrust::device_vector<int> contract_cols, contract_rows;
-        std::tie(contract_cols, contract_rows) = edges_to_contract_cuda(handle, A, contract_ratio);
+        if(try_edges_to_contract_by_maximum_matching)
+        {
+            std::tie(contract_cols, contract_rows) = edges_to_contract_by_maximum_matching(handle, A);
+            if(contract_cols.size() < A.rows()*0.1)
+            {
+                std::cout << "# edges to contract = " << contract_cols.size() << ", # vertices = " << A.rows() << "\n";
+                std::cout << "switching to sorting based contraction edge selection\n";
+                try_edges_to_contract_by_maximum_matching = false;    
+            }
+        }
+        if(!try_edges_to_contract_by_maximum_matching)
+            std::tie(contract_cols, contract_rows) = edges_to_contract_by_sorting(handle, A, contract_ratio);
+
+
         //std::cout << "iter " << iter << ", edge contraction ratio = " << contract_ratio << ", # edges to contract request " << nr_edges_to_contract << ", # nr edges to contract provided = " << contract_cols.size() << "\n";
 
         if(contract_cols.size() == 0)
@@ -389,7 +396,8 @@ std::vector<int> parallel_gaec_cuda(dCSR& A)
         //if(energy_reduction < 0.0)
         if(has_bad_contractions(handle, new_A))
         {
-            contract_ratio *= 2.0; 
+            if(!try_edges_to_contract_by_maximum_matching)
+                contract_ratio *= 2.0; 
             //contract_ratio = std::max(contract_ratio, 0.005);
             // get contraction edges of the components which
             thrust::device_vector<int> good_contract_cols, good_contract_rows;
@@ -402,8 +410,11 @@ std::vector<int> parallel_gaec_cuda(dCSR& A)
         }
         else
         {
-            contract_ratio *= 0.5;//1.3;
-            contract_ratio = std::min(contract_ratio, 0.35);
+            if(!try_edges_to_contract_by_maximum_matching)
+            {
+                contract_ratio *= 0.5;//1.3;
+                contract_ratio = std::min(contract_ratio, 0.35);
+            }
         }
 
         thrust::swap(A,new_A);
