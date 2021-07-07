@@ -300,7 +300,7 @@ std::tuple<dCSR, thrust::device_vector<int>, thrust::device_vector<int>, thrust:
 }
 
 // row_ids, col_ids, values should be directed thus containing same number of elements as in original problem.
-std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<float>> parallel_small_cycle_packing_cuda(cusparseHandle_t handle, 
+std::tuple<double, dCSR> parallel_small_cycle_packing_cuda(cusparseHandle_t handle, 
     const thrust::device_vector<int>& row_ids, const thrust::device_vector<int>& col_ids, const thrust::device_vector<float>& costs, const int max_tries)
 {
     MEASURE_FUNCTION_EXECUTION_TIME;
@@ -322,11 +322,10 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
                     row_ids.begin(), row_ids.end(), 
                     costs.begin(), costs.end());
     
-    const thrust::device_vector<float> orig_costs = A_dir.get_data();
-
     int threadCount = 256;
     int blockCount = ceil(num_rep_edges / (float) threadCount);
-    std::cout<<"Initial lb: "<<get_lb(A_dir.get_data())<<std::endl;
+    double lb = get_lb(A_dir.get_data());
+    std::cout<<"Initial lb: "<<lb<<std::endl;
 
     for (int t = 0; t < max_tries; t++)
     {
@@ -340,7 +339,8 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
             A_dir.get_writeable_data_ptr(),
             nr_positive_edges);
         
-        std::cout<<"packing triangles, itr: "<<t<<", lb: "<<get_lb(A_dir.get_data())<<std::endl;
+        lb = get_lb(A_dir.get_data());
+        std::cout<<"packing triangles, itr: "<<t<<", lb: "<<lb<<std::endl;
     }
     for (int t = 0; t < max_tries; t++)
     {
@@ -354,8 +354,42 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
             A_dir.get_writeable_data_ptr(),
             nr_positive_edges);
         
-        std::cout<<"packing quadrangles, itr: "<<t<<", lb: "<<get_lb(A_dir.get_data())<<std::endl;
+        lb = get_lb(A_dir.get_data());
+        std::cout<<"packing quadrangles, itr: "<<t<<", lb: "<<lb<<std::endl;
     }
 
-    return A_dir.export_coo(handle);
+    return {lb, A_dir};
+}
+
+double compute_lower_bound(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs, const int max_tries)
+{
+    const int cuda_device = get_cuda_device();
+    cudaSetDevice(cuda_device);
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, cuda_device);
+    std::cout << "Going to use " << prop.name << " " << prop.major << "." << prop.minor << ", device number " << cuda_device << "\n";
+    cusparseHandle_t handle;
+    checkCuSparseError(cusparseCreate(&handle), "cusparse init failed");
+    
+    const thrust::device_vector<int> i_d = i;
+    const thrust::device_vector<int> j_d = j;
+    const thrust::device_vector<float> costs_d = costs;
+
+    double lb;
+    dCSR A_new;
+
+    std::tie(lb, A_new) = parallel_small_cycle_packing_cuda(handle, i_d, j_d, costs_d, max_tries);
+
+    return lb;
+}
+
+std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<float>> parallel_small_cycle_packing_costs(cusparseHandle_t handle, 
+                    const thrust::device_vector<int>& row_ids, const thrust::device_vector<int>& col_ids, const thrust::device_vector<float>& costs, const int max_tries)
+{
+    double lb;
+    dCSR A_new;
+
+    std::tie(lb, A_new) = parallel_small_cycle_packing_cuda(handle, row_ids, col_ids, costs, max_tries);
+
+    return A_new.export_coo(handle);
 }

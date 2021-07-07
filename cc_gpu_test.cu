@@ -1,11 +1,6 @@
 #include <ECLgraph.h>
-#include "dCSR.h"
+#include "utils.h"
 #include <set>
-
-int get_cuda_device()
-{
-    return 0; 
-}
 
 void test_cc(const std::vector<int> row_offsets, const std::vector<int> col_ids, const int expected_nr_ccs)
 {

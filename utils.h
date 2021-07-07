@@ -1,23 +1,42 @@
 #pragma once
 
 #include <cuda_runtime.h>
+#include <cusparse.h>
 #include <thrust/copy.h>
 #include <thrust/device_vector.h>
 
-static int get_cuda_device()
+namespace {
+
+int get_cuda_device()
 {   
     return 0; // Get first possible GPU. CUDA_VISIBLE_DEVICES automatically masks the rest of GPUs.
 }
 
-static void print_gpu_memory_stats()
+void print_gpu_memory_stats()
 {
     size_t free, total;
     cudaMemGetInfo(&free, &total);
     std::cout<<"Total memory(MB): "<<total / (1024 * 1024)<<", Free(MB): "<<free / (1024 * 1024)<<std::endl;
 }
 
+void checkCuSparseError(cusparseStatus_t status, std::string errorMsg)
+{
+    if (status != CUSPARSE_STATUS_SUCCESS) {
+        std::cout << "CuSparse error: " << errorMsg << ", status: "<< cusparseGetErrorString(status) << std::endl;
+        throw std::exception();
+    }
+}
+
+void checkCudaError(cudaError_t status, std::string errorMsg)
+{
+    if (status != cudaSuccess) {
+        std::cout << "CUDA error: " << errorMsg << ", status" <<cudaGetErrorString(status) << std::endl;
+        throw std::exception();
+    }
+}
+
 template<typename ROW_ITERATOR, typename COL_ITERATOR>
-static std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> to_undirected(
+std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> to_undirected(
         ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
         COL_ITERATOR col_id_begin, COL_ITERATOR col_id_end)
 {
@@ -38,7 +57,7 @@ static std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> to_und
 
 
 template<typename ROW_ITERATOR, typename COL_ITERATOR, typename DATA_ITERATOR>
-static std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<float>> to_undirected(
+std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<float>> to_undirected(
         ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
         COL_ITERATOR col_id_begin, COL_ITERATOR col_id_end,
         DATA_ITERATOR data_begin, DATA_ITERATOR data_end)
@@ -63,13 +82,13 @@ static std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust
     return {row_ids_u, col_ids_u, costs_u};
 }
 
-static std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> to_undirected(const thrust::device_vector<int>& i, const thrust::device_vector<int>& j)
+std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> to_undirected(const thrust::device_vector<int>& i, const thrust::device_vector<int>& j)
 {
     assert(i.size() == j.size());
     return to_undirected(i.begin(), i.end(), j.begin(), j.end());
 }
 
-static std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<float>> to_undirected(const thrust::device_vector<int>& i, const thrust::device_vector<int>& j, const thrust::device_vector<float>& costs)
+std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<float>> to_undirected(const thrust::device_vector<int>& i, const thrust::device_vector<int>& j, const thrust::device_vector<float>& costs)
 {
     assert(i.size() == j.size() && i.size() == costs.size());
     return to_undirected(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end());
@@ -83,7 +102,9 @@ struct compute_lb
     }
 };
 
-static double get_lb(const thrust::device_vector<float>& costs)
+double get_lb(const thrust::device_vector<float>& costs)
 {
     return thrust::transform_reduce(costs.begin(), costs.end(), compute_lb(), 0.0, thrust::plus<double>());
+}
+
 }

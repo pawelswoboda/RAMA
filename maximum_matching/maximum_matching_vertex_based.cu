@@ -114,13 +114,11 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> filter_edges_
     auto last_m = thrust::make_zip_iterator(thrust::make_tuple(matched_rows.end(), v_best_neighbours.end(), v_matched.end()));
     auto matched_last = thrust::remove_if(first_m, last_m, is_unmatched());
     const int nr_matched_edges = std::distance(first_m, matched_last);
-    matched_rows.resize(std::distance(first_m, matched_last));
-    v_best_neighbours.resize(std::distance(first_m, matched_last));
-
-    //TODO: Iterate and find more edges?
+    matched_rows.resize(nr_matched_edges);
+    v_best_neighbours.resize(nr_matched_edges);
 
     std::cout << "# vertices = " << A.rows() << "\n";
-    std::cout << "matched = " << nr_matched_edges << " / "<< A.nnz() / 2 << "\n";
+    std::cout << "# matched edges = " << nr_matched_edges << " / "<< A.nnz() << "\n";
     
     // thrust::copy(matched_rows.begin(), matched_rows.end(), std::ostream_iterator<int>(std::cout, " "));
     // std::cout<<"\n";

@@ -10,24 +10,7 @@
 #include <thrust/generate.h>
 #include <cusparse.h>
 #include "time_measure_util.h"
-
-namespace {
-
-void checkCuSparseError(cusparseStatus_t status, std::string errorMsg)
-{
-    if (status != CUSPARSE_STATUS_SUCCESS) {
-        std::cout << "CuSparse error: " << errorMsg << ", status: "<< cusparseGetErrorString(status) << std::endl;
-        throw std::exception();
-    }
-}
-void checkCudaError(cudaError_t status, std::string errorMsg)
-{
-    if (status != cudaSuccess) {
-        std::cout << "CUDA error: " << errorMsg << ", status" <<cudaGetErrorString(status) << std::endl;
-        throw std::exception();
-    }
-}
-}
+#include "utils.h"
 
 class dCSR {
     public:

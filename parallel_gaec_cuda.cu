@@ -9,38 +9,8 @@
 #include <thrust/transform.h>
 #include "maximum_matching/maximum_matching.h"
 #include "maximum_matching/maximum_matching_vertex_based.h"
-#include "icp.h"
 #include "icp_small_cycles.h"
-
-int get_cuda_device()
-{   
-    return 0; // Get first possible GPU. CUDA_VISIBLE_DEVICES automatically masks the rest of GPUs.
-}
-
-void print_gpu_memory_stats()
-{
-    size_t free, total;
-    cudaMemGetInfo(&free, &total);
-    std::cout<<"Total memory(MB): "<<total / (1024 * 1024)<<", Free(MB): "<<free / (1024 * 1024)<<std::endl;
-}
-
-std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<float>> to_undirected(const thrust::device_vector<int>& i, const thrust::device_vector<int>& j, const thrust::device_vector<float>& costs)
-{
-    assert(i.size() == j.size() && i.size() == costs.size());
-    const size_t nr_edges = i.size();
-    thrust::device_vector<int> col_ids_u(2*nr_edges);
-    thrust::device_vector<int> row_ids_u(2*nr_edges);
-    thrust::device_vector<float> costs_u(2*nr_edges);
-
-    thrust::copy(i.begin(), i.end(), col_ids_u.begin());
-    thrust::copy(j.begin(), j.end(), row_ids_u.begin());
-    thrust::copy(i.begin(), i.end(), row_ids_u.begin() + i.size());
-    thrust::copy(j.begin(), j.end(), col_ids_u.begin() + j.size());
-    thrust::copy(costs.begin(), costs.end(), costs_u.begin());
-    thrust::copy(costs.begin(), costs.end(), costs_u.begin() + costs.size());
-
-    return {col_ids_u, row_ids_u, costs_u};
-}
+#include "utils.h"
 
 thrust::device_vector<int> compress_label_sequence(const thrust::device_vector<int>& data)
 {
@@ -119,7 +89,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> filter_edges_
     thrust::device_vector<int> w_scaled(w.size());
 
     // TODO: put larger factor below
-    const float scaling_factor = 1024 / *thrust::max_element(w.begin(), w.end());
+    const float scaling_factor = 1024.0 / *thrust::max_element(w.begin(), w.end());
 
     thrust::transform(w.begin(), w.end(), w_scaled.begin(), cost_scaling_func({scaling_factor}));
 
@@ -486,8 +456,7 @@ std::vector<int> parallel_gaec_cuda(const std::vector<int>& i, const std::vector
     thrust::device_vector<int> j_d_reparam;
     thrust::device_vector<float> costs_d_reparam;
 
-    // std::tie(i_d_reparam, j_d_reparam, costs_d_reparam) = parallel_cycle_packing_cuda(i_d, j_d, costs_d, 5, 1000);
-    std::tie(i_d_reparam, j_d_reparam, costs_d_reparam) = parallel_small_cycle_packing_cuda(handle, i_d, j_d, costs_d, 1);
+    std::tie(i_d_reparam, j_d_reparam, costs_d_reparam) = parallel_small_cycle_packing_costs(handle, i_d, j_d, costs_d, 1);
 
     // To combine costs:
     // thrust::transform(costs_d.begin(), costs_d.end(), costs_d_reparam.begin(), costs_d_reparam.begin(), combine_costs(0.5));
