@@ -11,24 +11,6 @@
 #include <cusparse.h>
 #include "time_measure_util.h"
 
-namespace {
-
-void checkCuSparseError(cusparseStatus_t status, std::string errorMsg)
-{
-    if (status != CUSPARSE_STATUS_SUCCESS) {
-        std::cout << "CuSparse error: " << errorMsg << ", status: "<< cusparseGetErrorString(status) << std::endl;
-        throw std::exception();
-    }
-}
-void checkCudaError(cudaError_t status, std::string errorMsg)
-{
-    if (status != cudaSuccess) {
-        std::cout << "CUDA error: " << errorMsg << ", status" <<cudaGetErrorString(status) << std::endl;
-        throw std::exception();
-    }
-}
-}
-
 class dCSR {
     public:
         dCSR() {}
@@ -74,6 +56,9 @@ class dCSR {
         const int* get_col_ids_ptr() const { return thrust::raw_pointer_cast(col_ids.data()); }
         const float* get_data_ptr() const { return thrust::raw_pointer_cast(data.data()); }
         float* get_writeable_data_ptr() { return thrust::raw_pointer_cast(data.data()); }
+
+        const thrust::device_vector<int> get_row_offsets() const { return row_offsets; }
+        const thrust::device_vector<int> get_col_ids() const { return col_ids; }
         const thrust::device_vector<float> get_data() const { return data; }
 
         thrust::device_vector<float> diagonal(cusparseHandle_t) const;

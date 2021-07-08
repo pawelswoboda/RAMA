@@ -5,6 +5,7 @@
 #include <thrust/iterator/zip_iterator.h>
 #include <ECLgraph.h>
 #include "time_measure_util.h"
+#include "utils.h"
 
 void dCSR::print() const
 {
