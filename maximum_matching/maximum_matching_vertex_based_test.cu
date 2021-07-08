@@ -1,5 +1,6 @@
 #include "maximum_matching_vertex_based.h"
 #include "../dCSR.h"
+#include "../utils.h"
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
 #include <cusparse.h>

@@ -49,6 +49,7 @@ target_link_libraries(icp_small_cycles dCSR cusparse)
 
 add_library(maximum_matching maximum_matching/maximum_matching.cu)
 add_library(maximum_matching_vertex_based maximum_matching/maximum_matching_vertex_based.cu)
+target_link_libraries(maximum_matching_vertex_based cusparse)
 
 add_library(parallel_gaec_cuda parallel_gaec_cuda.cu)
 target_link_libraries(parallel_gaec_cuda dCSR cusparse icp_small_cycles maximum_matching maximum_matching_vertex_based)

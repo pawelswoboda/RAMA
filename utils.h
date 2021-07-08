@@ -107,4 +107,28 @@ double get_lb(const thrust::device_vector<float>& costs)
     return thrust::transform_reduce(costs.begin(), costs.end(), compute_lb(), 0.0, thrust::plus<double>());
 }
 
+struct remove_reverse_edges_func {
+    __host__ __device__
+        inline int operator()(const thrust::tuple<int,int,float> e)
+        {
+            return thrust::get<0>(e) > thrust::get<1>(e);
+        }
+};
+
+std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<float>> to_directed(const thrust::device_vector<int>& i_symm, const thrust::device_vector<int>& j_symm, const thrust::device_vector<float>& costs_symm)
+{
+    assert(i_symm.size() == j_symm.size() && i_symm.size() == costs_symm.size());
+    thrust::device_vector<int> i = i_symm;
+    thrust::device_vector<int> j = j_symm;
+    thrust::device_vector<float> costs = costs_symm;
+    auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin(), costs.begin()));
+    auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end(), costs.end()));
+    auto new_last = thrust::remove_if(first, last, remove_reverse_edges_func());
+    i.resize(std::distance(first, new_last));
+    j.resize(std::distance(first, new_last));
+    costs.resize(std::distance(first, new_last)); 
+
+    return {i, j, costs};
+}
+
 }

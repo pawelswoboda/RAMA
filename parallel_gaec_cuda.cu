@@ -55,14 +55,6 @@ struct remove_negative_edges_func {
         }
 };
 
-struct remove_reverse_edges_func {
-    __host__ __device__
-        inline int operator()(const thrust::tuple<int,int,float> e)
-        {
-            return thrust::get<0>(e) > thrust::get<1>(e);
-        }
-};
-
 std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> filter_edges_by_matching(cusparseHandle_t handle, thrust::device_vector<int> i, thrust::device_vector<int> j, thrust::device_vector<float> w)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
@@ -193,6 +185,9 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> good_contract
     auto last = thrust::make_zip_iterator(thrust::make_tuple(good_contract_cols.end(), good_contract_rows.end()));
     auto new_last = thrust::remove_if(first, last, func);
     const int nr_good_edges = thrust::distance(first, new_last);
+    if (nr_good_edges == 0)
+        return {thrust::device_vector<int> (0), thrust::device_vector<int> (0)};
+
     good_contract_cols.resize(nr_good_edges);
     good_contract_rows.resize(nr_good_edges);
 
@@ -314,6 +309,23 @@ dCSR contract(cusparseHandle_t handle, dCSR& A, dCSR& C)
     return new_A;
 }
 
+dCSR pack_cycles(cusparseHandle_t handle, const dCSR& A_symm, const int max_tries)
+{
+    thrust::device_vector<int> i_symm, j_symm;
+    thrust::device_vector<float> costs_symm;
+    std::tie(i_symm, j_symm, costs_symm) = A_symm.export_coo(handle);
+
+    thrust::device_vector<int> i_d, j_d;
+    thrust::device_vector<float> costs_d;
+    std::tie(i_d, j_d, costs_d) = to_directed(i_symm, j_symm, costs_symm);
+
+    std::tie(i_d, j_d, costs_d) = parallel_small_cycle_packing_costs(handle, i_d, j_d, costs_d, max_tries);
+
+    std::tie(i_symm, j_symm, costs_symm) = to_undirected(i_d, j_d, costs_d);
+
+    return dCSR(handle, i_symm.begin(), i_symm.end(), j_symm.begin(), j_symm.end(), costs_symm.begin(), costs_symm.end());
+}
+
 std::vector<int> parallel_gaec_cuda(dCSR& A)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
@@ -333,6 +345,8 @@ std::vector<int> parallel_gaec_cuda(dCSR& A)
     for(size_t iter=0;; ++iter)
     {
         //const size_t nr_edges_to_contract = std::max(size_t(1), size_t(A.rows() * contract_ratio));
+        // if (iter > 0)
+        //     A = pack_cycles(handle, A, 1);
 
         thrust::device_vector<int> contract_cols, contract_rows;
         if(try_edges_to_contract_by_maximum_matching)
@@ -380,6 +394,9 @@ std::vector<int> parallel_gaec_cuda(dCSR& A)
             // get contraction edges of the components which
             thrust::device_vector<int> good_contract_cols, good_contract_rows;
             std::tie(good_contract_cols, good_contract_rows) = good_contract_edges(handle, new_A, cur_node_mapping, contract_cols, contract_rows);
+            if (good_contract_cols.size() == 0)
+                break;
+
             const double perc_used_edges = double(good_contract_cols.size()) / double(contract_cols.size());
             std::cout << "% used contraction edges = " << perc_used_edges*100 << "\n";
             std::tie(C, cur_node_mapping) = edge_contraction_matrix_cuda(handle, good_contract_cols, good_contract_rows, A.rows());

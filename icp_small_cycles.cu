@@ -1,9 +1,9 @@
 #include "icp_small_cycles.h"
-#include "dCSR.h"
 #include <cuda_runtime.h>
 #include <thrust/reduce.h>
 #include "time_measure_util.h"
 #include <thrust/partition.h>
+#include "dCSR.h"
 #include "utils.h"
 
 static const float tol = 1e-6;
