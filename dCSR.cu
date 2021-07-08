@@ -64,6 +64,257 @@ struct non_zero_indicator_func
         }
 };
 
+__global__ void contracted_node_degrees(const int num_contractions,
+    const int* const __restrict__ in_node_degrees, 
+    const int* const __restrict__ contract_rows, 
+    const int* const __restrict__ contract_cols, 
+    int* const __restrict__ out_node_degrees,
+    bool* const __restrict__ v_to_contract,
+    int* const __restrict__ v_new_labels)
+{
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int num_threads = blockDim.x * gridDim.x;
+    for (int e = tid; e < num_contractions; e += num_threads) // First element of both node_degrees is 0.
+    {
+        out_node_degrees[contract_rows[e]] += out_node_degrees[contract_cols[e]] - 1; // Assign neighbours of col to row and do not count col -> row edge.
+        out_node_degrees[contract_cols[e]] = 0;
+        v_to_contract[contract_rows[e]] = true;
+        v_to_contract[contract_cols[e]] = true;
+        v_new_labels[contract_cols[e]] = contract_rows[e];
+    }
+}
+
+__global__ void copy_uncontracted_nodes(const int num_nodes,
+                                        const int* const __restrict__ orig_row_offsets,
+                                        const int* const __restrict__ orig_col_ids, 
+                                        const int* const __restrict__ orig_data, 
+                                        const bool* const __restrict__ v_to_contract,
+                                        const int* const __restrict__ c_row_offsets,
+                                        int* const __restrict__ c_col_ids, 
+                                        int* const __restrict__ c_data)
+{
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int num_threads = blockDim.x * gridDim.x;
+    for (int n = tid; n < num_nodes; n += num_threads)
+    {
+        if (!v_to_contract[n])
+        {
+            int i_c = c_row_offsets[n];
+            for(int i_o = orig_row_offsets[n]; i_o < orig_row_offsets[n + 1]; ++i_o, ++i_c)
+            {
+                c_col_ids[i_c] = col_ids[i_o];
+                c_data[i_c] = orig_data[i_o];
+            }
+        }
+    }
+}
+
+__device__ float get_neighbour_index(const int n1, const int n2, 
+                                    const int* const __restrict__ row_offsets,
+                                    const int* const __restrict__ col_ids)
+{
+    for(int i = row_offsets[n1]; i != row_offsets[n1 + 1]; ++i) //TODO: Binary search?
+        if (col_ids[i] == n2)
+            return i;
+
+    assert(false); // Other direction edge should always be present. 
+}
+
+__device__ float get_lowest_vertex_id_cost(const int n1, const int n2, 
+                                        const int* const __restrict__ row_offsets,
+                                        const int* const __restrict__ col_ids, 
+                                        const float* const __restrict__ data,
+                                        int& n1_index, int& n2_index, int& return_vertex_id)
+{
+    int n1_next_vertex = -1; 
+    int n2_next_vertex = -1;
+    if (n1_index < row_offsets[n1 + 1])
+        n1_next_vertex = col_ids[n1_index];
+
+    if (n2_index < row_offsets[n2 + 1])
+        n2_next_vertex = col_ids[n2_index];
+
+    if (n1_next_vertex < n2_next_vertex || (n1_next_vertex >= 0 && n2_next_vertex == -1))
+    {
+        return_vertex_id = n1_next_vertex;
+        return data[n1_index++];
+    }
+
+    else if (n2_next_vertex < n1_next_vertex || (n2_next_vertex >= 0 && n1_next_vertex == -1))
+    {
+        return_vertex_id = n2_next_vertex;
+        return data[n2_index++];
+    }
+
+    else if(n2_next_vertex == n1_next_vertex && n1_next_vertex >= 0)
+    {
+        return_vertex_id = n1_next_vertex;
+        return data[n1_index++] + data[n2_index++];
+    }
+
+    return 0.0; // Both neighbour lists are exhausted.
+}
+
+// Changes graph structure for each contracted edge and also for each node incident to any node of a contracted edge.
+__global__ void copy_contracted_nodes(const int num_contractions,
+    const int* const __restrict__ orig_row_offsets,
+    const int* const __restrict__ orig_col_ids, 
+    const int* const __restrict__ orig_data, 
+    const int* const __restrict__ contract_rows, 
+    const int* const __restrict__ contract_cols, 
+    const int* const __restrict__ v_new_labels,
+    const int* const __restrict__ c_row_offsets,
+    int* const __restrict__ c_col_ids,
+    int* const __restrict__ c_data,
+    int* const __restrict__ e_consider_other_direction)
+{
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int num_threads = blockDim.x * gridDim.x;
+    for (int e = tid; e < num_contractions; e += num_threads)
+    {
+        int n1 = contract_rows[e];
+        int n2 = contract_cols[e]; 
+        int n1_index = row_offsets[n1];
+        int n2_index = row_offsets[n2];
+        int new_index = c_row_offsets[n1]; // n2 is contracted towards n1
+        while(1)
+        {
+            int lowest_id_neighbour = -1;
+            float merge_cost = get_lowest_vertex_id_cost(n1, n2, orig_row_offsets, orig_col_ids, orig_data, n1_index, n2_index, lowest_id_neighbour);
+            if (lowest_id_neighbour == n2 || lowest_id_neighbour == n1)
+                continue; // contracted edge.
+
+            if (lowest_id_neighbour == -1)
+                break;
+            
+            int lowest_id_neighbour_new_label = v_new_labels[lowest_id_neighbour];
+            c_col_ids[new_index] = lowest_id_neighbour_new_label;
+            c_data[new_index] = merge_cost;
+
+            // store opposite edge direction for processing later:
+            e_consider_other_direction[new_index] = n1;
+        }
+    }
+}
+
+__global__ void make_symmetric(const int num_edges,
+    const int* const __restrict__ e_index, 
+    const int* const __restrict__ e_source_vertex, 
+    const int* const __restrict__ row_offsets,
+    const int* const __restrict__ col_ids,
+    const int* const __restrict__ data,
+    int* const __restrict__ data_symm)
+{
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int num_threads = blockDim.x * gridDim.x;
+    for (int e = tid; e < num_edges; e += num_threads)
+    {
+        int current_e_index = e_index[e];
+        int n1 = e_source_vertex[e];
+        int n2 = col_ids[current_e_index];
+
+        int other_e_index = get_neighbour_index(n2, n1, row_offsets, col_ids, data);
+        data_symm[other_e_index] += data[current_e_index];
+    }
+}
+
+struct not_make_symmetric {
+    __host__ __device__
+        inline int operator()(const thrust::tuple<int,int> e)
+        {
+            return thrust::get<1>(e) == -1;
+        }
+};
+
+//TODO: self-edges?
+void dCSR::contract_matched_edges(const thrust::device_vector<int>& contract_rows, const thrust::device_vector<int>& contract_cols)
+{
+    int num_contractions = contract_rows.size();
+    int threadCount = 256;
+    int blockCount = ceil(num_contractions / (float) threadCount);
+
+    // 1. calculate input node degrees:
+    thrust::device_vector<int> in_node_degrees(rows_ + 1);
+    thrust::adjacent_difference(row_offsets.begin(), row_offsets.end(), in_node_degrees.begin()); // First element of adjacent_difference is the original element i.e. 0.
+
+    thrust::device_vector<int> new_row_offsets = in_node_degrees;
+
+    // 2.1 Calculate output node degrees:
+    thrust::device_vector<bool> v_to_contract(rows_, false);
+    thrust::device_vector<int> v_new_labels(rows_);
+    thrust::sequence(v_new_labels.begin(), v_new_labels.end(), 0);
+
+    contracted_node_degrees<<<blockCount, threadCount>>>(num_contractions,
+                                thrust::raw_pointer_cast(in_node_degrees.data()), 
+                                thrust::raw_pointer_cast(contract_rows.data()), 
+                                thrust::raw_pointer_cast(contract_cols.data()), 
+                                thrust::raw_pointer_cast(new_row_offsets.data()),
+                                thrust::raw_pointer_cast(v_to_contract.data()),
+                                thrust::raw_pointer_cast(v_new_labels.data()));
+
+    // 2.2 Convert output node degrees to offsets:
+    thrust::inclusive_scan(new_row_offsets.begin(), new_row_offsets.end(), new_row_offsets.begin());
+
+    // 3 Allocate new col ids and data:
+    int new_nnz = new_row_offsets[rows_];
+    thrust::device_vector<int> new_col_ids(new_nnz, -1);
+    thrust::device_vector<float> new_data(new_nnz, 0.0);
+
+    // 4. Create new graph containing original costs and 0 costs for newly introduced edges due to contraction.
+    // i.e. for vertex i keep all its neighbours and their costs as-is and introduce new neighbours of i (with zero costs)
+    // if a vertex j is contracted towards i. This operation should be done by taking into account symmetry of dCSR representation. 
+    blockCount = ceil(rows_ / (float) threadCount);
+    copy_uncontracted_nodes<<<blockCount, threadCount>>>(rows_,
+        thrust::raw_pointer_cast(row_offsets.data()),
+        thrust::raw_pointer_cast(col_ids.data()),
+        thrust::raw_pointer_cast(data.data()),
+        thrust::raw_pointer_cast(v_to_contract.data()),
+        thrust::raw_pointer_cast(new_row_offsets.data()),
+        thrust::raw_pointer_cast(new_col_ids.data()),
+        thrust::raw_pointer_cast(new_data.data()));
+
+
+    // 5. Now do the edge contraction.
+    thrust::device_vector<int> e_consider_other_direction(new_nnz, -1);
+    blockCount = ceil(num_contractions / (float) threadCount);
+    copy_contracted_nodes<<<blockCount, threadCount>>>(num_contractions,
+        thrust::raw_pointer_cast(row_offsets.data()),
+        thrust::raw_pointer_cast(col_ids.data()),
+        thrust::raw_pointer_cast(data.data()),
+        thrust::raw_pointer_cast(contract_rows.data()), 
+        thrust::raw_pointer_cast(contract_cols.data()), 
+        thrust::raw_pointer_cast(v_new_labels.data()),
+        thrust::raw_pointer_cast(new_row_offsets.data()),
+        thrust::raw_pointer_cast(new_col_ids.data()),
+        thrust::raw_pointer_cast(new_data.data()),
+        thrust::raw_pointer_cast(e_consider_other_direction.data()));
+
+    // 6. Make the edge costs symmetric:
+    thrust::device_vector<int> e_indices(new_nnz);
+
+    thrust::sequence(e_indices.begin(), e_indices.end(), 0);
+    auto first = thrust::make_zip_iterator(thrust::make_tuple(e_indices.begin(), e_consider_other_direction.begin()));
+    auto last = thrust::make_zip_iterator(thrust::make_tuple(e_indices.end(), e_consider_other_direction.end()));
+    auto valid_last = thrust::remove_if(first, last, not_make_symmetric());
+    const int nr_edges_to_symm = std::distance(first, valid_last);
+    e_indices.resize(nr_edges_to_symm);
+    e_consider_other_direction.resize(nr_edges_to_symm);
+
+    thrust::device_vector<float> new_data_symm = new_data;
+    make_symmetric(nr_edges_to_symm,
+        thrust::raw_pointer_cast(e_indices.data()), 
+        thrust::raw_pointer_cast(e_consider_other_direction.data()), 
+        thrust::raw_pointer_cast(row_offsets.data()),
+        thrust::raw_pointer_cast(col_ids.data()),
+        thrust::raw_pointer_cast(data.data()), 
+        thrust::raw_pointer_cast(data_symm.data()));
+    
+    // 7. TODO: Delete all vertices in contract_cols since they are merged to contract_rows and relabel vertices.
+    
+    return dCSR()
+}
+
+
 void dCSR::compress(cusparseHandle_t handle, const float tol)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME

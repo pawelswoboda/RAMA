@@ -28,6 +28,13 @@ class dCSR {
                     ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
                     DATA_ITERATOR data_begin, DATA_ITERATOR data_end);
 
+        dCSR(cusparseHandle_t handle, 
+            thrust::device_vector<int> _row_offsets,
+            thrust::device_vector<int> _col_ids,
+            thrust::device_vector<float> _data,
+            int _rows, 
+            int _cols): row_offsets(_row_offsets), col_ids(_col_ids), data(_data), rows_(_rows), cols_(_cols)
+
         dCSR transpose(cusparseHandle_t handle) const;
         void compress(cusparseHandle_t handle, const float tol = 1e-4);
         dCSR keep_top_k_positive_values(cusparseHandle_t handle, const int top_k);
@@ -62,6 +69,7 @@ class dCSR {
         const thrust::device_vector<float> get_data() const { return data; }
 
         thrust::device_vector<float> diagonal(cusparseHandle_t) const;
+        void contract_matched_edges(const thrust::device_vector<int>& contract_rows, const thrust::device_vector<int>& contract_cols);
 
     private:
         template<typename COL_ITERATOR, typename ROW_ITERATOR, typename DATA_ITERATOR>
