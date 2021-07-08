@@ -187,8 +187,7 @@ __global__ void copy_contracted_nodes(const int num_contractions,
             if (lowest_id_neighbour == -1)
                 break;
             
-            int lowest_id_neighbour_new_label = v_new_labels[lowest_id_neighbour];
-            c_col_ids[new_index] = lowest_id_neighbour_new_label;
+            c_col_ids[new_index] = v_new_labels[lowest_id_neighbour];
             c_data[new_index] = merge_cost;
 
             // store opposite edge direction for processing later:
@@ -301,7 +300,8 @@ void dCSR::contract_matched_edges(const thrust::device_vector<int>& contract_row
     e_consider_other_direction.resize(nr_edges_to_symm);
 
     thrust::device_vector<float> new_data_symm = new_data;
-    make_symmetric(nr_edges_to_symm,
+    blockCount = ceil(nr_edges_to_symm / (float) threadCount);
+    make_symmetric<<<blockCount, threadCount>>>(nr_edges_to_symm,
         thrust::raw_pointer_cast(e_indices.data()), 
         thrust::raw_pointer_cast(e_consider_other_direction.data()), 
         thrust::raw_pointer_cast(row_offsets.data()),
