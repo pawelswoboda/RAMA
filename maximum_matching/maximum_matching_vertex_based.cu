@@ -118,7 +118,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> filter_edges_
     v_best_neighbours.resize(nr_matched_edges);
 
     std::cout << "# vertices = " << A.rows() << "\n";
-    std::cout << "# matched edges = " << nr_matched_edges << " / "<< A.nnz() << "\n";
+    std::cout << "# matched edges = " << nr_matched_edges / 2 << " / "<< A.nnz() / 2 << "\n";
     
     // thrust::copy(matched_rows.begin(), matched_rows.end(), std::ostream_iterator<int>(std::cout, " "));
     // std::cout<<"\n";
