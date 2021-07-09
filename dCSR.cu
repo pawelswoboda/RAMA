@@ -64,6 +64,7 @@ struct non_zero_indicator_func
         }
 };
 
+// computes an upperbound.
 __global__ void contracted_node_degrees(const int num_contractions,
     const int* const __restrict__ in_node_degrees, 
     const int* const __restrict__ contract_rows, 
@@ -100,10 +101,17 @@ __global__ void copy_uncontracted_nodes(const int num_nodes,
         if (!v_to_contract[n])
         {
             int i_c = c_row_offsets[n];
-            for(int i_o = orig_row_offsets[n]; i_o < orig_row_offsets[n + 1]; ++i_o, ++i_c)
+            for(int i_o = orig_row_offsets[n]; i_o < orig_row_offsets[n + 1]; ++i_o)
             {
-                c_col_ids[i_c] = col_ids[i_o];
-                c_data[i_c] = orig_data[i_o];
+                int current_col = col_ids[i_o]; 
+                // Only add edges starting from n. Also do not add edges between
+                // n and a contracted edge as it will be done later.
+                if (current_col < n && !v_to_contract[current_col])
+                {
+                    c_col_ids[i_c] = current_col;
+                    c_data[i_c] = orig_data[i_o];
+                    ++i_c;
+                }
             }
         }
     }
@@ -165,8 +173,7 @@ __global__ void copy_contracted_nodes(const int num_contractions,
     const int* const __restrict__ v_new_labels,
     const int* const __restrict__ c_row_offsets,
     int* const __restrict__ c_col_ids,
-    int* const __restrict__ c_data,
-    int* const __restrict__ e_consider_other_direction)
+    int* const __restrict__ c_data)
 {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int num_threads = blockDim.x * gridDim.x;
@@ -177,7 +184,7 @@ __global__ void copy_contracted_nodes(const int num_contractions,
         int n1_index = row_offsets[n1];
         int n2_index = row_offsets[n2];
         int new_index = c_row_offsets[n1]; // n2 is contracted towards n1
-        while(1)
+        while(1) // assign neighbours of n2 to n1 by making a directed edge starting from n1. 
         {
             int lowest_id_neighbour = -1;
             float merge_cost = get_lowest_vertex_id_cost(n1, n2, orig_row_offsets, orig_col_ids, orig_data, n1_index, n2_index, lowest_id_neighbour);
@@ -189,9 +196,6 @@ __global__ void copy_contracted_nodes(const int num_contractions,
             
             c_col_ids[new_index] = v_new_labels[lowest_id_neighbour];
             c_data[new_index] = merge_cost;
-
-            // store opposite edge direction for processing later:
-            e_consider_other_direction[new_index] = n1;
         }
     }
 }
