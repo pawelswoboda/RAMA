@@ -111,7 +111,7 @@ struct remove_reverse_edges_func {
     __host__ __device__
         inline int operator()(const thrust::tuple<int,int,float> e)
         {
-            return thrust::get<0>(e) > thrust::get<1>(e);
+            return thrust::get<0>(e) >= thrust::get<1>(e);
         }
 };
 

@@ -2,6 +2,7 @@
 #include <thrust/device_vector.h>
 #include <cusparse.h>
 #include "utils.h"
+#include "dCOO.h"
 
 int main(int argc, char** argv)
 {
@@ -9,29 +10,25 @@ int main(int argc, char** argv)
     const std::vector<int> j = {1, 2, 2, 3, 4, 3, 4, 4, 5, 5, 6, 6};
     const std::vector<float> costs = {2., 3., -1., 4., 1.5, 5., 2., -2., -3., 2., -1.5, 0.5};
 
-    assert(compute_lower_bound(i, j, costs, 5) == -2.5);
-
-    thrust::device_vector<int> i_d = i;
-    thrust::device_vector<int> j_d = j;
-    thrust::device_vector<float> costs_d = costs;
+    double lb;
+    dCOO A;
+    std::tie(lb, A) = parallel_small_cycle_packing_cuda(i, j, costs, 5, 5);
+    assert(lb == -2.5);
 
     cusparseHandle_t handle;
     checkCuSparseError(cusparseCreate(&handle), "cusparse init failed");
 
     // First compute without any packing (re-arranges the edges):
-    thrust::device_vector<int> i_new, j_new;
-    thrust::device_vector<float> costs_original_d;
-    std::tie(i_new, j_new, costs_original_d) = parallel_small_cycle_packing_costs(handle, i_d, j_d, costs_d, 0);
+    std::tie(lb, A) = parallel_small_cycle_packing_cuda(i, j, costs, 0, 0);
 
     // Now, pack cycles:
-    thrust::device_vector<float> costs_packed_d;
-    std::tie(i_d, j_d, costs_packed_d) = parallel_small_cycle_packing_costs(handle, i_d, j_d, costs_d, 5);
+    dCOO A_packed;
+    std::tie(lb, A_packed) = parallel_small_cycle_packing_cuda(i, j, costs, 5, 5);
 
-    for (int e = 0; e < costs.size(); e++)
-    {
+    thrust::device_vector<float> costs_original_d = A.get_data();
+    thrust::device_vector<float> costs_packed_d = A_packed.get_data();
+
+    for (int e = 0; e < A.edges(); e++)
         if (costs_original_d[e] * costs_packed_d[e] < 0)
-        {
-            std::cout<<"Test failed at edge: "<<i_new[e]<<", "<<j_new[e]<<", original cost: "<<costs_original_d[e]<<", packed cost: "<<costs_packed_d[e]<<". Signs should match! \n";
-        }
-    }
+            std::cout<<"Test failed. Original cost: "<<costs_original_d[e]<<", packed cost: "<<costs_packed_d[e]<<". Signs should match! \n";
 }
