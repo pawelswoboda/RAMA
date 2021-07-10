@@ -65,6 +65,64 @@ class dCOO {
         thrust::device_vector<int> col_ids; 
 };
 
+inline void update_permutation(thrust::device_vector<int>& keys, thrust::device_vector<int>& permutation)
+{
+    // temporary storage for keys
+    thrust::device_vector<int> temp(keys.size());
+
+    // permute the keys with the current reordering
+    thrust::gather(permutation.begin(), permutation.end(), keys.begin(), temp.begin());
+
+    // stable_sort the permuted keys and update the permutation
+    thrust::stable_sort_by_key(temp.begin(), temp.end(), permutation.begin());
+}
+
+
+    template<typename T>
+void apply_permutation(thrust::device_vector<T>& keys, thrust::device_vector<int>& permutation)
+{
+    // copy keys to temporary vector
+    thrust::device_vector<T> temp(keys.begin(), keys.end());
+
+    // permute the keys
+    thrust::gather(permutation.begin(), permutation.end(), temp.begin(), keys.begin());
+}
+
+inline void coo_sorting(cusparseHandle_t handle, thrust::device_vector<int>& col_ids, thrust::device_vector<int>& row_ids)
+{
+    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
+    assert(row_ids.size() == col_ids.size());
+    const size_t N = row_ids.size();
+    thrust::device_vector<int> permutation(N);
+    thrust::sequence(permutation.begin(), permutation.end());
+
+    update_permutation(col_ids,  permutation);
+    update_permutation(row_ids, permutation);
+
+    apply_permutation(col_ids,  permutation);
+    apply_permutation(row_ids, permutation);
+    assert(thrust::is_sorted(row_ids.begin(), row_ids.end()));
+}
+
+inline void coo_sorting(cusparseHandle_t handle, thrust::device_vector<int>& col_ids, thrust::device_vector<int>& row_ids, thrust::device_vector<float>& data)
+{
+    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
+    assert(row_ids.size() == col_ids.size());
+    assert(row_ids.size() == data.size());
+    const size_t N = row_ids.size();
+    thrust::device_vector<int> permutation(N);
+    thrust::sequence(permutation.begin(), permutation.end());
+
+    update_permutation(col_ids,  permutation);
+    update_permutation(row_ids, permutation);
+
+    apply_permutation(col_ids,  permutation);
+    apply_permutation(row_ids, permutation);
+    apply_permutation(data, permutation);
+    assert(thrust::is_sorted(row_ids.begin(), row_ids.end()));
+}
+
+/*
 inline void coo_sorting(cusparseHandle_t handle, thrust::device_vector<int>& col_ids, thrust::device_vector<int>& row_ids)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
@@ -120,6 +178,7 @@ inline void coo_sorting(cusparseHandle_t handle, thrust::device_vector<int>& col
             CUSPARSE_INDEX_BASE_ZERO); 
     data = coo_data;
 }
+*/
 
     template<typename COL_ITERATOR, typename ROW_ITERATOR, typename DATA_ITERATOR>
 dCOO::dCOO(cusparseHandle_t handle, 
