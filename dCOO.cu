@@ -110,7 +110,8 @@ struct diag_func
 
 thrust::device_vector<float> dCOO::diagonal(cusparseHandle_t handle) const
 {
-    thrust::device_vector<float> d(min(rows(), cols()), 0.0);
+    assert(rows() == cols());
+    thrust::device_vector<float> d(rows(), 0.0);
 
     auto begin = thrust::make_zip_iterator(thrust::make_tuple(col_ids.begin(), row_ids.begin(), data.begin()));
     auto end = thrust::make_zip_iterator(thrust::make_tuple(col_ids.end(), row_ids.end(), data.end()));
@@ -128,7 +129,7 @@ thrust::device_vector<int> dCOO::compute_row_offsets(cusparseHandle_t handle, co
     return row_offsets;
 }
 
-thrust::device_vector<int> dCOO::compute_row_offsets(cusparseHandle_t handle)
+thrust::device_vector<int> dCOO::compute_row_offsets(cusparseHandle_t handle) const
 {
     return compute_row_offsets(handle, rows_, col_ids, row_ids);
 }
@@ -136,4 +137,28 @@ thrust::device_vector<int> dCOO::compute_row_offsets(cusparseHandle_t handle)
 float dCOO::sum()
 {
     return thrust::reduce(data.begin(), data.end(), (float) 0.0, thrust::plus<float>());
+}
+
+dCOO dCOO::export_undirected(cusparseHandle_t handle)
+{
+    thrust::device_vector<int> row_ids_u, col_ids_u;
+    thrust::device_vector<float> data_u;
+
+    std::tie(row_ids_u, col_ids_u, data_u) = to_undirected(row_ids, col_ids, data);
+    return dCOO(handle, 
+        col_ids_u.begin(), col_ids_u.end(),
+        row_ids_u.begin(), row_ids_u.end(), 
+        data_u.begin(), data_u.end());
+}
+
+dCOO dCOO::export_directed(cusparseHandle_t handle)
+{
+    thrust::device_vector<int> row_ids_d, col_ids_d;
+    thrust::device_vector<float> data_d;
+
+    std::tie(row_ids_d, col_ids_d, data_d) = to_directed(row_ids, col_ids, data);
+    return dCOO(handle, 
+        col_ids_d.begin(), col_ids_d.end(),
+        row_ids_d.begin(), row_ids_d.end(), 
+        data_d.begin(), data_d.end());
 }

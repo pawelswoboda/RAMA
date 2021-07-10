@@ -35,7 +35,7 @@ class dCOO {
 
         void remove_diagonal(cusparseHandle_t handle);
 
-        thrust::device_vector<int> compute_row_offsets(cusparseHandle_t handle);
+        thrust::device_vector<int> compute_row_offsets(cusparseHandle_t handle) const;
         static thrust::device_vector<int> compute_row_offsets(cusparseHandle_t handle, const int rows, const thrust::device_vector<int>& col_ids, const thrust::device_vector<int>& row_ids);
 
         const int* get_row_ids_ptr() const { return thrust::raw_pointer_cast(row_ids.data()); }
@@ -49,6 +49,8 @@ class dCOO {
 
         thrust::device_vector<float> diagonal(cusparseHandle_t) const;
         dCOO contract_cuda(cusparseHandle_t handle, const thrust::device_vector<int>& node_mapping);
+        dCOO export_undirected(cusparseHandle_t handle);
+        dCOO export_directed(cusparseHandle_t handle);
 
     private:
         template<typename COL_ITERATOR, typename ROW_ITERATOR, typename DATA_ITERATOR>

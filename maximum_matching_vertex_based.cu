@@ -81,33 +81,25 @@ struct is_unmatched {
 
 std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> filter_edges_by_matching_vertex_based(cusparseHandle_t handle, const dCOO& A)
 {
-    thrust::device_vector<int> rows_ids_u, col_ids_u;
-    thrust::device_vector<float> costs_u;
-    std::tie(rows_ids_u, col_ids_u, costs_u) = to_undirected(A.get_row_ids(), A.get_col_ids(), A.get_data());
-    dCOO A_undirected(handle, 
-            col_ids_u.begin(), col_ids_u.end(),
-            rows_ids_u.begin(), rows_ids_u.end(),
-            costs_u.begin(), costs_u.end());
+    thrust::device_vector<int> v_best_neighbours(A.rows(), -1);
+    thrust::device_vector<int> v_matched(A.rows(), 0);
 
-    thrust::device_vector<int> v_best_neighbours(A_undirected.rows(), -1);
-    thrust::device_vector<int> v_matched(A_undirected.rows(), 0);
-
-    int numBlocks = ceil(A_undirected.rows() / (float) numThreads);
+    int numBlocks = ceil(A.rows() / (float) numThreads);
     thrust::device_vector<bool> still_running(1);
-    thrust::device_vector<int> A_row_offsets = A_undirected.compute_row_offsets(handle);
+    thrust::device_vector<int> A_row_offsets = A.compute_row_offsets(handle);
 
     for (int t = 0; t < 5; t++)
     {
         thrust::fill(thrust::device, still_running.begin(), still_running.end(), false);
 
-        pick_best_neighbour<<<numBlocks, numThreads>>>(A_undirected.rows(), 
+        pick_best_neighbour<<<numBlocks, numThreads>>>(A.rows(), 
             thrust::raw_pointer_cast(A_row_offsets.data()), 
-            A_undirected.get_col_ids_ptr(), 
-            A_undirected.get_data_ptr(), 
+            A.get_col_ids_ptr(), 
+            A.get_data_ptr(), 
             thrust::raw_pointer_cast(v_matched.data()),
             thrust::raw_pointer_cast(v_best_neighbours.data()));
 
-        match_neighbours<<<numBlocks, numThreads>>>(A_undirected.rows(), 
+        match_neighbours<<<numBlocks, numThreads>>>(A.rows(), 
             thrust::raw_pointer_cast(v_best_neighbours.data()),
             thrust::raw_pointer_cast(v_matched.data()),
             thrust::raw_pointer_cast(still_running.data()));
@@ -116,7 +108,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> filter_edges_
         if (!still_running[0])
             break;
     }
-    thrust::device_vector<int> matched_rows(A_undirected.rows());
+    thrust::device_vector<int> matched_rows(A.rows());
     thrust::sequence(matched_rows.begin(), matched_rows.end(), 0);
 
     auto first_m = thrust::make_zip_iterator(thrust::make_tuple(matched_rows.begin(), v_best_neighbours.begin(), v_matched.begin()));
@@ -126,8 +118,8 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> filter_edges_
     matched_rows.resize(nr_matched_edges);
     v_best_neighbours.resize(nr_matched_edges);
 
-    std::cout << "# vertices = " << A_undirected.rows() << "\n";
-    std::cout << "# matched edges = " << nr_matched_edges / 2 << " / "<< A_undirected.edges() / 2 << "\n";
+    std::cout << "# vertices = " << A.rows() << "\n";
+    std::cout << "# matched edges = " << nr_matched_edges / 2 << " / "<< A.edges() / 2 << "\n";
     
     // thrust::copy(matched_rows.begin(), matched_rows.end(), std::ostream_iterator<int>(std::cout, " "));
     // std::cout<<"\n";

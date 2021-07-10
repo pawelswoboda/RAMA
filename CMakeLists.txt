@@ -1,5 +1,5 @@
 project(parallel_gaec LANGUAGES CXX CUDA)
-# set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler -rdynamic -lineinfo")
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler -rdynamic -lineinfo")
 # set(CMAKE_CUDA_FLAGS_DEBUG "${CMAKE_CUDA_FLAGS_DEBUG} -g")
 
 cmake_minimum_required(VERSION 2.8.12)

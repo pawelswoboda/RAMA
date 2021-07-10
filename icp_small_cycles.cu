@@ -9,11 +9,15 @@
 
 __device__ float get_CSR_value(const int row_index,
                                 const int col_id,
+                                const int A_num_rows,
                                 const int* const __restrict__ row_offsets,
                                 const int* const __restrict__ col_ids, 
                                 const float* const __restrict__ data, 
                                 int& found_index)
 {
+    if (row_index >= A_num_rows)
+        return 0.0;
+
     for(int l = row_offsets[row_index]; l < row_offsets[row_index + 1]; ++l)
     {
         int current_col_id = col_ids[l]; 
@@ -33,14 +37,15 @@ __device__ float get_CSR_value(const int row_index,
 
 __device__ float get_CSR_value_both_dir_geq_tol(const int row_index,
                                                 const int col_id,
+                                                const int A_num_rows,
                                                 const int* const __restrict__ row_offsets,
                                                 const int* const __restrict__ col_ids, 
                                                 const float* const __restrict__ data, 
                                                 int& found_index)
 {
-    float val = get_CSR_value(row_index, col_id, row_offsets, col_ids, data, found_index);
+    float val = get_CSR_value(row_index, col_id, A_num_rows, row_offsets, col_ids, data, found_index);
     if (val < tol) // try other direction.
-        val = get_CSR_value(col_id, row_index, row_offsets, col_ids, data, found_index);
+        val = get_CSR_value(col_id, row_index, A_num_rows, row_offsets, col_ids, data, found_index);
     
     return val;
 }
@@ -48,22 +53,22 @@ __device__ float get_CSR_value_both_dir_geq_tol(const int row_index,
 __device__ bool are_connected_by(const int v1, const int v2, const int mid, 
                                 const int* const __restrict__ row_offsets, 
                                 const int* const __restrict__ col_ids, 
-                                const float* const __restrict__ data,
+                                const float* const __restrict__ data, const int A_num_rows,
                                 int& v1_mid_edge_index, int& v2_mid_edge_index,
                                 float& v1_mid_edge_val, float& v2_mid_edge_val)
 {
-    v1_mid_edge_val = get_CSR_value_both_dir_geq_tol(v1, mid, row_offsets, col_ids, data, v1_mid_edge_index);
+    v1_mid_edge_val = get_CSR_value_both_dir_geq_tol(v1, mid, A_num_rows, row_offsets, col_ids, data, v1_mid_edge_index);
     if (v1_mid_edge_val < tol)
         return false;
 
-    v2_mid_edge_val = get_CSR_value_both_dir_geq_tol(v2, mid, row_offsets, col_ids, data, v2_mid_edge_index);
+    v2_mid_edge_val = get_CSR_value_both_dir_geq_tol(v2, mid, A_num_rows, row_offsets, col_ids, data, v2_mid_edge_index);
     if (v2_mid_edge_val < tol)
         return false;
 
     return true;
 }
 
-__global__ void pack_triangles_parallel(const int num_rep_edges, 
+__global__ void pack_triangles_parallel(const int num_rep_edges,
                                     const int* const __restrict__ row_ids_rep, 
                                     const int* const __restrict__ col_ids_rep, 
                                     const int* const __restrict__ A_symm_row_offsets,
@@ -71,17 +76,18 @@ __global__ void pack_triangles_parallel(const int num_rep_edges,
                                     const int* const __restrict__ A_row_offsets, // adjacency matrix of original directed graph.
                                     const int* const __restrict__ A_col_ids,
                                     float* __restrict__ A_data,
-                                    const int first_rep_edge_index)
+                                    const int first_rep_edge_index,
+                                    const int A_num_rows)
 {
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int start_index = blockIdx.x * blockDim.x + threadIdx.x + first_rep_edge_index;
     int num_threads = blockDim.x * gridDim.x;
 
-    for (int edge = tid + first_rep_edge_index; edge < first_rep_edge_index + num_rep_edges; edge += num_threads) 
+    for (int edge = start_index; edge < first_rep_edge_index + num_rep_edges; edge += num_threads) 
     {
         int rep_edge_row = row_ids_rep[edge];
         int rep_edge_col = col_ids_rep[edge];
         int rep_edge_index = -1;
-        float rep_edge_cost = get_CSR_value(rep_edge_row, rep_edge_col, A_row_offsets, A_col_ids, A_data, rep_edge_index);
+        float rep_edge_cost = get_CSR_value(rep_edge_row, rep_edge_col, A_num_rows, A_row_offsets, A_col_ids, A_data, rep_edge_index);
         assert(rep_edge_cost < tol);
         assert(rep_edge_index >= 0); // The repulsive edge must also be present in A.(row -> col).
         
@@ -91,7 +97,7 @@ __global__ void pack_triangles_parallel(const int num_rep_edges,
             int found_upper_index, found_lower_index;
             float upper_cost, lower_cost;
             bool connected = are_connected_by(rep_edge_row, rep_edge_col, current_col_id, 
-                                            A_row_offsets, A_col_ids, A_data,
+                                            A_row_offsets, A_col_ids, A_data, A_num_rows,
                                             found_upper_index, found_lower_index,
                                             upper_cost, lower_cost);
 
@@ -122,7 +128,8 @@ __global__ void pack_quadrangles_parallel(const int num_rep_edges,
     const int* const __restrict__ A_row_offsets, // adjacency matrix of original directed graph.
     const int* const __restrict__ A_col_ids,
     float* __restrict__ A_data,
-    const int first_rep_edge_index)
+    const int first_rep_edge_index,
+    const int A_num_rows)
 {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int num_threads = blockDim.x * gridDim.x;
@@ -132,7 +139,7 @@ __global__ void pack_quadrangles_parallel(const int num_rep_edges,
         int v1 = row_ids_rep[edge];
         int v2 = col_ids_rep[edge];
         int rep_edge_index = -1;
-        float rep_edge_cost = get_CSR_value(v1, v2, A_row_offsets, A_col_ids, A_data, rep_edge_index);
+        float rep_edge_cost = get_CSR_value(v1, v2, A_num_rows, A_row_offsets, A_col_ids, A_data, rep_edge_index);
         assert(rep_edge_cost < tol);
         assert(rep_edge_index >= 0); // The repulsive edge must also be present in A.(row -> col).
 
@@ -141,7 +148,7 @@ __global__ void pack_quadrangles_parallel(const int num_rep_edges,
         {
             int v1_n1 = A_symm_col_ids[l1];
             int v1_n1_edge_index, v1_n2_edge_index, v2_edge_index; 
-            float v1_n1_edge_cost = get_CSR_value_both_dir_geq_tol(v1, v1_n1, A_row_offsets, A_col_ids, A_data, v1_n1_edge_index);
+            float v1_n1_edge_cost = get_CSR_value_both_dir_geq_tol(v1, v1_n1, A_num_rows, A_row_offsets, A_col_ids, A_data, v1_n1_edge_index);
             int v1_n2;
             float v1_n2_edge_cost, v2_edge_cost;
             if (v1_n1_edge_cost > tol)
@@ -150,7 +157,7 @@ __global__ void pack_quadrangles_parallel(const int num_rep_edges,
                 {
                     v1_n2 = A_symm_col_ids[l2];
                     bool connected = are_connected_by(v1_n1, v2, v1_n2, 
-                                                    A_row_offsets, A_col_ids, A_data,
+                                                    A_row_offsets, A_col_ids, A_data, A_num_rows,
                                                     v1_n2_edge_index, v2_edge_index,
                                                     v1_n2_edge_cost, v2_edge_cost);
 
@@ -188,7 +195,8 @@ __global__ void pack_pentagons_parallel(const int num_rep_edges,
     const int* const __restrict__ A_row_offsets, // adjacency matrix of original directed graph.
     const int* const __restrict__ A_col_ids,
     float* __restrict__ A_data,
-    const int first_rep_edge_index)
+    const int first_rep_edge_index,
+    const int A_num_rows)
 {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int num_threads = blockDim.x * gridDim.x;
@@ -198,7 +206,7 @@ __global__ void pack_pentagons_parallel(const int num_rep_edges,
         int v1 = row_ids_rep[edge];
         int v2 = col_ids_rep[edge];
         int rep_edge_index = -1;
-        float rep_edge_cost = get_CSR_value(v1, v2, A_row_offsets, A_col_ids, A_data, rep_edge_index);
+        float rep_edge_cost = get_CSR_value(v1, v2, A_num_rows, A_row_offsets, A_col_ids, A_data, rep_edge_index);
         assert(rep_edge_cost < tol);
         assert(rep_edge_index >= 0); // The repulsive edge must also be present in A.(row -> col).
 
@@ -207,14 +215,14 @@ __global__ void pack_pentagons_parallel(const int num_rep_edges,
         for(int l1 = A_symm_row_offsets[v1]; l1 < A_symm_row_offsets[v1 + 1] && rep_edge_cost < -tol; ++l1)
         {
             int v1_n1 = A_symm_col_ids[l1];
-            float v1_n1_edge_cost = get_CSR_value_both_dir_geq_tol(v1, v1_n1, A_row_offsets, A_col_ids, A_data, v1_n1_edge_index);
+            float v1_n1_edge_cost = get_CSR_value_both_dir_geq_tol(v1, v1_n1, A_num_rows, A_row_offsets, A_col_ids, A_data, v1_n1_edge_index);
             if (v1_n1_edge_cost < tol)
                 continue; 
 
             for(int l2 = A_symm_row_offsets[v2]; l2 < A_symm_row_offsets[v2 + 1] && rep_edge_cost < -tol; ++l2)
             {
                 int v2_n1 = A_symm_col_ids[l2];
-                float v2_edge_cost = get_CSR_value_both_dir_geq_tol(v2, v2_n1, A_row_offsets, A_col_ids, A_data, v2_edge_index);
+                float v2_edge_cost = get_CSR_value_both_dir_geq_tol(v2, v2_n1, A_num_rows, A_row_offsets, A_col_ids, A_data, v2_edge_index);
                 if (v2_edge_cost < tol)
                     continue;
 
@@ -223,7 +231,7 @@ __global__ void pack_pentagons_parallel(const int num_rep_edges,
                     int v1_n2 = A_symm_col_ids[l3];
                     float v1_n2_edge_cost, v2_n1_edge_cost;
                     bool connected = are_connected_by(v1_n1, v2_n1, v1_n2, 
-                                                    A_row_offsets, A_col_ids, A_data,
+                                                    A_row_offsets, A_col_ids, A_data, A_num_rows,
                                                     v1_n2_edge_index, v2_n1_edge_index,
                                                     v1_n2_edge_cost, v2_n1_edge_cost);
                     
@@ -269,7 +277,7 @@ struct is_positive_edge
 
 std::tuple<dCOO, thrust::device_vector<int>, thrust::device_vector<int>, int> create_matrices(cusparseHandle_t handle, const dCOO& A)
 {
-    MEASURE_FUNCTION_EXECUTION_TIME
+    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
     
     // Partition edges into positive and negative.
     thrust::device_vector<int> row_ids_rep = A.get_row_ids();
@@ -285,31 +293,37 @@ std::tuple<dCOO, thrust::device_vector<int>, thrust::device_vector<int>, int> cr
     // Create symmetric adjacency matrix of positive edges.
     thrust::device_vector<int> pos_row_ids_symm, pos_col_ids_symm;
     thrust::device_vector<float> pos_costs_symm;
-
-    std::tie(pos_row_ids_symm, pos_col_ids_symm, pos_costs_symm) = to_undirected(row_ids_rep.begin(), row_ids_rep.begin() + nr_positive_edges,
-                                                                                col_ids_rep.begin(), col_ids_rep.begin() + nr_positive_edges,
-                                                                                costs.begin(), costs.begin() + nr_positive_edges);
-    dCOO A_pos = dCOO(handle, 
-                    pos_col_ids_symm.begin(), pos_col_ids_symm.end(),
-                    pos_row_ids_symm.begin(), pos_row_ids_symm.end(), 
-                    pos_costs_symm.begin(), pos_costs_symm.end());
-
+    dCOO A_pos;
+    if (nr_positive_edges > 0)
+    {
+        std::tie(pos_row_ids_symm, pos_col_ids_symm, pos_costs_symm) = to_undirected(row_ids_rep.begin(), row_ids_rep.begin() + nr_positive_edges,
+                                                                                    col_ids_rep.begin(), col_ids_rep.begin() + nr_positive_edges,
+                                                                                    costs.begin(), costs.begin() + nr_positive_edges);
+        A_pos = dCOO(handle, std::max(A.rows(), A.cols()), std::max(A.rows(), A.cols()),
+                        pos_col_ids_symm.begin(), pos_col_ids_symm.end(),
+                        pos_row_ids_symm.begin(), pos_row_ids_symm.end(), 
+                        pos_costs_symm.begin(), pos_costs_symm.end());
+    }
     return {A_pos, row_ids_rep, col_ids_rep, nr_positive_edges};
 }
 
 // A should be directed thus containing same number of elements as in original problem. Does packing in-place on A.
-double parallel_small_cycle_packing_cuda(cusparseHandle_t handle, dCOO& A, const int max_tries)
+double parallel_small_cycle_packing_cuda(cusparseHandle_t handle, dCOO& A, const int max_tries_triangles, const int max_tries_quads)
 {
-    MEASURE_FUNCTION_EXECUTION_TIME;
+    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
 
     int num_nodes = A.rows();
     int num_edges = A.edges();
+    double lb = get_lb(A.get_data());
+    std::cout<<"Initial lb: "<<lb<<std::endl;
 
     // Make adjacency matrix and BFS search starting matrix.
     dCOO A_pos;
     thrust::device_vector<int> row_ids_rep, col_ids_rep;
     int nr_positive_edges;
     std::tie(A_pos, row_ids_rep, col_ids_rep, nr_positive_edges) = create_matrices(handle, A);
+    if (nr_positive_edges == 0)
+        return lb; 
 
     int num_rep_edges = num_edges - nr_positive_edges;
  
@@ -318,10 +332,8 @@ double parallel_small_cycle_packing_cuda(cusparseHandle_t handle, dCOO& A, const
 
     int threadCount = 256;
     int blockCount = ceil(num_rep_edges / (float) threadCount);
-    double lb = get_lb(A.get_data());
-    std::cout<<"Initial lb: "<<lb<<std::endl;
 
-    for (int t = 0; t < max_tries; t++)
+    for (int t = 0; t < max_tries_triangles; t++)
     {
         pack_triangles_parallel<<<blockCount, threadCount>>>(num_rep_edges, 
             thrust::raw_pointer_cast(row_ids_rep.data()), 
@@ -331,12 +343,13 @@ double parallel_small_cycle_packing_cuda(cusparseHandle_t handle, dCOO& A, const
             thrust::raw_pointer_cast(A_row_offsets.data()),
             A.get_col_ids_ptr(),
             A.get_writeable_data_ptr(),
-            nr_positive_edges);
+            nr_positive_edges,
+            A.rows());
         
         lb = get_lb(A.get_data());
         std::cout<<"packing triangles, itr: "<<t<<", lb: "<<lb<<std::endl;
     }
-    for (int t = 0; t < max_tries; t++)
+    for (int t = 0; t < max_tries_quads; t++)
     {
         pack_quadrangles_parallel<<<blockCount, threadCount>>>(num_rep_edges, 
             thrust::raw_pointer_cast(row_ids_rep.data()), 
@@ -346,7 +359,8 @@ double parallel_small_cycle_packing_cuda(cusparseHandle_t handle, dCOO& A, const
             thrust::raw_pointer_cast(A_row_offsets.data()),
             A.get_col_ids_ptr(),
             A.get_writeable_data_ptr(),
-            nr_positive_edges);
+            nr_positive_edges,
+            A.rows());
         
         lb = get_lb(A.get_data());
         std::cout<<"packing quadrangles, itr: "<<t<<", lb: "<<lb<<std::endl;
@@ -355,7 +369,7 @@ double parallel_small_cycle_packing_cuda(cusparseHandle_t handle, dCOO& A, const
     return lb;
 }
 
-std::tuple<double, dCOO> parallel_small_cycle_packing_cuda(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs, const int max_tries)
+std::tuple<double, dCOO> parallel_small_cycle_packing_cuda(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs, const int max_tries_triangles, const int max_tries_quads)
 {
     const int cuda_device = get_cuda_device();
     cudaSetDevice(cuda_device);
@@ -370,15 +384,15 @@ std::tuple<double, dCOO> parallel_small_cycle_packing_cuda(const std::vector<int
         j.begin(), j.end(), 
         costs.begin(), costs.end());
     
-    double lb = parallel_small_cycle_packing_cuda(handle, A, max_tries);
+    double lb = parallel_small_cycle_packing_cuda(handle, A, max_tries_triangles, max_tries_quads);
     return {lb, A};
 }
 
-double parallel_small_cycle_packing_cuda_lower_bound(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs, const int max_tries)
+double parallel_small_cycle_packing_cuda_lower_bound(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs, const int max_tries_triangles, const int max_tries_quads)
 {
     dCOO A; 
     double lb; 
-    std::tie(lb, A) = parallel_small_cycle_packing_cuda(i, j, costs, max_tries);
+    std::tie(lb, A) = parallel_small_cycle_packing_cuda(i, j, costs, max_tries_triangles, max_tries_quads);
     return lb;
 }
 

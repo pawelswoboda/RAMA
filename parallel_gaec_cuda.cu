@@ -124,6 +124,8 @@ struct negative_edge_indicator_func
     __host__ __device__
         bool operator()(const thrust::tuple<int,int,float> t)
         {
+            if(thrust::get<0>(t) <= thrust::get<1>(t)) // we only want one representative
+                return true;
             if(thrust::get<2>(t) <= w)
                 return true;
             return false;
@@ -147,17 +149,11 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> edges_to_cont
     auto first = thrust::make_zip_iterator(thrust::make_tuple(col_ids.begin(), row_ids.begin(), data.begin()));
     auto last = thrust::make_zip_iterator(thrust::make_tuple(col_ids.end(), row_ids.end(), data.end()));
 
-    auto new_last = thrust::remove_if(first, last, negative_edge_indicator_func({0.0}));
-    const size_t nr_positive_edges = std::distance(first, new_last);
-    col_ids.resize(nr_positive_edges);
-    row_ids.resize(nr_positive_edges);
-    data.resize(nr_positive_edges);
-
     const double smallest_edge_weight = *thrust::min_element(data.begin(), data.end());
     const double largest_edge_weight = *thrust::max_element(data.begin(), data.end());
     const float mid_edge_weight = retain_ratio * largest_edge_weight;
 
-    new_last = thrust::remove_if(first, last, negative_edge_indicator_func({mid_edge_weight}));
+    auto new_last = thrust::remove_if(first, last, negative_edge_indicator_func({mid_edge_weight}));
     const size_t nr_remaining_edges = std::distance(first, new_last);
     col_ids.resize(nr_remaining_edges);
     row_ids.resize(nr_remaining_edges);
@@ -192,7 +188,7 @@ std::vector<int> parallel_gaec_cuda(dCOO& A)
     cusparseHandle_t handle;
     checkCuSparseError(cusparseCreate(&handle), "cusparse init failed");
 
-    const double initial_lb = A.sum();
+    const double initial_lb = A.sum() / 2.0;
     std::cout << "initial energy = " << initial_lb << "\n";
 
     thrust::device_vector<int> node_mapping(A.rows());
@@ -200,13 +196,17 @@ std::vector<int> parallel_gaec_cuda(dCOO& A)
     double contract_ratio = 0.5;
 
     bool try_edges_to_contract_by_maximum_matching = true;
-
+    assert(A.rows() == A.cols());
+    
     for(size_t iter=0;; ++iter)
     {
         //const size_t nr_edges_to_contract = std::max(size_t(1), size_t(A.rows() * contract_ratio));
         // if (iter > 0)
-        //     parallel_small_cycle_packing_cuda(handle, A, max_tries);
-
+        // {
+        //     dCOO A_dir = A.export_directed(handle);
+        //     parallel_small_cycle_packing_cuda(handle, A_dir, 1, 0);
+        //     A = A_dir.export_undirected(handle); //TODO: just replace data ?
+        // }
         thrust::device_vector<int> contract_cols, contract_rows;
         if(try_edges_to_contract_by_maximum_matching)
         {
@@ -274,7 +274,7 @@ std::vector<int> parallel_gaec_cuda(dCOO& A)
         thrust::gather(node_mapping.begin(), node_mapping.end(), cur_node_mapping.begin(), node_mapping.begin());
     }
 
-    const double lb = A.sum();
+    const double lb = A.sum() / 2.0;
     std::cout << "final energy = " << lb << "\n";
 
     cusparseDestroy(handle);
@@ -313,11 +313,13 @@ std::vector<int> parallel_gaec_cuda(const std::vector<int>& i, const std::vector
         j.begin(), j.end(), 
         costs.begin(), costs.end());
 
-    double lb = parallel_small_cycle_packing_cuda(handle, A, 1); // modifies A in-place by cycle packing.
+    double lb = parallel_small_cycle_packing_cuda(handle, A, 1, 1); // modifies A in-place by cycle packing.
+
+    dCOO A_undir = A.export_undirected(handle);
 
     cusparseDestroy(handle);
 
-    const std::vector<int> h_node_mapping = parallel_gaec_cuda(A);
+    const std::vector<int> h_node_mapping = parallel_gaec_cuda(A_undir);
     print_obj_original(h_node_mapping, i, j, costs); 
     
     return h_node_mapping;

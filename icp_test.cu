@@ -12,18 +12,18 @@ int main(int argc, char** argv)
 
     double lb;
     dCOO A;
-    std::tie(lb, A) = parallel_small_cycle_packing_cuda(i, j, costs, 5);
+    std::tie(lb, A) = parallel_small_cycle_packing_cuda(i, j, costs, 5, 5);
     assert(lb == -2.5);
 
     cusparseHandle_t handle;
     checkCuSparseError(cusparseCreate(&handle), "cusparse init failed");
 
     // First compute without any packing (re-arranges the edges):
-    std::tie(lb, A) = parallel_small_cycle_packing_cuda(i, j, costs, 0);
+    std::tie(lb, A) = parallel_small_cycle_packing_cuda(i, j, costs, 0, 0);
 
     // Now, pack cycles:
     dCOO A_packed;
-    std::tie(lb, A_packed) = parallel_small_cycle_packing_cuda(i, j, costs, 5);
+    std::tie(lb, A_packed) = parallel_small_cycle_packing_cuda(i, j, costs, 5, 5);
 
     thrust::device_vector<float> costs_original_d = A.get_data();
     thrust::device_vector<float> costs_packed_d = A_packed.get_data();
