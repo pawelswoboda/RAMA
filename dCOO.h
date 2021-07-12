@@ -20,13 +20,15 @@ class dCOO {
                     const int _rows, const int _cols,
                     COL_ITERATOR col_id_begin, COL_ITERATOR col_id_end,
                     ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
-                    DATA_ITERATOR data_begin, DATA_ITERATOR data_end);
+                    DATA_ITERATOR data_begin, DATA_ITERATOR data_end,
+                    bool is_sorted = false);
 
         template<typename COL_ITERATOR, typename ROW_ITERATOR, typename DATA_ITERATOR>
             dCOO(cusparseHandle_t handle, 
                     COL_ITERATOR col_id_begin, COL_ITERATOR col_id_end,
                     ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
-                    DATA_ITERATOR data_begin, DATA_ITERATOR data_end);
+                    DATA_ITERATOR data_begin, DATA_ITERATOR data_end,
+                    bool is_sorted = false);
 
         dCOO(thrust::device_vector<int>&& _col_ids, thrust::device_vector<int>&& _row_ids, thrust::device_vector<float>&& _data);
 
@@ -139,24 +141,28 @@ dCOO::dCOO(cusparseHandle_t handle,
         const int _rows, const int _cols,
         COL_ITERATOR col_id_begin, COL_ITERATOR col_id_end,
         ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
-        DATA_ITERATOR data_begin, DATA_ITERATOR data_end)
+        DATA_ITERATOR data_begin, DATA_ITERATOR data_end,
+        bool is_sorted)
     : rows_(_rows),
     cols_(_cols), 
     row_ids(row_id_begin, row_id_end),
     col_ids(col_id_begin, col_id_end),
     data(data_begin, data_end)
 {
-    init();
+    if (!is_sorted)
+        init();
 } 
 
     template<typename COL_ITERATOR, typename ROW_ITERATOR, typename DATA_ITERATOR>
 dCOO::dCOO(cusparseHandle_t handle,
         COL_ITERATOR col_id_begin, COL_ITERATOR col_id_end,
         ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
-        DATA_ITERATOR data_begin, DATA_ITERATOR data_end)
+        DATA_ITERATOR data_begin, DATA_ITERATOR data_end,
+        bool is_sorted)
     : row_ids(row_id_begin, row_id_end),
     col_ids(col_id_begin, col_id_end),
     data(data_begin, data_end)
 {
-    init();
+    if (!is_sorted)
+        init();
 }

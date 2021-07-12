@@ -163,7 +163,8 @@ dCOO dCOO::contract_cuda(cusparseHandle_t handle, const thrust::device_vector<in
     return dCOO(handle, out_num_rows, out_num_cols, 
             out_cols.begin(), out_cols.end(),
             out_rows.begin(), out_rows.end(), 
-            out_data.begin(), out_data.end());
+            out_data.begin(), out_data.end(),
+            true);
 }
 
 struct is_diagonal
