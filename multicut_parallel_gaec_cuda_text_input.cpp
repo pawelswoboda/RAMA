@@ -1,5 +1,6 @@
 #include "parallel_gaec_cuda.h"
 #include "multicut_text_parser.h"
+#include "dCOO.h"
 #include<stdexcept>
 
 int main(int argc, char** argv)
@@ -10,5 +11,6 @@ int main(int argc, char** argv)
     std::vector<int> j;
     std::vector<float> costs;
     std::tie(i,j,costs) = read_file(argv[1]);
-    parallel_gaec_cuda(i,j,costs); 
+
+    const std::vector<int> h_node_mapping = parallel_gaec_cuda(i, j, costs);
 }

@@ -313,9 +313,9 @@ std::vector<int> parallel_gaec_cuda(const std::vector<int>& i, const std::vector
         j.begin(), j.end(), 
         costs.begin(), costs.end());
 
-    double lb = parallel_small_cycle_packing_cuda(handle, A, 1, 1); // modifies A in-place by cycle packing.
+    //double lb = parallel_small_cycle_packing_cuda(handle, A, 1, 1); // modifies A in-place by cycle packing.
 
-    dCOO A_undir = A.export_undirected(handle);
+    dCOO A_undir = A.export_undirected();
 
     cusparseDestroy(handle);
 
