@@ -127,9 +127,9 @@ data = coo_data;
 */
 
 inline dCOO::dCOO(thrust::device_vector<int>&& _col_ids, thrust::device_vector<int>&& _row_ids, thrust::device_vector<float>&& _data)
-    : col_ids(_col_ids),
-    row_ids(_row_ids),
-    data(_data) 
+    : col_ids(std::move(_col_ids)),
+    row_ids(std::move(_row_ids)),
+    data(std::move(_data)) 
 {
     init(); 
 }
