@@ -305,21 +305,15 @@ std::vector<int> parallel_gaec_cuda(const std::vector<int>& i, const std::vector
     cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, cuda_device);
     std::cout << "Going to use " << prop.name << " " << prop.major << "." << prop.minor << ", device number " << cuda_device << "\n";
-    cusparseHandle_t handle;
-    checkCuSparseError(cusparseCreate(&handle), "cusparse init failed");
 
-    dCOO A(handle, 
-        i.begin(), i.end(),
-        j.begin(), j.end(), 
-        costs.begin(), costs.end());
+    thrust::device_vector<int> i_un, j_un;
+    thrust::device_vector<float> costs_un;
+    std::tie(i_un, j_un, costs_un) = to_undirected(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end());
+    dCOO A(std::move(i_un), std::move(j_un), std::move(costs_un));
 
     //double lb = parallel_small_cycle_packing_cuda(handle, A, 1, 1); // modifies A in-place by cycle packing.
 
-    dCOO A_undir = A.export_undirected();
-
-    cusparseDestroy(handle);
-
-    const std::vector<int> h_node_mapping = parallel_gaec_cuda(A_undir);
+    const std::vector<int> h_node_mapping = parallel_gaec_cuda(A);
     print_obj_original(h_node_mapping, i, j, costs); 
     
     return h_node_mapping;
