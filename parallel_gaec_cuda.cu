@@ -311,8 +311,6 @@ std::vector<int> parallel_gaec_cuda(const std::vector<int>& i, const std::vector
     std::tie(i_un, j_un, costs_un) = to_undirected(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end());
     dCOO A(std::move(i_un), std::move(j_un), std::move(costs_un));
 
-    //double lb = parallel_small_cycle_packing_cuda(handle, A, 1, 1); // modifies A in-place by cycle packing.
-
     const std::vector<int> h_node_mapping = parallel_gaec_cuda(A);
     print_obj_original(h_node_mapping, i, j, costs); 
     
