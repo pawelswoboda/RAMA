@@ -20,13 +20,15 @@ class dCOO {
                     const int _rows, const int _cols,
                     COL_ITERATOR col_id_begin, COL_ITERATOR col_id_end,
                     ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
-                    DATA_ITERATOR data_begin, DATA_ITERATOR data_end);
+                    DATA_ITERATOR data_begin, DATA_ITERATOR data_end,
+                    bool input_sorted = false);
 
         template<typename COL_ITERATOR, typename ROW_ITERATOR, typename DATA_ITERATOR>
             dCOO(cusparseHandle_t handle, 
                     COL_ITERATOR col_id_begin, COL_ITERATOR col_id_end,
                     ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
-                    DATA_ITERATOR data_begin, DATA_ITERATOR data_end);
+                    DATA_ITERATOR data_begin, DATA_ITERATOR data_end,
+                    bool input_sorted = false);
 
         size_t rows() const { return rows_; }
         size_t cols() const { return cols_; }
@@ -57,7 +59,8 @@ class dCOO {
             void init(cusparseHandle_t handle,
                     COL_ITERATOR col_id_begin, COL_ITERATOR col_id_end,
                     ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
-                    DATA_ITERATOR data_begin, DATA_ITERATOR data_end);
+                    DATA_ITERATOR data_begin, DATA_ITERATOR data_end, 
+                    bool input_sorted);
         int rows_ = 0;
         int cols_ = 0;
         thrust::device_vector<float> data;
@@ -185,27 +188,30 @@ dCOO::dCOO(cusparseHandle_t handle,
         const int _rows, const int _cols,
         COL_ITERATOR col_id_begin, COL_ITERATOR col_id_end,
         ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
-        DATA_ITERATOR data_begin, DATA_ITERATOR data_end)
+        DATA_ITERATOR data_begin, DATA_ITERATOR data_end,
+        bool input_sorted)
     : rows_(_rows),
     cols_(_cols)
 {
-    init(handle, col_id_begin, col_id_end, row_id_begin, row_id_end, data_begin, data_end);
+    init(handle, col_id_begin, col_id_end, row_id_begin, row_id_end, data_begin, data_end, input_sorted);
 } 
 
     template<typename COL_ITERATOR, typename ROW_ITERATOR, typename DATA_ITERATOR>
 dCOO::dCOO(cusparseHandle_t handle,
         COL_ITERATOR col_id_begin, COL_ITERATOR col_id_end,
         ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
-        DATA_ITERATOR data_begin, DATA_ITERATOR data_end)
+        DATA_ITERATOR data_begin, DATA_ITERATOR data_end,
+        bool input_sorted)
 {
-    init(handle, col_id_begin, col_id_end, row_id_begin, row_id_end, data_begin, data_end);
+    init(handle, col_id_begin, col_id_end, row_id_begin, row_id_end, data_begin, data_end, input_sorted);
 }
 
     template<typename COL_ITERATOR, typename ROW_ITERATOR, typename DATA_ITERATOR>
 void dCOO::init(cusparseHandle_t handle,
         COL_ITERATOR col_id_begin, COL_ITERATOR col_id_end,
         ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
-        DATA_ITERATOR data_begin, DATA_ITERATOR data_end)
+        DATA_ITERATOR data_begin, DATA_ITERATOR data_end, 
+        bool input_sorted)
 {
     assert(std::distance(data_begin, data_end) == std::distance(col_id_begin, col_id_end));
     assert(std::distance(data_begin, data_end) == std::distance(row_id_begin, row_id_end));
@@ -215,7 +221,8 @@ void dCOO::init(cusparseHandle_t handle,
     col_ids = thrust::device_vector<int>(col_id_begin, col_id_end);
     data = thrust::device_vector<float>(data_begin, data_end);
 
-    coo_sorting(handle, col_ids, row_ids, data);
+    if (!input_sorted)
+        coo_sorting(handle, col_ids, row_ids, data);
 
     // now row indices are non-decreasing
     assert(thrust::is_sorted(row_ids.begin(), row_ids.end()));
