@@ -14,8 +14,8 @@ int main(int argc, char** argv)
 
     double lb;
     dCOO A;
-    thrust::device_vector<int3> triangles;
-    std::tie(lb, A, triangles) = parallel_small_cycle_packing_cuda(i, j, costs, 1, 1);
+    thrust::device_vector<int> triangles_v1, triangles_v2, triangles_v3;
+    std::tie(lb, A, triangles_v1, triangles_v2, triangles_v3) = parallel_small_cycle_packing_cuda(i, j, costs, 1, 1);
 
     dCOO A_undir = A.export_undirected();
     const std::vector<int> h_node_mapping = parallel_gaec_cuda(A_undir); 

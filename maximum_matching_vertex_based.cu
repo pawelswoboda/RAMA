@@ -49,6 +49,7 @@ __global__ void pick_best_neighbour(const int num_nodes,
 __global__ void match_neighbours(const int num_nodes, 
                                 const int* const __restrict__ v_best_neighbours,
                                 int* __restrict__ v_matched,
+                                int* __restrict__ node_mapping,
                                 bool* __restrict__ still_running)
 {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -64,6 +65,7 @@ __global__ void match_neighbours(const int num_nodes,
             
         if (v_best_neighbours[v_best] == v)
         {
+            node_mapping[max(v_best, v)] = min(v_best, v); 
             v_matched[v] = 1;
             v_matched[v_best] = 1;
             *still_running = true;
@@ -79,16 +81,18 @@ struct is_unmatched {
         }
 };
 
-std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> filter_edges_by_matching_vertex_based(cusparseHandle_t handle, const dCOO& A)
+std::tuple<thrust::device_vector<int>, int> filter_edges_by_matching_vertex_based(cusparseHandle_t handle, const dCOO& A)
 {
     thrust::device_vector<int> v_best_neighbours(A.rows(), -1);
     thrust::device_vector<int> v_matched(A.rows(), 0);
+    thrust::device_vector<int> node_mapping(A.rows());
+    thrust::sequence(node_mapping.begin(), node_mapping.end(), 0);
 
     int numBlocks = ceil(A.rows() / (float) numThreads);
     thrust::device_vector<bool> still_running(1);
     thrust::device_vector<int> A_row_offsets = A.compute_row_offsets(handle);
-
-    for (int t = 0; t < 5; t++)
+    int prev_num_edges = 0;
+    for (int t = 0; t < 10; t++)
     {
         thrust::fill(thrust::device, still_running.begin(), still_running.end(), false);
 
@@ -102,29 +106,25 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> filter_edges_
         match_neighbours<<<numBlocks, numThreads>>>(A.rows(), 
             thrust::raw_pointer_cast(v_best_neighbours.data()),
             thrust::raw_pointer_cast(v_matched.data()),
+            thrust::raw_pointer_cast(node_mapping.data()),
             thrust::raw_pointer_cast(still_running.data()));
 
-        std::cout << "matched sum = " << thrust::reduce(v_matched.begin(), v_matched.end(), 0) << "\n";
-        if (!still_running[0])
+        int current_num_edges = thrust::reduce(v_matched.begin(), v_matched.end(), 0);
+        float rel_increase = (current_num_edges - prev_num_edges) / (prev_num_edges + 1.0f);
+        std::cout << "matched sum: " << current_num_edges << ", rel_increase: " << rel_increase <<"\n";
+        prev_num_edges = current_num_edges;
+        if (!still_running[0] || rel_increase < 0.1)
             break;
     }
-    thrust::device_vector<int> matched_rows(A.rows());
-    thrust::sequence(matched_rows.begin(), matched_rows.end(), 0);
-
-    auto first_m = thrust::make_zip_iterator(thrust::make_tuple(matched_rows.begin(), v_best_neighbours.begin(), v_matched.begin()));
-    auto last_m = thrust::make_zip_iterator(thrust::make_tuple(matched_rows.end(), v_best_neighbours.end(), v_matched.end()));
-    auto matched_last = thrust::remove_if(first_m, last_m, is_unmatched());
-    const int nr_matched_edges = std::distance(first_m, matched_last);
-    matched_rows.resize(nr_matched_edges);
-    v_best_neighbours.resize(nr_matched_edges);
 
     std::cout << "# vertices = " << A.rows() << "\n";
-    std::cout << "# matched edges = " << nr_matched_edges / 2 << " / "<< A.edges() / 2 << "\n";
+    std::cout << "# matched edges = " << prev_num_edges / 2 << " / "<< A.edges() / 2 << "\n";
     
     // thrust::copy(matched_rows.begin(), matched_rows.end(), std::ostream_iterator<int>(std::cout, " "));
     // std::cout<<"\n";
     // thrust::copy(v_best_neighbours.begin(), v_best_neighbours.end(), std::ostream_iterator<int>(std::cout, " "));
     // std::cout<<"\n";
 
-    return {matched_rows, v_best_neighbours}; 
+
+    return {node_mapping, prev_num_edges}; 
 }
