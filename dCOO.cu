@@ -75,26 +75,6 @@ void coo_sorting(thrust::device_vector<int>& col_ids, thrust::device_vector<int>
     assert(thrust::is_sorted(row_ids.begin(), row_ids.end()));
 }
 
-
-struct edge_direction_func
-{
-    __host__ __device__
-        thrust::tuple<int,int> operator()(const thrust::tuple<int,int> t)
-        {
-            const int i = thrust::get<0>(t);
-            const int j = thrust::get<1>(t);
-            return {min(i, j), max(i, j)};
-        }
-};
-void correct_edge_direction(thrust::device_vector<int>& col_ids, thrust::device_vector<int>& row_ids)
-{
-    assert(row_ids.size() == col_ids.size());
-    auto first = thrust::make_zip_iterator(thrust::make_tuple(col_ids.begin(), row_ids.begin()));
-    auto last = thrust::make_zip_iterator(thrust::make_tuple(col_ids.end(), row_ids.end()));
-
-    thrust::transform(first, last, first, edge_direction_func());
-}
-
 // TODO: remove this version
 void coo_sorting(cusparseHandle_t handle, thrust::device_vector<int>& col_ids, thrust::device_vector<int>& row_ids, thrust::device_vector<float>& data)
 {
@@ -166,7 +146,6 @@ dCOO dCOO::contract_cuda(cusparseHandle_t handle, const thrust::device_vector<in
             thrust::raw_pointer_cast(new_row_ids.data()), 
             thrust::raw_pointer_cast(new_col_ids.data()));
 
-    // correct_edge_direction(new_col_ids, new_row_ids);
     coo_sorting(handle, new_col_ids, new_row_ids, new_data); // in-place sorting by rows.
 
     auto first = thrust::make_zip_iterator(thrust::make_tuple(new_col_ids.begin(), new_row_ids.begin()));
@@ -238,8 +217,8 @@ struct diag_func
 
 thrust::device_vector<float> dCOO::diagonal(cusparseHandle_t handle) const
 {
-    assert(rows() == cols());
-    thrust::device_vector<float> d(rows(), 0.0);
+    // assert(rows() == cols());
+    thrust::device_vector<float> d(max(rows(), cols()), 0.0);
 
     auto begin = thrust::make_zip_iterator(thrust::make_tuple(col_ids.begin(), row_ids.begin(), data.begin()));
     auto end = thrust::make_zip_iterator(thrust::make_tuple(col_ids.end(), row_ids.end(), data.end()));

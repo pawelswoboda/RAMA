@@ -191,7 +191,7 @@ std::vector<int> parallel_gaec_cuda(dCOO& A)
     double contract_ratio = 0.5;
 
     bool try_edges_to_contract_by_maximum_matching = true;
-    assert(A.rows() == A.cols());
+    // assert(A.rows() == A.cols());
     
     for(size_t iter=0;; ++iter)
     {

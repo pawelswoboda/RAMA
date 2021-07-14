@@ -19,5 +19,7 @@ int main(int argc, char** argv)
 
     dCOO A_undir = A.export_undirected();
     const std::vector<int> h_node_mapping = parallel_gaec_cuda(A_undir); 
+
+    print_obj_original(h_node_mapping, i, j, costs);
 }
 
