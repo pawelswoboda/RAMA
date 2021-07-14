@@ -1,5 +1,6 @@
 #include "dCOO.h"
 #include <thrust/transform.h>
+#include <thrust/iterator/discard_iterator.h>
 #include <thrust/tuple.h>
 #include <thrust/for_each.h>
 #include <thrust/iterator/zip_iterator.h>
@@ -123,7 +124,7 @@ void dCOO::init()
     assert(rows_ > *thrust::max_element(row_ids.begin(), row_ids.end()));
 }
 
-dCOO dCOO::contract_cuda(cusparseHandle_t handle, const thrust::device_vector<int>& node_mapping)
+dCOO dCOO::contract_cuda(cusparseHandle_t handle, const thrust::device_vector<int>& node_mapping, const bool do_avg)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
 
@@ -156,14 +157,22 @@ dCOO dCOO::contract_cuda(cusparseHandle_t handle, const thrust::device_vector<in
     out_rows.resize(new_num_edges);
     out_cols.resize(new_num_edges);
     out_data.resize(new_num_edges);
+    if (do_avg)
+    {
+        thrust::device_vector<int> num_duplicates(new_data.size());
+        auto new_end_duplicates = thrust::reduce_by_key(first, last, thrust::constant_iterator<int>(1), thrust::make_discard_iterator(), num_duplicates.begin(), is_same_edge());
+        assert(std::distance(num_duplicates.begin(), new_end_duplicates.second) == new_num_edges);
+        num_duplicates.resize(new_num_edges);
+        thrust::transform(out_data.begin(), out_data.end(), num_duplicates.begin(), out_data.begin(), thrust::divides<float>());
+    }
 
     int out_num_rows = out_rows.back() + 1;
     int out_num_cols = *thrust::max_element(out_cols.begin(), out_cols.end()) + 1;
 
-    return dCOO(handle, out_num_rows, out_num_cols, 
-            out_cols.begin(), out_cols.end(),
-            out_rows.begin(), out_rows.end(), 
-            out_data.begin(), out_data.end(),
+    return dCOO(out_num_rows, out_num_cols, 
+            std::move(out_cols),
+            std::move(out_rows), 
+            std::move(out_data),
             true);
 }
 
@@ -218,7 +227,7 @@ thrust::device_vector<float> dCOO::diagonal(cusparseHandle_t handle) const
 thrust::device_vector<int> dCOO::compute_row_offsets(cusparseHandle_t handle, const int rows, const thrust::device_vector<int>& col_ids, const thrust::device_vector<int>& row_ids)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
-        thrust::device_vector<int> row_offsets(rows+1);
+    thrust::device_vector<int> row_offsets(rows+1);
     cusparseXcoo2csr(handle, thrust::raw_pointer_cast(row_ids.data()), row_ids.size(), rows, thrust::raw_pointer_cast(row_offsets.data()), CUSPARSE_INDEX_BASE_ZERO);
     return row_offsets;
 }
