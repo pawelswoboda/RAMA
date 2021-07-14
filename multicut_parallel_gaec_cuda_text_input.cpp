@@ -13,4 +13,6 @@ int main(int argc, char** argv)
     std::tie(i,j,costs) = read_file(argv[1]);
 
     const std::vector<int> h_node_mapping = parallel_gaec_cuda(i, j, costs);
+
+    print_obj_original(h_node_mapping, i, j, costs);
 }

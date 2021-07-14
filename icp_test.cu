@@ -12,19 +12,19 @@ int main(int argc, char** argv)
 
     double lb;
     dCOO A;
-    thrust::device_vector<int3> triangles;
-    std::tie(lb, A, triangles) = parallel_small_cycle_packing_cuda(i, j, costs, 5, 5);
+    thrust::device_vector<int> triangles_v1, triangles_v2, triangles_v3;
+    std::tie(lb, A, triangles_v1, triangles_v2, triangles_v3) = parallel_small_cycle_packing_cuda(i, j, costs, 5, 5);
     assert(lb == -2.5);
 
     cusparseHandle_t handle;
     checkCuSparseError(cusparseCreate(&handle), "cusparse init failed");
 
     // First compute without any packing (re-arranges the edges):
-    std::tie(lb, A, triangles) = parallel_small_cycle_packing_cuda(i, j, costs, 0, 0);
+    std::tie(lb, A, triangles_v1, triangles_v2, triangles_v3) = parallel_small_cycle_packing_cuda(i, j, costs, 0, 0);
 
     // Now, pack cycles:
     dCOO A_packed;
-    std::tie(lb, A_packed, triangles) = parallel_small_cycle_packing_cuda(i, j, costs, 5, 5);
+    std::tie(lb, A_packed, triangles_v1, triangles_v2, triangles_v3) = parallel_small_cycle_packing_cuda(i, j, costs, 5, 5);
 
     thrust::device_vector<float> costs_original_d = A.get_data();
     thrust::device_vector<float> costs_packed_d = A_packed.get_data();
@@ -35,9 +35,8 @@ int main(int argc, char** argv)
 
     std::cout<<"Found triangles: \n";
 
-    for (int t = 0; t < triangles.size(); t++)
+    for (int t = 0; t < triangles_v1.size(); t++)
     {
-        int3 elem = triangles[t];
-        std::cout<<elem.x<<" "<<elem.y<<" "<<elem.z<<"\n";
+        std::cout<<triangles_v1[t]<<" "<<triangles_v2[t]<<" "<<triangles_v3[t]<<"\n";
     }
 }

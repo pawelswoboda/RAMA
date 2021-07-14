@@ -16,21 +16,20 @@ class dCOO {
         dCOO() {}
 
         template<typename COL_ITERATOR, typename ROW_ITERATOR, typename DATA_ITERATOR>
-            dCOO(cusparseHandle_t handle, 
-                    const int _rows, const int _cols,
-                    COL_ITERATOR col_id_begin, COL_ITERATOR col_id_end,
-                    ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
-                    DATA_ITERATOR data_begin, DATA_ITERATOR data_end,
-                    bool is_sorted = false);
+            dCOO(const int _rows, const int _cols,
+                COL_ITERATOR col_id_begin, COL_ITERATOR col_id_end,
+                ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
+                DATA_ITERATOR data_begin, DATA_ITERATOR data_end,
+                const bool is_sorted = false);
 
         template<typename COL_ITERATOR, typename ROW_ITERATOR, typename DATA_ITERATOR>
-            dCOO(cusparseHandle_t handle, 
-                    COL_ITERATOR col_id_begin, COL_ITERATOR col_id_end,
-                    ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
-                    DATA_ITERATOR data_begin, DATA_ITERATOR data_end,
-                    bool is_sorted = false);
+            dCOO(COL_ITERATOR col_id_begin, COL_ITERATOR col_id_end,
+                ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
+                DATA_ITERATOR data_begin, DATA_ITERATOR data_end);
 
         dCOO(thrust::device_vector<int>&& _col_ids, thrust::device_vector<int>&& _row_ids, thrust::device_vector<float>&& _data);
+        dCOO(const int _rows, const int _cols, thrust::device_vector<int>&& _col_ids, thrust::device_vector<int>&& _row_ids, thrust::device_vector<float>&& _data, const bool is_sorted = false);
+
 
         size_t rows() const { return rows_; }
         size_t cols() const { return cols_; }
@@ -52,7 +51,7 @@ class dCOO {
         const thrust::device_vector<float>& get_data() const { return data; }
 
         thrust::device_vector<float> diagonal(cusparseHandle_t) const;
-        dCOO contract_cuda(cusparseHandle_t handle, const thrust::device_vector<int>& node_mapping);
+        dCOO contract_cuda(cusparseHandle_t handle, const thrust::device_vector<int>& node_mapping, const bool do_avg = false);
         dCOO export_undirected();
         dCOO export_directed();
 
@@ -136,13 +135,23 @@ inline dCOO::dCOO(thrust::device_vector<int>&& _col_ids, thrust::device_vector<i
     init(); 
 }
 
+inline dCOO::dCOO(const int _rows, const int _cols, thrust::device_vector<int>&& _col_ids, thrust::device_vector<int>&& _row_ids, thrust::device_vector<float>&& _data, const bool is_sorted)
+    : rows_(_rows),
+    cols_(_cols), 
+    col_ids(std::move(_col_ids)),
+    row_ids(std::move(_row_ids)),
+    data(std::move(_data)) 
+{
+    if (!is_sorted)
+        init(); 
+}
+
     template<typename COL_ITERATOR, typename ROW_ITERATOR, typename DATA_ITERATOR>
-dCOO::dCOO(cusparseHandle_t handle, 
-        const int _rows, const int _cols,
+dCOO::dCOO(const int _rows, const int _cols,
         COL_ITERATOR col_id_begin, COL_ITERATOR col_id_end,
         ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
         DATA_ITERATOR data_begin, DATA_ITERATOR data_end,
-        bool is_sorted)
+        const bool is_sorted)
     : rows_(_rows),
     cols_(_cols), 
     row_ids(row_id_begin, row_id_end),
@@ -154,15 +163,12 @@ dCOO::dCOO(cusparseHandle_t handle,
 } 
 
     template<typename COL_ITERATOR, typename ROW_ITERATOR, typename DATA_ITERATOR>
-dCOO::dCOO(cusparseHandle_t handle,
-        COL_ITERATOR col_id_begin, COL_ITERATOR col_id_end,
+dCOO::dCOO(COL_ITERATOR col_id_begin, COL_ITERATOR col_id_end,
         ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
-        DATA_ITERATOR data_begin, DATA_ITERATOR data_end,
-        bool is_sorted)
+        DATA_ITERATOR data_begin, DATA_ITERATOR data_end)
     : row_ids(row_id_begin, row_id_end),
     col_ids(col_id_begin, col_id_end),
     data(data_begin, data_end)
 {
-    if (!is_sorted)
-        init();
+    init();
 }

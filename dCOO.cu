@@ -1,5 +1,6 @@
 #include "dCOO.h"
 #include <thrust/transform.h>
+#include <thrust/iterator/discard_iterator.h>
 #include <thrust/tuple.h>
 #include <thrust/for_each.h>
 #include <thrust/iterator/zip_iterator.h>
@@ -88,8 +89,10 @@ __global__ void map_nodes(const int num_edges, const int* const __restrict__ nod
     int num_threads = blockDim.x * gridDim.x;
     for (int e = tid; e < num_edges; e += num_threads)
     {
-        rows[e] = node_mapping[rows[e]];
-        cols[e] = node_mapping[cols[e]];
+        int i = node_mapping[rows[e]];
+        int j = node_mapping[cols[e]];
+        rows[e] = max(i, j);
+        cols[e] = min(i, j);
     }
 }
 
@@ -123,7 +126,7 @@ void dCOO::init()
     assert(rows_ > *thrust::max_element(row_ids.begin(), row_ids.end()));
 }
 
-dCOO dCOO::contract_cuda(cusparseHandle_t handle, const thrust::device_vector<int>& node_mapping)
+dCOO dCOO::contract_cuda(cusparseHandle_t handle, const thrust::device_vector<int>& node_mapping, const bool do_avg)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
 
@@ -135,8 +138,10 @@ dCOO dCOO::contract_cuda(cusparseHandle_t handle, const thrust::device_vector<in
 
     int num_edges = new_row_ids.size();
     int numBlocks = ceil(num_edges / (float) numThreads);
+    // std::cout<<"rows: "<<rows_<<", actual num row: "<<*thrust::max_element(row_ids.begin(), row_ids.end()) + 1<<", node_mapping_size: "<<node_mapping.size()<<"\n";
+    // std::cout<<"cols: "<<cols_<<", actual num col: "<<*thrust::max_element(col_ids.begin(), col_ids.end()) + 1<<", node_mapping_size: "<<node_mapping.size()<<"\n";
 
-    map_nodes<<<numBlocks, numThreads>>>(num_edges, 
+    map_nodes<<<numBlocks, numThreads>>>(num_edges,
             thrust::raw_pointer_cast(node_mapping.data()), 
             thrust::raw_pointer_cast(new_row_ids.data()), 
             thrust::raw_pointer_cast(new_col_ids.data()));
@@ -156,14 +161,22 @@ dCOO dCOO::contract_cuda(cusparseHandle_t handle, const thrust::device_vector<in
     out_rows.resize(new_num_edges);
     out_cols.resize(new_num_edges);
     out_data.resize(new_num_edges);
+    if (do_avg)
+    {
+        thrust::device_vector<int> num_duplicates(new_data.size());
+        auto new_end_duplicates = thrust::reduce_by_key(first, last, thrust::constant_iterator<int>(1), thrust::make_discard_iterator(), num_duplicates.begin(), is_same_edge());
+        assert(std::distance(num_duplicates.begin(), new_end_duplicates.second) == new_num_edges);
+        num_duplicates.resize(new_num_edges);
+        thrust::transform(out_data.begin(), out_data.end(), num_duplicates.begin(), out_data.begin(), thrust::divides<float>());
+    }
 
     int out_num_rows = out_rows.back() + 1;
     int out_num_cols = *thrust::max_element(out_cols.begin(), out_cols.end()) + 1;
 
-    return dCOO(handle, out_num_rows, out_num_cols, 
-            out_cols.begin(), out_cols.end(),
-            out_rows.begin(), out_rows.end(), 
-            out_data.begin(), out_data.end(),
+    return dCOO(out_num_rows, out_num_cols, 
+            std::move(out_cols),
+            std::move(out_rows), 
+            std::move(out_data),
             true);
 }
 
@@ -204,8 +217,8 @@ struct diag_func
 
 thrust::device_vector<float> dCOO::diagonal(cusparseHandle_t handle) const
 {
-    assert(rows() == cols());
-    thrust::device_vector<float> d(rows(), 0.0);
+    // assert(rows() == cols());
+    thrust::device_vector<float> d(max(rows(), cols()), 0.0);
 
     auto begin = thrust::make_zip_iterator(thrust::make_tuple(col_ids.begin(), row_ids.begin(), data.begin()));
     auto end = thrust::make_zip_iterator(thrust::make_tuple(col_ids.end(), row_ids.end(), data.end()));
@@ -218,7 +231,7 @@ thrust::device_vector<float> dCOO::diagonal(cusparseHandle_t handle) const
 thrust::device_vector<int> dCOO::compute_row_offsets(cusparseHandle_t handle, const int rows, const thrust::device_vector<int>& col_ids, const thrust::device_vector<int>& row_ids)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
-        thrust::device_vector<int> row_offsets(rows+1);
+    thrust::device_vector<int> row_offsets(rows+1);
     cusparseXcoo2csr(handle, thrust::raw_pointer_cast(row_ids.data()), row_ids.size(), rows, thrust::raw_pointer_cast(row_offsets.data()), CUSPARSE_INDEX_BASE_ZERO);
     return row_offsets;
 }
