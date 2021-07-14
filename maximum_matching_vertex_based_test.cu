@@ -17,8 +17,7 @@ int main(int argc, char** argv)
 
     cusparseHandle_t handle;
     checkCuSparseError(cusparseCreate(&handle), "cusparse init failed");
-    dCOO A(handle, 
-        i_d.begin(), i_d.end(),
+    dCOO A(i_d.begin(), i_d.end(),
         j_d.begin(), j_d.end(),
         costs_d.begin(), costs_d.end());
 

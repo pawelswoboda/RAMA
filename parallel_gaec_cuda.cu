@@ -97,8 +97,8 @@ struct negative_edge_indicator_func
     __host__ __device__
         bool operator()(const thrust::tuple<int,int,float> t)
         {
-            if(thrust::get<0>(t) <= thrust::get<1>(t)) // we only want one representative
-                return true;
+            // if(thrust::get<0>(t) <= thrust::get<1>(t)) // we only want one representative
+            //     return true;
             if(thrust::get<2>(t) <= w)
                 return true;
             return false;
@@ -153,15 +153,15 @@ std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_sorting(cuspa
     coo_sorting(handle, col_ids, row_ids);
     thrust::device_vector<int> row_offsets = dCOO::compute_row_offsets(handle, A.rows(), col_ids, row_ids);
 
-    thrust::device_vector<int> cc_labels(A.rows());
-    computeCC_gpu(A.rows(), col_ids.size(), 
+    thrust::device_vector<int> cc_labels(max(A.rows(), A.cols()));
+    computeCC_gpu(max(A.rows(), A.cols()), col_ids.size(), 
             thrust::raw_pointer_cast(row_offsets.data()), thrust::raw_pointer_cast(col_ids.data()), 
             thrust::raw_pointer_cast(cc_labels.data()), get_cuda_device());
 
     thrust::device_vector<int> node_mapping = compress_label_sequence(cc_labels, cc_labels.size() - 1);
     const int nr_ccs = *thrust::max_element(node_mapping.begin(), node_mapping.end()) + 1;
 
-    assert(nr_ccs < A.rows());
+    assert(nr_ccs < max(A.rows(), A.cols()));
 
     return {node_mapping, row_ids.size()};
 
@@ -173,7 +173,7 @@ std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_maximum_match
     MEASURE_FUNCTION_EXECUTION_TIME;
     thrust::device_vector<int> node_mapping;
     int nr_matched_edges;
-    std::tie(node_mapping, nr_matched_edges) = filter_edges_by_matching_vertex_based(handle, A);
+    std::tie(node_mapping, nr_matched_edges) = filter_edges_by_matching_vertex_based(handle, A.export_undirected());
     return {compress_label_sequence(node_mapping, node_mapping.size() - 1), nr_matched_edges};
 }
 
@@ -183,7 +183,7 @@ std::vector<int> parallel_gaec_cuda(dCOO& A)
     cusparseHandle_t handle;
     checkCuSparseError(cusparseCreate(&handle), "cusparse init failed");
 
-    const double initial_lb = A.sum() / 2.0;
+    const double initial_lb = A.sum();
     std::cout << "initial energy = " << initial_lb << "\n";
 
     thrust::device_vector<int> node_mapping(A.rows());
@@ -263,11 +263,11 @@ std::vector<int> parallel_gaec_cuda(dCOO& A)
 
         thrust::swap(A,new_A);
         A.remove_diagonal(handle);
-        std::cout << "energy after iteration " << iter << ": " << A.sum()/2.0 << ", #components = " << A.cols() << "\n";
+        std::cout << "energy after iteration " << iter << ": " << A.sum() << ", #components = " << A.cols() << "\n";
         thrust::gather(node_mapping.begin(), node_mapping.end(), cur_node_mapping.begin(), node_mapping.begin());
     }
 
-    const double lb = A.sum() / 2.0;
+    const double lb = A.sum();
     std::cout << "final energy = " << lb << "\n";
 
     cusparseDestroy(handle);
@@ -299,10 +299,11 @@ std::vector<int> parallel_gaec_cuda(const std::vector<int>& i, const std::vector
     cudaGetDeviceProperties(&prop, cuda_device);
     std::cout << "Going to use " << prop.name << " " << prop.major << "." << prop.minor << ", device number " << cuda_device << "\n";
 
-    thrust::device_vector<int> i_un, j_un;
-    thrust::device_vector<float> costs_un;
-    std::tie(i_un, j_un, costs_un) = to_undirected(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end());
-    dCOO A(std::move(i_un), std::move(j_un), std::move(costs_un));
+    // thrust::device_vector<int> i_un, j_un;
+    // thrust::device_vector<float> costs_un;
+    // std::tie(i_un, j_un, costs_un) = to_undirected(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end());
+    // dCOO A(std::move(i_un), std::move(j_un), std::move(costs_un));
+    dCOO A(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end());
 
     const std::vector<int> h_node_mapping = parallel_gaec_cuda(A);
     print_obj_original(h_node_mapping, i, j, costs); 
