@@ -38,6 +38,11 @@ target_link_libraries(parallel_gaec_eigen_test parallel_gaec_eigen)
 add_library(dCOO dCOO.cu)
 target_link_libraries(dCOO cusparse ECL-CC_11)
 
+add_library(multicut_message_passing multicut_message_passing.cu)
+
+add_executable(multicut_message_passing_test multicut_message_passing_test.cu)
+target_link_libraries(multicut_message_passing_test multicut_message_passing cusparse)
+
 add_library(ECL-CC_11 external/ECL-CC/ECL-CC_11.cu)
 target_include_directories(ECL-CC_11 INTERFACE external/ECL-CC)
 
@@ -69,7 +74,7 @@ add_executable(multicut_parallel_gaec_cuda_text_input multicut_parallel_gaec_cud
 target_link_libraries(multicut_parallel_gaec_cuda_text_input multicut_text_parser parallel_gaec_cuda dCOO)
 
 add_executable(multicut_parallel_icp_gaec_cuda_text_input multicut_parallel_icp_gaec_cuda_text_input.cpp)
-target_link_libraries(multicut_parallel_icp_gaec_cuda_text_input multicut_text_parser parallel_gaec_cuda dCOO)
+target_link_libraries(multicut_parallel_icp_gaec_cuda_text_input multicut_text_parser parallel_gaec_cuda multicut_message_passing dCOO)
 
 add_executable(maximum_matching_vertex_based_test maximum_matching_vertex_based_test.cu)
 target_link_libraries(maximum_matching_vertex_based_test cusparse dCOO maximum_matching_vertex_based)

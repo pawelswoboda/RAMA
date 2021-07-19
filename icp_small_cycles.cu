@@ -338,7 +338,7 @@ struct is_positive_edge
     }
 };
 
-std::tuple<dCOO, thrust::device_vector<int>, thrust::device_vector<int>, int> create_matrices(cusparseHandle_t handle, const dCOO& A)
+std::tuple<dCOO, thrust::device_vector<int>, thrust::device_vector<int>, int> create_matrices(const dCOO& A)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
     
@@ -371,12 +371,12 @@ std::tuple<dCOO, thrust::device_vector<int>, thrust::device_vector<int>, int> cr
 }
 
 // A should be directed thus containing same number of elements as in original problem. Does packing in-place on A.
-std::tuple<double, thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<int>> parallel_small_cycle_packing_cuda(cusparseHandle_t handle, dCOO& A, const int max_tries_triangles, const int max_tries_quads)
+std::tuple<double, thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<int>> parallel_small_cycle_packing_cuda(dCOO& A, const int max_tries_triangles, const int max_tries_quads)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
 
     int num_nodes = A.rows();
-    int num_edges = A.edges();
+    int num_edges = A.nnz();
     double lb = get_lb(A.get_data());
     std::cout<<"Initial lb: "<<lb<<std::endl;
 
@@ -384,14 +384,14 @@ std::tuple<double, thrust::device_vector<int>, thrust::device_vector<int>, thrus
     dCOO A_pos;
     thrust::device_vector<int> row_ids_rep, col_ids_rep;
     int nr_positive_edges;
-    std::tie(A_pos, row_ids_rep, col_ids_rep, nr_positive_edges) = create_matrices(handle, A);
+    std::tie(A_pos, row_ids_rep, col_ids_rep, nr_positive_edges) = create_matrices(A);
     if (nr_positive_edges == 0)
         return {lb, thrust::device_vector<int>(0), thrust::device_vector<int>(0), thrust::device_vector<int>(0)}; 
 
     int num_rep_edges = num_edges - nr_positive_edges;
  
-    thrust::device_vector<int> A_row_offsets = A.compute_row_offsets(handle);
-    thrust::device_vector<int> A_pos_row_offsets = A_pos.compute_row_offsets(handle);
+    thrust::device_vector<int> A_row_offsets = A.compute_row_offsets();
+    thrust::device_vector<int> A_pos_row_offsets = A_pos.compute_row_offsets();
 
     int threadCount = 256;
     int blockCount = ceil(num_rep_edges / (float) threadCount);
@@ -456,8 +456,6 @@ std::tuple<double, dCOO, thrust::device_vector<int>, thrust::device_vector<int>,
     cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, cuda_device);
     std::cout << "Going to use " << prop.name << " " << prop.major << "." << prop.minor << ", device number " << cuda_device << "\n";
-    cusparseHandle_t handle;
-    checkCuSparseError(cusparseCreate(&handle), "cusparse init failed");
     
     dCOO A(i.begin(), i.end(),
         j.begin(), j.end(), 
@@ -465,7 +463,7 @@ std::tuple<double, dCOO, thrust::device_vector<int>, thrust::device_vector<int>,
     
     thrust::device_vector<int> triangles_v1, triangles_v2, triangles_v3;
     double lb;
-    std::tie(lb, triangles_v1, triangles_v2, triangles_v3) = parallel_small_cycle_packing_cuda(handle, A, max_tries_triangles, max_tries_quads);
+    std::tie(lb, triangles_v1, triangles_v2, triangles_v3) = parallel_small_cycle_packing_cuda(A, max_tries_triangles, max_tries_quads);
     return {lb, A, triangles_v1, triangles_v2, triangles_v3};
 }
 

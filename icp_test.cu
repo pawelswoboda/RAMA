@@ -16,9 +16,6 @@ int main(int argc, char** argv)
     std::tie(lb, A, triangles_v1, triangles_v2, triangles_v3) = parallel_small_cycle_packing_cuda(i, j, costs, 5, 5);
     assert(lb == -2.5);
 
-    cusparseHandle_t handle;
-    checkCuSparseError(cusparseCreate(&handle), "cusparse init failed");
-
     // First compute without any packing (re-arranges the edges):
     std::tie(lb, A, triangles_v1, triangles_v2, triangles_v3) = parallel_small_cycle_packing_cuda(i, j, costs, 0, 0);
 
@@ -29,7 +26,7 @@ int main(int argc, char** argv)
     thrust::device_vector<float> costs_original_d = A.get_data();
     thrust::device_vector<float> costs_packed_d = A_packed.get_data();
 
-    for (int e = 0; e < A.edges(); e++)
+    for (int e = 0; e < A.nnz(); e++)
         if (costs_original_d[e] * costs_packed_d[e] < 0)
             std::cout<<"Test failed. Original cost: "<<costs_original_d[e]<<", packed cost: "<<costs_packed_d[e]<<". Signs should match! \n";
 

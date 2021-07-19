@@ -15,16 +15,13 @@ int main(int argc, char** argv)
     thrust::device_vector<int> j_d = j;
     thrust::device_vector<float> costs_d = costs;
 
-    cusparseHandle_t handle;
-    checkCuSparseError(cusparseCreate(&handle), "cusparse init failed");
     dCOO A(i_d.begin(), i_d.end(),
         j_d.begin(), j_d.end(),
-        costs_d.begin(), costs_d.end());
-
+        costs_d.begin(), costs_d.end()); 
 
     thrust::device_vector<int> node_mapping;
     int nr_matched_edges;
-    std::tie(node_mapping, nr_matched_edges) = filter_edges_by_matching_vertex_based(handle, A.export_undirected());
+    std::tie(node_mapping, nr_matched_edges) = filter_edges_by_matching_vertex_based(A.export_undirected());
 
     std::cout<<"node_mapping: \n";
     thrust::copy(node_mapping.begin(), node_mapping.end(), std::ostream_iterator<float>(std::cout, " "));
@@ -32,6 +29,4 @@ int main(int argc, char** argv)
 
     std::cout<<"nr_matched_edges: "<<nr_matched_edges<<"\n";
     assert(nr_matched_edges == 4); // relative to undirected graph.
-
-    cusparseDestroy(handle);
 }

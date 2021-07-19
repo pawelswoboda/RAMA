@@ -17,29 +17,29 @@ class dCOO {
 
         template<typename COL_ITERATOR, typename ROW_ITERATOR, typename DATA_ITERATOR>
             dCOO(const int _rows, const int _cols,
-                COL_ITERATOR col_id_begin, COL_ITERATOR col_id_end,
-                ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
-                DATA_ITERATOR data_begin, DATA_ITERATOR data_end,
-                const bool is_sorted = false);
+                    COL_ITERATOR col_id_begin, COL_ITERATOR col_id_end,
+                    ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
+                    DATA_ITERATOR data_begin, DATA_ITERATOR data_end,
+                    bool is_sorted = false);
 
         template<typename COL_ITERATOR, typename ROW_ITERATOR, typename DATA_ITERATOR>
             dCOO(COL_ITERATOR col_id_begin, COL_ITERATOR col_id_end,
-                ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
-                DATA_ITERATOR data_begin, DATA_ITERATOR data_end);
+                    ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
+                    DATA_ITERATOR data_begin, DATA_ITERATOR data_end,
+                    bool is_sorted = false);
 
-        dCOO(thrust::device_vector<int>&& _col_ids, thrust::device_vector<int>&& _row_ids, thrust::device_vector<float>&& _data);
+        dCOO(thrust::device_vector<int>&& _col_ids, thrust::device_vector<int>&& _row_ids, thrust::device_vector<float>&& _data, const bool is_sorted = false);
         dCOO(const int _rows, const int _cols, thrust::device_vector<int>&& _col_ids, thrust::device_vector<int>&& _row_ids, thrust::device_vector<float>&& _data, const bool is_sorted = false);
-
 
         size_t rows() const { return rows_; }
         size_t cols() const { return cols_; }
-        size_t edges() const { return row_ids.size(); }
-        float sum();
+        size_t nnz() const { return data.size(); }
+        float sum() const;
+        float max() const;
 
-        void remove_diagonal(cusparseHandle_t handle);
+        void remove_diagonal();
 
-        thrust::device_vector<int> compute_row_offsets(cusparseHandle_t handle) const;
-        static thrust::device_vector<int> compute_row_offsets(cusparseHandle_t handle, const int rows, const thrust::device_vector<int>& col_ids, const thrust::device_vector<int>& row_ids);
+        thrust::device_vector<int> compute_row_offsets() const;
 
         const int* get_row_ids_ptr() const { return thrust::raw_pointer_cast(row_ids.data()); }
         const int* get_col_ids_ptr() const { return thrust::raw_pointer_cast(col_ids.data()); }
@@ -50,24 +50,20 @@ class dCOO {
         const thrust::device_vector<int>& get_col_ids() const { return col_ids; }
         const thrust::device_vector<float>& get_data() const { return data; }
 
-        thrust::device_vector<float> diagonal(cusparseHandle_t) const;
-        dCOO contract_cuda(cusparseHandle_t handle, const thrust::device_vector<int>& node_mapping, const bool do_avg = false);
-        dCOO export_undirected();
-        dCOO export_directed();
+        thrust::device_vector<float> diagonal() const;
+        dCOO contract_cuda(const thrust::device_vector<int>& node_mapping);
+        dCOO export_undirected() const;
+        dCOO export_directed() const;
+        dCOO export_filtered(const float lb, const float ub) const;
 
     private:
-        void init();
+        void init(const bool is_sorted);
         int rows_ = 0;
         int cols_ = 0;
         thrust::device_vector<float> data;
         thrust::device_vector<int> row_ids;
         thrust::device_vector<int> col_ids; 
 };
-
-void coo_sorting(thrust::device_vector<int>& col_ids, thrust::device_vector<int>& row_ids);
-void coo_sorting(cusparseHandle_t handle, thrust::device_vector<int>& col_ids, thrust::device_vector<int>& row_ids);
-void coo_sorting(thrust::device_vector<int>& col_ids, thrust::device_vector<int>& row_ids, thrust::device_vector<float>& data);
-void coo_sorting(cusparseHandle_t handle, thrust::device_vector<int>& col_ids, thrust::device_vector<int>& row_ids, thrust::device_vector<float>& data);
 
 /*
    inline void coo_sorting(cusparseHandle_t handle, thrust::device_vector<int>& col_ids, thrust::device_vector<int>& row_ids)
@@ -127,23 +123,22 @@ data = coo_data;
 }
 */
 
-inline dCOO::dCOO(thrust::device_vector<int>&& _col_ids, thrust::device_vector<int>&& _row_ids, thrust::device_vector<float>&& _data)
+inline dCOO::dCOO(thrust::device_vector<int>&& _col_ids, thrust::device_vector<int>&& _row_ids, thrust::device_vector<float>&& _data, const bool is_sorted)
     : col_ids(std::move(_col_ids)),
     row_ids(std::move(_row_ids)),
     data(std::move(_data)) 
 {
-    init(); 
+    init(is_sorted); 
 }
 
 inline dCOO::dCOO(const int _rows, const int _cols, thrust::device_vector<int>&& _col_ids, thrust::device_vector<int>&& _row_ids, thrust::device_vector<float>&& _data, const bool is_sorted)
     : rows_(_rows),
-    cols_(_cols), 
+    cols_(_cols),
     col_ids(std::move(_col_ids)),
     row_ids(std::move(_row_ids)),
     data(std::move(_data)) 
 {
-    if (!is_sorted)
-        init(); 
+    init(is_sorted); 
 }
 
     template<typename COL_ITERATOR, typename ROW_ITERATOR, typename DATA_ITERATOR>
@@ -151,24 +146,24 @@ dCOO::dCOO(const int _rows, const int _cols,
         COL_ITERATOR col_id_begin, COL_ITERATOR col_id_end,
         ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
         DATA_ITERATOR data_begin, DATA_ITERATOR data_end,
-        const bool is_sorted)
+        bool is_sorted)
     : rows_(_rows),
     cols_(_cols), 
     row_ids(row_id_begin, row_id_end),
     col_ids(col_id_begin, col_id_end),
     data(data_begin, data_end)
 {
-    if (!is_sorted)
-        init();
+    init(is_sorted);
 } 
 
     template<typename COL_ITERATOR, typename ROW_ITERATOR, typename DATA_ITERATOR>
 dCOO::dCOO(COL_ITERATOR col_id_begin, COL_ITERATOR col_id_end,
         ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
-        DATA_ITERATOR data_begin, DATA_ITERATOR data_end)
+        DATA_ITERATOR data_begin, DATA_ITERATOR data_end,
+        bool is_sorted)
     : row_ids(row_id_begin, row_id_end),
     col_ids(col_id_begin, col_id_end),
     data(data_begin, data_end)
 {
-    init();
+    init(is_sorted);
 }

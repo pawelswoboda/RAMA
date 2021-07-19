@@ -1,6 +1,7 @@
 #include "parallel_gaec_cuda.h"
 #include "multicut_text_parser.h"
 #include "icp_small_cycles.h"
+#include "multicut_message_passing.h"
 #include<stdexcept>
 
 int main(int argc, char** argv)
@@ -17,8 +18,21 @@ int main(int argc, char** argv)
     thrust::device_vector<int> triangles_v1, triangles_v2, triangles_v3;
     std::tie(lb, A, triangles_v1, triangles_v2, triangles_v3) = parallel_small_cycle_packing_cuda(i, j, costs, 1, 1);
 
-    dCOO A_undir = A.export_undirected();
-    const std::vector<int> h_node_mapping = parallel_gaec_cuda(A_undir); 
+    thrust::device_vector<int> i_repam(i.begin(), i.end());
+    thrust::device_vector<int> j_repam(j.begin(), j.end());
+    thrust::device_vector<float> costs_repam(costs.begin(), costs.end());
+
+    multicut_message_passing mp(i_repam,j_repam,costs_repam,triangles_v1,triangles_v2,triangles_v3);
+    const double initial_lb = mp.lower_bound();
+    std::cout << "initial lower bound: " << initial_lb << "\n";
+    for(int iter=0; iter<10; ++iter)
+        mp.iteration();
+    const double final_lb = mp.lower_bound();
+    std::cout << "final lower bound: " << final_lb << "\n";
+    std::tie(i_repam, j_repam, costs_repam) = mp.reparametrized_edge_costs();
+    const std::vector<int> h_node_mapping = parallel_gaec_cuda(std::move(i_repam), std::move(j_repam), std::move(costs_repam));
+    //dCOO A_undir = A.export_undirected();
+    //const std::vector<int> h_node_mapping = parallel_gaec_cuda(A_undir); 
 
     print_obj_original(h_node_mapping, i, j, costs);
 }

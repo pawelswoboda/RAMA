@@ -33,9 +33,9 @@ thrust::device_vector<int> compress_label_sequence(const thrust::device_vector<i
 }
 
 
-thrust::device_vector<float> per_cc_cost(cusparseHandle_t handle, const dCOO& A, const dCOO& C, const thrust::device_vector<int>& node_mapping, const int nr_ccs)
+thrust::device_vector<float> per_cc_cost(const dCOO& A, const dCOO& C, const thrust::device_vector<int>& node_mapping, const int nr_ccs)
 {
-    thrust::device_vector<float> d = A.diagonal(handle);
+    thrust::device_vector<float> d = A.diagonal();
     return d;
 }
 
@@ -47,9 +47,9 @@ struct is_negative
             return x < 0.0;
         }
 };
-bool has_bad_contractions(cusparseHandle_t handle, const dCOO& A)
+bool has_bad_contractions(const dCOO& A)
 {
-    const thrust::device_vector<float> d = A.diagonal(handle);
+    const thrust::device_vector<float> d = A.diagonal();
     return thrust::count_if(d.begin(), d.end(), is_negative()) > 0;
 }
 
@@ -68,12 +68,12 @@ struct remove_bad_contraction_edges_func
         }
 };
 
-thrust::device_vector<int> discard_bad_contractions(cusparseHandle_t handle, const dCOO& contracted_A, const thrust::device_vector<int>& node_mapping)
+thrust::device_vector<int> discard_bad_contractions(const dCOO& contracted_A, const thrust::device_vector<int>& node_mapping)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
     int nr_ccs = *thrust::max_element(node_mapping.begin(), node_mapping.end()) + 1;
     // for each component, how profitable was it to contract it?
-    const thrust::device_vector<float> d = contracted_A.diagonal(handle);
+    const thrust::device_vector<float> d = contracted_A.diagonal();
 
     remove_bad_contraction_edges_func func({nr_ccs, thrust::raw_pointer_cast(d.data())}); 
 
@@ -113,7 +113,7 @@ struct edge_comparator_func {
         } 
 };
 
-std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_sorting(cusparseHandle_t handle, dCOO& A, const float retain_ratio)
+std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_sorting(dCOO& A, const float retain_ratio)
 {
     thrust::device_vector<int> row_ids = A.get_row_ids();
     thrust::device_vector<int> col_ids = A.get_col_ids();
@@ -150,8 +150,8 @@ std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_sorting(cuspa
     std::tie(row_ids, col_ids) = to_undirected(row_ids.begin(), row_ids.end(), col_ids.begin(), col_ids.end());
 
     assert(col_ids.size() == row_ids.size());
-    coo_sorting(handle, col_ids, row_ids);
-    thrust::device_vector<int> row_offsets = dCOO::compute_row_offsets(handle, A.rows(), col_ids, row_ids);
+    coo_sorting(col_ids, row_ids);
+    thrust::device_vector<int> row_offsets = compute_offsets(row_ids);
 
     thrust::device_vector<int> cc_labels(max(A.rows(), A.cols()));
     computeCC_gpu(max(A.rows(), A.cols()), col_ids.size(), 
@@ -167,21 +167,19 @@ std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_sorting(cuspa
 
 }
 
-std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_maximum_matching(cusparseHandle_t handle, dCOO& A)
+std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_maximum_matching(dCOO& A)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
     MEASURE_FUNCTION_EXECUTION_TIME;
     thrust::device_vector<int> node_mapping;
     int nr_matched_edges;
-    std::tie(node_mapping, nr_matched_edges) = filter_edges_by_matching_vertex_based(handle, A.export_undirected());
+    std::tie(node_mapping, nr_matched_edges) = filter_edges_by_matching_vertex_based(A.export_undirected());
     return {compress_label_sequence(node_mapping, node_mapping.size() - 1), nr_matched_edges};
 }
 
 std::vector<int> parallel_gaec_cuda(dCOO& A)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
-    cusparseHandle_t handle;
-    checkCuSparseError(cusparseCreate(&handle), "cusparse init failed");
 
     const double initial_lb = A.sum();
     std::cout << "initial energy = " << initial_lb << "\n";
@@ -198,15 +196,15 @@ std::vector<int> parallel_gaec_cuda(dCOO& A)
         //const size_t nr_edges_to_contract = std::max(size_t(1), size_t(A.rows() * contract_ratio));
         // if (iter > 0)
         // {
-        //     dCOO A_dir = A.export_directed(handle);
-        //     parallel_small_cycle_packing_cuda(handle, A_dir, 1, 0);
-        //     A = A_dir.export_undirected(handle); //TODO: just replace data ?
+        //     dCOO A_dir = A.export_directed();
+        //     parallel_small_cycle_packing_cuda(A_dir, 1, 0);
+        //     A = A_dir.export_undirected(); //TODO: just replace data ?
         // }
         thrust::device_vector<int> cur_node_mapping;
         int nr_edges_to_contract;
         if(try_edges_to_contract_by_maximum_matching)
         {
-            std::tie(cur_node_mapping, nr_edges_to_contract) = contraction_mapping_by_maximum_matching(handle, A);
+            std::tie(cur_node_mapping, nr_edges_to_contract) = contraction_mapping_by_maximum_matching(A);
             if(nr_edges_to_contract < A.rows()*0.1)
             {
                 std::cout << "# edges to contract = " << nr_edges_to_contract << ", # vertices = " << A.rows() << "\n";
@@ -215,7 +213,7 @@ std::vector<int> parallel_gaec_cuda(dCOO& A)
             }
         }
         if(!try_edges_to_contract_by_maximum_matching)
-            std::tie(cur_node_mapping, nr_edges_to_contract) = contraction_mapping_by_sorting(handle, A, contract_ratio);
+            std::tie(cur_node_mapping, nr_edges_to_contract) = contraction_mapping_by_sorting(A, contract_ratio);
 
 
         //std::cout << "iter " << iter << ", edge contraction ratio = " << contract_ratio << ", # edges to contract request " << nr_edges_to_contract << ", # nr edges to contract provided = " << contract_cols.size() << "\n";
@@ -226,31 +224,31 @@ std::vector<int> parallel_gaec_cuda(dCOO& A)
             break;
         }
 
-        dCOO new_A = A.contract_cuda(handle, cur_node_mapping);
+        dCOO new_A = A.contract_cuda(cur_node_mapping);
         std::cout << "original A size " << A.cols() << "x" << A.rows() << "\n";
         std::cout << "contracted A size " << new_A.cols() << "x" << new_A.rows() << "\n";
         assert(new_A.cols() < A.cols());
 
-        const thrust::device_vector<float> diagonal = new_A.diagonal(handle);
+        const thrust::device_vector<float> diagonal = new_A.diagonal();
         const float energy_reduction = thrust::reduce(diagonal.begin(), diagonal.end());
         std::cout << "energy reduction " << energy_reduction << "\n";
         //if(energy_reduction < 0.0)
-        if(has_bad_contractions(handle, new_A))
+        if(has_bad_contractions(new_A))
         {
             if(!try_edges_to_contract_by_maximum_matching)
                 contract_ratio *= 2.0; 
             //contract_ratio = std::max(contract_ratio, 0.005);
             // get contraction edges of the components which
             int nr_ccs = *thrust::max_element(cur_node_mapping.begin(), cur_node_mapping.end()) + 1;
-            cur_node_mapping = discard_bad_contractions(handle, new_A, cur_node_mapping);
+            cur_node_mapping = discard_bad_contractions(new_A, cur_node_mapping);
             int good_nr_ccs = *thrust::max_element(cur_node_mapping.begin(), cur_node_mapping.end()) + 1;
             assert(good_nr_ccs > nr_ccs);
             std::cout << "Reverted from " << nr_ccs << " connected components to " << good_nr_ccs << "\n";
             if (good_nr_ccs == cur_node_mapping.size()) 
                 break;
             
-            new_A = A.contract_cuda(handle, cur_node_mapping);
-            assert(!has_bad_contractions(handle, new_A));
+            new_A = A.contract_cuda(cur_node_mapping);
+            assert(!has_bad_contractions(new_A));
         }
         else
         {
@@ -262,7 +260,7 @@ std::vector<int> parallel_gaec_cuda(dCOO& A)
         }
 
         thrust::swap(A,new_A);
-        A.remove_diagonal(handle);
+        A.remove_diagonal();
         std::cout << "energy after iteration " << iter << ": " << A.sum() << ", #components = " << A.cols() << "\n";
         thrust::gather(node_mapping.begin(), node_mapping.end(), cur_node_mapping.begin(), node_mapping.begin());
     }
@@ -270,7 +268,6 @@ std::vector<int> parallel_gaec_cuda(dCOO& A)
     const double lb = A.sum();
     std::cout << "final energy = " << lb << "\n";
 
-    cusparseDestroy(handle);
     std::vector<int> h_node_mapping(node_mapping.size());
     thrust::copy(node_mapping.begin(), node_mapping.end(), h_node_mapping.begin());
     return h_node_mapping;
@@ -309,4 +306,13 @@ std::vector<int> parallel_gaec_cuda(const std::vector<int>& i, const std::vector
     print_obj_original(h_node_mapping, i, j, costs); 
     
     return h_node_mapping;
+}
+
+std::vector<int> parallel_gaec_cuda(thrust::device_vector<int>&& i, thrust::device_vector<int>&& j, thrust::device_vector<float>&& costs)
+{
+    dCOO A(std::move(i), std::move(j), std::move(costs));
+    const std::vector<int> h_node_mapping = parallel_gaec_cuda(A);
+    
+    return h_node_mapping;
+
 }

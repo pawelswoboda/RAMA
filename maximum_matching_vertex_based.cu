@@ -81,7 +81,7 @@ struct is_unmatched {
         }
 };
 
-std::tuple<thrust::device_vector<int>, int> filter_edges_by_matching_vertex_based(cusparseHandle_t handle, const dCOO& A)
+std::tuple<thrust::device_vector<int>, int> filter_edges_by_matching_vertex_based(const dCOO& A)
 {
     thrust::device_vector<int> v_best_neighbours(A.rows(), -1);
     thrust::device_vector<int> v_matched(A.rows(), 0);
@@ -90,7 +90,7 @@ std::tuple<thrust::device_vector<int>, int> filter_edges_by_matching_vertex_base
 
     int numBlocks = ceil(A.rows() / (float) numThreads);
     thrust::device_vector<bool> still_running(1);
-    thrust::device_vector<int> A_row_offsets = A.compute_row_offsets(handle);
+    thrust::device_vector<int> A_row_offsets = A.compute_row_offsets();
     int prev_num_edges = 0;
     for (int t = 0; t < 10; t++)
     {
@@ -118,7 +118,7 @@ std::tuple<thrust::device_vector<int>, int> filter_edges_by_matching_vertex_base
     }
 
     std::cout << "# vertices = " << A.rows() << "\n";
-    std::cout << "# matched edges = " << prev_num_edges / 2 << " / "<< A.edges() / 2 << "\n";
+    std::cout << "# matched edges = " << prev_num_edges / 2 << " / "<< A.nnz() / 2 << "\n";
     
     // thrust::copy(matched_rows.begin(), matched_rows.end(), std::ostream_iterator<int>(std::cout, " "));
     // std::cout<<"\n";
