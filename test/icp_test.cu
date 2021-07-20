@@ -1,7 +1,7 @@
 #include "icp_small_cycles.h"
 #include <thrust/device_vector.h>
 #include <cusparse.h>
-#include "utils.h"
+#include "parallel_gaec_utils.h"
 #include "dCOO.h"
 
 int main(int argc, char** argv)

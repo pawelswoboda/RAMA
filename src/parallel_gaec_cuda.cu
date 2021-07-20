@@ -4,12 +4,12 @@
 #include "time_measure_util.h"
 #include <algorithm>
 #include <cstdlib>
-#include "external/ECL-CC/ECLgraph.h"
+#include "ECLgraph.h"
 #include <thrust/transform_scan.h>
 #include <thrust/transform.h>
 #include "maximum_matching_vertex_based.h"
 #include "icp_small_cycles.h"
-#include "utils.h"
+#include "parallel_gaec_utils.h"
 
 thrust::device_vector<int> compress_label_sequence(const thrust::device_vector<int>& data, const int max_label)
 {

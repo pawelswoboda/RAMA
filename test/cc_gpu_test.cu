@@ -1,5 +1,5 @@
 #include <ECLgraph.h>
-#include "utils.h"
+#include "parallel_gaec_utils.h"
 #include <set>
 
 void test_cc(const std::vector<int> row_offsets, const std::vector<int> col_ids, const int expected_nr_ccs)

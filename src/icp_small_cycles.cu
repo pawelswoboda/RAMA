@@ -3,7 +3,7 @@
 #include <thrust/reduce.h>
 #include "time_measure_util.h"
 #include <thrust/partition.h>
-#include "utils.h"
+#include "parallel_gaec_utils.h"
 
 #define tol 1e-6 
 

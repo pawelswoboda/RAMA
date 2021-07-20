@@ -8,6 +8,8 @@ cmake_minimum_required(VERSION 2.8.12)
 
 include_directories(external/thrust/)
 include_directories(external/thrust/dependencies/cub)
+include_directories(external/ECL-CC)
+include_directories(include)
 
 add_library(parallel_gaec INTERFACE)
 target_include_directories(parallel_gaec INTERFACE include/)
@@ -27,57 +29,8 @@ set(PYBIND11_CPP_STANDARD -std=c++17)
 set(PYBIND11_INSTALL ON CACHE BOOL "enable pybind11 bindings.")
 add_subdirectory(external/pybind11)
 
-add_library(multicut_text_parser multicut_text_parser.cpp)
-
-add_library(parallel_gaec_eigen parallel_gaec_eigen.cpp)
-target_link_libraries(parallel_gaec_eigen parallel_gaec) 
-
-add_executable(parallel_gaec_eigen_test parallel_gaec_eigen_test.cpp)
-target_link_libraries(parallel_gaec_eigen_test parallel_gaec_eigen)
-
-add_library(dCOO dCOO.cu)
-target_link_libraries(dCOO cusparse ECL-CC_11)
-
-add_library(multicut_message_passing multicut_message_passing.cu)
-
-add_executable(multicut_message_passing_test multicut_message_passing_test.cu)
-target_link_libraries(multicut_message_passing_test multicut_message_passing cusparse)
-
 add_library(ECL-CC_11 external/ECL-CC/ECL-CC_11.cu)
 target_include_directories(ECL-CC_11 INTERFACE external/ECL-CC)
 
-add_executable(cc_gpu_test cc_gpu_test.cu)
-target_link_libraries(cc_gpu_test ECL-CC_11 cusparse)
-
-add_library(icp_small_cycles icp_small_cycles.cu)
-target_link_libraries(icp_small_cycles dCOO cusparse)
-
-add_library(maximum_matching_vertex_based maximum_matching_vertex_based.cu)
-target_link_libraries(maximum_matching_vertex_based cusparse dCOO)
-
-add_library(parallel_gaec_cuda parallel_gaec_cuda.cu)
-target_link_libraries(parallel_gaec_cuda dCOO cusparse icp_small_cycles maximum_matching_vertex_based)
-
-add_executable(icp_test icp_test.cu)
-target_link_libraries(icp_test cusparse icp_small_cycles)
-
-add_executable(parallel_gaec_cuda_test parallel_gaec_cuda_test.cpp)
-target_link_libraries(parallel_gaec_cuda_test parallel_gaec_cuda)
-
-pybind11_add_module(parallel_gaec_py parallel_gaec_py.cpp)
-target_link_libraries(parallel_gaec_py PRIVATE parallel_gaec_eigen multicut_text_parser parallel_gaec_cuda)
-
-add_executable(multicut_parallel_gaec_eigen_text_input multicut_parallel_gaec_eigen_text_input.cpp)
-target_link_libraries(multicut_parallel_gaec_eigen_text_input multicut_text_parser parallel_gaec_eigen)
-
-add_executable(multicut_parallel_gaec_cuda_text_input multicut_parallel_gaec_cuda_text_input.cpp)
-target_link_libraries(multicut_parallel_gaec_cuda_text_input multicut_text_parser parallel_gaec_cuda dCOO)
-
-add_executable(multicut_parallel_icp_gaec_cuda_text_input multicut_parallel_icp_gaec_cuda_text_input.cpp)
-target_link_libraries(multicut_parallel_icp_gaec_cuda_text_input multicut_text_parser parallel_gaec_cuda multicut_message_passing dCOO)
-
-add_executable(maximum_matching_vertex_based_test maximum_matching_vertex_based_test.cu)
-target_link_libraries(maximum_matching_vertex_based_test cusparse dCOO maximum_matching_vertex_based)
-
-add_executable(icp_cuda_text_input icp_cuda_text_input.cu)
-target_link_libraries(icp_cuda_text_input icp_small_cycles multicut_text_parser)
+add_subdirectory(src)
+add_subdirectory(test)

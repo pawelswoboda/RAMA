@@ -2,7 +2,7 @@
 #include <thrust/device_vector.h>
 #include <thrust/for_each.h>
 #include <thrust/transform.h>
-#include "utils.h"
+#include "parallel_gaec_utils.h"
 #include "stdio.h"
 
 __device__ int find_edge_index(const int i, const int j, const int* i_vec, const int * j_vec, const int* offsets)
@@ -10,6 +10,8 @@ __device__ int find_edge_index(const int i, const int j, const int* i_vec, const
     assert(i < j);
     int lb = offsets[i];
     int ub = offsets[i+1]-1;
+    if(i_vec[lb] != i)
+        return -1;
     assert(lb <= ub);
     int middle = lb;
 
@@ -17,7 +19,7 @@ __device__ int find_edge_index(const int i, const int j, const int* i_vec, const
     {
         assert(i_vec[lb] == i);// && j_vec[lb] <= j);
         assert(i_vec[ub] == i); // && j_vec[ub] >= j);
-        assert(j_vec[lb] < j_vec[ub]);
+        assert(j_vec[lb] <= j_vec[ub]);
 
         middle = (lb + ub)/2;
 
@@ -35,6 +37,8 @@ __device__ int find_edge_index(const int i, const int j, const int* i_vec, const
 __device__ bool edge_present(const int i, const int j, const int* i_vec, const int * j_vec, const int* offsets)
 {
     const int c = find_edge_index(i,j,i_vec,j_vec,offsets);
+    if(i == -1)
+        return false;
     return i_vec[c] == i && j_vec[c] == j;
 }
 
@@ -142,8 +146,6 @@ multicut_message_passing::multicut_message_passing(
     assert(orig_edge_costs.size() == orig_j.size());
     assert(t1.size() == t2.size() && t1.size() == t3.size()); 
 
-    coo_sorting(orig_j, orig_i, orig_edge_costs);
-
     // bring edges into normal form (first node < second node)
     //{
     //    auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
@@ -188,6 +190,7 @@ multicut_message_passing::multicut_message_passing(
         i.resize(std::distance(first, new_last));
         j.resize(std::distance(first, new_last));
     }
+
     // copy edge costs from given edges
     {
         edge_costs = thrust::device_vector<float>(i.size());

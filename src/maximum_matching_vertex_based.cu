@@ -3,7 +3,7 @@
 #include <cuda_runtime.h>
 #include "maximum_matching_vertex_based.h"
 #include "time_measure_util.h"
-#include "utils.h"
+#include "parallel_gaec_utils.h"
 
 #define numThreads 256
 
