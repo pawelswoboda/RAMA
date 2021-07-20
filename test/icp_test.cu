@@ -1,6 +1,5 @@
 #include "icp_small_cycles.h"
 #include <thrust/device_vector.h>
-#include <cusparse.h>
 #include "parallel_gaec_utils.h"
 #include "dCOO.h"
 

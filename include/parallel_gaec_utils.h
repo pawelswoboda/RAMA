@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cuda_runtime.h>
-#include <cusparse.h>
 #include <thrust/copy.h>
 #include <thrust/device_vector.h>
 #include <thrust/gather.h>
@@ -209,6 +208,34 @@ inline thrust::device_vector<int> compute_offsets(const thrust::device_vector<in
     return offsets;
 }
 
+inline std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> get_unique_with_counts(const thrust::device_vector<int>& input)
+{
+    assert(thrust::is_sorted(input.begin(), input.end()));
+    thrust::device_vector<int> unique_counts(input.size() + 1);
+    thrust::device_vector<int> unique_values(input.size());
+
+    auto new_end = thrust::unique_by_key_copy(input.begin(), input.end(), thrust::make_counting_iterator(0), unique_values.begin(), unique_counts.begin());
+    int num_unique = std::distance(unique_values.begin(), new_end.first);
+    unique_values.resize(num_unique);
+    unique_counts.resize(num_unique + 1); // contains smallest index of each unique element.
+    
+    unique_counts[num_unique] = input.size();
+    thrust::adjacent_difference(unique_counts.begin(), unique_counts.end(), unique_counts.begin());
+    unique_counts = thrust::device_vector<int>(unique_counts.begin() + 1, unique_counts.end());
+
+    return {unique_values, unique_counts};
+}
+
+inline thrust::device_vector<int> compute_offsets_non_contiguous(const int max_value, const thrust::device_vector<int>& i)
+{
+    thrust::device_vector<int> offsets(max_value + 1, 0);
+    thrust::device_vector<int> unique_ids, counts;
+    std::tie(unique_ids, counts) = get_unique_with_counts(i);
+    thrust::transform(unique_ids.begin(), unique_ids.end(), thrust::make_constant_iterator<int>(1), unique_ids.begin(), thrust::plus<int>());
+    thrust::scatter(counts.begin(), counts.end(), unique_ids.begin(), offsets.begin());
+    thrust::inclusive_scan(offsets.begin(), offsets.end(), offsets.begin());
+    return offsets;
+}
 /*
 __host__ __device__
 int min(const int a, const int b)

@@ -4,18 +4,18 @@ add_library(parallel_gaec_eigen parallel_gaec_eigen.cpp)
 target_link_libraries(parallel_gaec_eigen parallel_gaec) 
 
 add_library(dCOO dCOO.cu)
-target_link_libraries(dCOO cusparse ECL-CC_11)
+target_link_libraries(dCOO ECL-CC_11)
 
 add_library(multicut_message_passing multicut_message_passing.cu)
 
 add_library(icp_small_cycles icp_small_cycles.cu)
-target_link_libraries(icp_small_cycles dCOO cusparse)
+target_link_libraries(icp_small_cycles dCOO)
 
 add_library(maximum_matching_vertex_based maximum_matching_vertex_based.cu)
-target_link_libraries(maximum_matching_vertex_based cusparse dCOO)
+target_link_libraries(maximum_matching_vertex_based dCOO)
 
 add_library(parallel_gaec_cuda parallel_gaec_cuda.cu)
-target_link_libraries(parallel_gaec_cuda dCOO cusparse icp_small_cycles maximum_matching_vertex_based)
+target_link_libraries(parallel_gaec_cuda dCOO icp_small_cycles maximum_matching_vertex_based)
 
 add_executable(multicut_parallel_gaec_eigen_text_input multicut_parallel_gaec_eigen_text_input.cpp)
 target_link_libraries(multicut_parallel_gaec_eigen_text_input multicut_text_parser parallel_gaec_eigen)
