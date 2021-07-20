@@ -148,6 +148,19 @@ thrust::device_vector<int> dCOO::compute_row_offsets() const
     return compute_offsets(row_ids);
 }
 
+thrust::device_vector<int> dCOO::compute_row_offsets_non_contiguous_rows(cusparseHandle_t handle, const int rows, const thrust::device_vector<int>& row_ids) const
+{
+    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
+    thrust::device_vector<int> row_offsets(rows+1);
+    cusparseXcoo2csr(handle, thrust::raw_pointer_cast(row_ids.data()), row_ids.size(), rows, thrust::raw_pointer_cast(row_offsets.data()), CUSPARSE_INDEX_BASE_ZERO);
+    return row_offsets;
+}
+
+thrust::device_vector<int> dCOO::compute_row_offsets_non_contiguous_rows(cusparseHandle_t handle) const
+{
+    return compute_row_offsets_non_contiguous_rows(handle, rows_, row_ids);
+}
+
 float dCOO::sum() const
 {
     return thrust::reduce(data.begin(), data.end(), (float) 0.0, thrust::plus<float>());

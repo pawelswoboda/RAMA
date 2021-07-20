@@ -390,8 +390,10 @@ std::tuple<double, thrust::device_vector<int>, thrust::device_vector<int>, thrus
 
     int num_rep_edges = num_edges - nr_positive_edges;
  
-    thrust::device_vector<int> A_row_offsets = A.compute_row_offsets();
-    thrust::device_vector<int> A_pos_row_offsets = A_pos.compute_row_offsets();
+    cusparseHandle_t handle;
+    cusparseCreate(&handle);
+    thrust::device_vector<int> A_row_offsets = A.compute_row_offsets_non_contiguous_rows(handle);
+    thrust::device_vector<int> A_pos_row_offsets = A_pos.compute_row_offsets_non_contiguous_rows(handle);
 
     int threadCount = 256;
     int blockCount = ceil(num_rep_edges / (float) threadCount);

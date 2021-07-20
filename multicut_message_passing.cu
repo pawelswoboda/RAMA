@@ -142,6 +142,8 @@ multicut_message_passing::multicut_message_passing(
     assert(orig_edge_costs.size() == orig_j.size());
     assert(t1.size() == t2.size() && t1.size() == t3.size()); 
 
+    coo_sorting(orig_j, orig_i, orig_edge_costs);
+
     // bring edges into normal form (first node < second node)
     //{
     //    auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
