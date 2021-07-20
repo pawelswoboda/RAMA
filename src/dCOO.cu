@@ -132,7 +132,7 @@ struct diag_func
 
 thrust::device_vector<float> dCOO::diagonal() const
 {
-    assert(rows() == cols());
+    assert(std::abs(rows_ - cols_) <= 1);
     thrust::device_vector<float> d(rows(), 0.0);
 
     auto begin = thrust::make_zip_iterator(thrust::make_tuple(col_ids.begin(), row_ids.begin(), data.begin()));
@@ -148,17 +148,15 @@ thrust::device_vector<int> dCOO::compute_row_offsets() const
     return compute_offsets(row_ids);
 }
 
-thrust::device_vector<int> dCOO::compute_row_offsets_non_contiguous_rows(cusparseHandle_t handle, const int rows, const thrust::device_vector<int>& row_ids) const
+thrust::device_vector<int> dCOO::compute_row_offsets_non_contiguous_rows(const int rows, const thrust::device_vector<int>& row_ids) const
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
-    thrust::device_vector<int> row_offsets(rows+1);
-    cusparseXcoo2csr(handle, thrust::raw_pointer_cast(row_ids.data()), row_ids.size(), rows, thrust::raw_pointer_cast(row_offsets.data()), CUSPARSE_INDEX_BASE_ZERO);
-    return row_offsets;
+    return compute_offsets_non_contiguous(rows, row_ids);
 }
 
-thrust::device_vector<int> dCOO::compute_row_offsets_non_contiguous_rows(cusparseHandle_t handle) const
+thrust::device_vector<int> dCOO::compute_row_offsets_non_contiguous_rows() const
 {
-    return compute_row_offsets_non_contiguous_rows(handle, rows_, row_ids);
+    return compute_row_offsets_non_contiguous_rows(rows_, row_ids);
 }
 
 float dCOO::sum() const
