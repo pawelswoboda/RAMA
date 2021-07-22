@@ -17,3 +17,8 @@ add_executable(maximum_matching_vertex_based_test maximum_matching_vertex_based_
 target_link_libraries(maximum_matching_vertex_based_test dCOO maximum_matching_vertex_based)
 
 add_executable(compute_offsets_test compute_offsets_test.cu)
+
+add_executable(compute_unique_test compute_unique_test.cu)
+
+add_executable(conflicted_cycles_test conflicted_cycles_test.cu)
+target_link_libraries(conflicted_cycles_test conflicted_cycles)

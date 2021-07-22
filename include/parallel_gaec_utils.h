@@ -226,6 +226,26 @@ inline std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> get_un
     return {unique_values, unique_counts};
 }
 
+inline thrust::device_vector<int> invert_unique(const thrust::device_vector<int>& values, const thrust::device_vector<int>& counts)
+{
+    thrust::device_vector<int> counts_sum(counts.size() + 1);
+    counts_sum[0] = 0;
+    thrust::inclusive_scan(counts.begin(), counts.end(), counts_sum.begin() + 1);
+    
+    int out_size = counts_sum.back();
+    thrust::device_vector<int> output_indices(out_size, 0);
+
+    thrust::scatter(thrust::constant_iterator<int>(1), thrust::constant_iterator<int>(1) + values.size(), counts_sum.begin(), output_indices.begin());
+
+    thrust::inclusive_scan(output_indices.begin(), output_indices.end(), output_indices.begin());
+    thrust::transform(output_indices.begin(), output_indices.end(), thrust::make_constant_iterator(1), output_indices.begin(), thrust::minus<int>());
+
+    thrust::device_vector<int> out_values(out_size);
+    thrust::gather(output_indices.begin(), output_indices.end(), values.begin(), out_values.begin());
+
+    return out_values;
+}
+
 inline thrust::device_vector<int> compute_offsets_non_contiguous(const int max_value, const thrust::device_vector<int>& i)
 {
     thrust::device_vector<int> offsets(max_value + 1, 0);
@@ -235,6 +255,14 @@ inline thrust::device_vector<int> compute_offsets_non_contiguous(const int max_v
     thrust::scatter(counts.begin(), counts.end(), unique_ids.begin(), offsets.begin());
     thrust::inclusive_scan(offsets.begin(), offsets.end(), offsets.begin());
     return offsets;
+}
+
+inline thrust::device_vector<int> concatenate(const thrust::device_vector<int>& a, const thrust::device_vector<int>& b)
+{
+    thrust::device_vector<int> ab(a.size() + b.size());
+    thrust::copy(a.begin(), a.end(), ab.begin());
+    thrust::copy(b.begin(), b.end(), ab.begin() + a.size());
+    return ab;
 }
 /*
 __host__ __device__

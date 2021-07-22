@@ -1,6 +1,7 @@
 #include "parallel_gaec_cuda.h"
 #include "multicut_text_parser.h"
 #include "icp_small_cycles.h"
+#include "conflicted_cycles.h"
 #include "multicut_message_passing.h"
 #include<stdexcept>
 
@@ -13,10 +14,12 @@ int main(int argc, char** argv)
     std::vector<float> costs;
     std::tie(i,j,costs) = read_file(argv[1]);
 
-    double lb;
-    dCOO A;
     thrust::device_vector<int> triangles_v1, triangles_v2, triangles_v3;
-    std::tie(lb, A, triangles_v1, triangles_v2, triangles_v3) = parallel_small_cycle_packing_cuda(i, j, costs, 1, 1);
+    // double lb;
+    // dCOO A;
+    // std::tie(lb, A, triangles_v1, triangles_v2, triangles_v3) = parallel_small_cycle_packing_cuda(i, j, costs, 1, 1);
+    dCOO A(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end());
+    std::tie(triangles_v1, triangles_v2, triangles_v3) = enumerate_conflicted_cycles(A, 4);
 
     thrust::device_vector<int> i_repam(i.begin(), i.end());
     thrust::device_vector<int> j_repam(j.begin(), j.end());
