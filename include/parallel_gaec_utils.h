@@ -148,6 +148,12 @@ inline void coo_sorting(thrust::device_vector<int>& i, thrust::device_vector<int
 {
     assert(i.size() == j.size());
     assert(i.size() == k.size());
+
+    // auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin(), k.begin()));
+    // auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end(), k.end()));
+
+    // thrust::sort(first, last);
+
     const int N = i.size();
     thrust::device_vector<int> permutation(N);
     thrust::sequence(permutation.begin(), permutation.end());
@@ -164,6 +170,10 @@ inline void coo_sorting(thrust::device_vector<int>& i, thrust::device_vector<int
 
 inline void coo_sorting(thrust::device_vector<int>& i, thrust::device_vector<int>& j)
 {
+    // auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
+    // auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end()));
+    // thrust::sort(first, last); //TODO: compare.
+
     assert(i.size() == j.size());
     const size_t N = i.size();
     thrust::device_vector<int> permutation(N);
@@ -248,7 +258,7 @@ inline thrust::device_vector<int> invert_unique(const thrust::device_vector<int>
 
 inline thrust::device_vector<int> compute_offsets_non_contiguous(const int max_value, const thrust::device_vector<int>& i)
 {
-    thrust::device_vector<int> offsets(max_value + 1, 0);
+    thrust::device_vector<int> offsets(max_value + 2, 0);
     thrust::device_vector<int> unique_ids, counts;
     std::tie(unique_ids, counts) = get_unique_with_counts(i);
     thrust::transform(unique_ids.begin(), unique_ids.end(), thrust::make_constant_iterator<int>(1), unique_ids.begin(), thrust::plus<int>());
@@ -263,6 +273,13 @@ inline thrust::device_vector<int> concatenate(const thrust::device_vector<int>& 
     thrust::copy(a.begin(), a.end(), ab.begin());
     thrust::copy(b.begin(), b.end(), ab.begin() + a.size());
     return ab;
+}
+
+inline void print_vector(const thrust::device_vector<int>& v, const char* name)
+{
+    std::cout<<name<<": ";
+    thrust::copy(v.begin(), v.end(), std::ostream_iterator<int>(std::cout, " "));
+    std::cout<<"\n";
 }
 /*
 __host__ __device__

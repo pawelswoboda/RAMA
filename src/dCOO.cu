@@ -151,7 +151,7 @@ thrust::device_vector<int> dCOO::compute_row_offsets() const
 thrust::device_vector<int> dCOO::compute_row_offsets_non_contiguous_rows(const int rows, const thrust::device_vector<int>& row_ids) const
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
-    return compute_offsets_non_contiguous(rows, row_ids);
+    return compute_offsets_non_contiguous(rows - 1, row_ids);
 }
 
 thrust::device_vector<int> dCOO::compute_row_offsets_non_contiguous_rows() const

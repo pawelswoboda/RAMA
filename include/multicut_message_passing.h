@@ -22,6 +22,9 @@ class multicut_message_passing {
         std::tuple<const thrust::device_vector<int>&, const thrust::device_vector<int>&, const thrust::device_vector<float>>
             reparametrized_edge_costs() const;
 
+        void compute_triangle_edge_correspondence(const thrust::device_vector<int>&, const thrust::device_vector<int>&, 
+            thrust::device_vector<int>&, thrust::device_vector<int>&);
+
     private:
         double edge_lower_bound();
         double triangle_lower_bound();

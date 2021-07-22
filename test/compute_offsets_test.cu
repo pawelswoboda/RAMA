@@ -20,7 +20,7 @@ int main(int argc, char** argv)
     { 
         std::vector<int> i_init = {2, 2, 4, 4, 4, 5, 7, 7};
         const thrust::device_vector<int> i(i_init.begin(), i_init.end());
-        const thrust::device_vector<int> offsets = compute_offsets_non_contiguous(8, i);
+        const thrust::device_vector<int> offsets = compute_offsets_non_contiguous(7, i);
         test(offsets[0] == 0);
         test(offsets[1] == 0);
         test(offsets[2] == 0);
