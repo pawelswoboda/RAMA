@@ -168,48 +168,40 @@ inline void coo_sorting(thrust::device_vector<int>& i, thrust::device_vector<int
     assert(thrust::is_sorted(i.begin(), i.end())); 
 }
 
-inline void coo_sorting(thrust::device_vector<int>& col_ids, thrust::device_vector<int>& row_ids)
+inline void coo_sorting(thrust::device_vector<int>& i, thrust::device_vector<int>& j)
 {
-    assert(row_ids.size() == col_ids.size());
+    // auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
+    // auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end()));
+    // thrust::sort(first, last); //TODO: compare.
 
-    // auto first = thrust::make_zip_iterator(thrust::make_tuple(row_ids.begin(), col_ids.begin()));
-    // auto last = thrust::make_zip_iterator(thrust::make_tuple(row_ids.end(), col_ids.end()));
-
-    // thrust::sort(first, last);
-
-    const size_t N = row_ids.size();
+    assert(i.size() == j.size());
+    const size_t N = i.size();
     thrust::device_vector<int> permutation(N);
     thrust::sequence(permutation.begin(), permutation.end());
 
-    update_permutation(col_ids,  permutation);
-    update_permutation(row_ids, permutation);
+    update_permutation(j,  permutation);
+    update_permutation(i, permutation);
 
-    apply_permutation(col_ids,  permutation);
-    apply_permutation(row_ids, permutation);
-    assert(thrust::is_sorted(row_ids.begin(), row_ids.end()));
+    apply_permutation(j,  permutation);
+    apply_permutation(i, permutation);
+    assert(thrust::is_sorted(i.begin(), i.end()));
 }
 
-inline void coo_sorting(thrust::device_vector<int>& col_ids, thrust::device_vector<int>& row_ids, thrust::device_vector<float>& data)
+inline void coo_sorting(thrust::device_vector<int>& i, thrust::device_vector<int>& j, thrust::device_vector<float>& data)
 {
-    assert(row_ids.size() == col_ids.size());
-    assert(row_ids.size() == data.size());
-    // TODO: Compare with the following:
-    // auto first = thrust::make_zip_iterator(thrust::make_tuple(row_ids.begin(), col_ids.begin()));
-    // auto last = thrust::make_zip_iterator(thrust::make_tuple(row_ids.end(), col_ids.end()));
-
-    // thrust::sort_by_key(first, last, data.begin());
-
-    const size_t N = row_ids.size();
+    assert(i.size() == j.size());
+    assert(i.size() == data.size());
+    const size_t N = i.size();
     thrust::device_vector<int> permutation(N);
     thrust::sequence(permutation.begin(), permutation.end());
 
-    update_permutation(col_ids,  permutation);
-    update_permutation(row_ids, permutation);
+    update_permutation(j,  permutation);
+    update_permutation(i, permutation);
 
-    apply_permutation(col_ids,  permutation);
-    apply_permutation(row_ids, permutation);
+    apply_permutation(j,  permutation);
+    apply_permutation(i, permutation);
     apply_permutation(data, permutation);
-    assert(thrust::is_sorted(row_ids.begin(), row_ids.end()));
+    assert(thrust::is_sorted(i.begin(), i.end()));
 }
 
 inline thrust::device_vector<int> compute_offsets(const thrust::device_vector<int>& i)

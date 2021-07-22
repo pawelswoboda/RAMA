@@ -42,7 +42,7 @@ void dCOO::init(const bool is_sorted)
     }
     else
     {
-        coo_sorting(col_ids, row_ids, data);
+        coo_sorting(row_ids, col_ids, data);
         // now row indices are non-decreasing
         assert(thrust::is_sorted(row_ids.begin(), row_ids.end()));
     } 
@@ -73,7 +73,7 @@ dCOO dCOO::contract_cuda(const thrust::device_vector<int>& node_mapping)
             thrust::raw_pointer_cast(new_row_ids.data()), 
             thrust::raw_pointer_cast(new_col_ids.data()));
 
-    coo_sorting(new_col_ids, new_row_ids, new_data); // in-place sorting by rows.
+    coo_sorting(new_row_ids, new_col_ids, new_data); // in-place sorting by rows.
 
     auto first = thrust::make_zip_iterator(thrust::make_tuple(new_col_ids.begin(), new_row_ids.begin()));
     auto last = thrust::make_zip_iterator(thrust::make_tuple(new_col_ids.end(), new_row_ids.end()));

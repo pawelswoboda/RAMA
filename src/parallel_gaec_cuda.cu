@@ -150,7 +150,7 @@ std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_sorting(dCOO&
     std::tie(row_ids, col_ids) = to_undirected(row_ids.begin(), row_ids.end(), col_ids.begin(), col_ids.end());
 
     assert(col_ids.size() == row_ids.size());
-    coo_sorting(col_ids, row_ids);
+    coo_sorting(row_ids, col_ids);
     thrust::device_vector<int> row_offsets = compute_offsets(row_ids);
 
     thrust::device_vector<int> cc_labels(max(A.rows(), A.cols()));

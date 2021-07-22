@@ -31,7 +31,8 @@ int main(int argc, char** argv)
     for(int iter=0; iter<10; ++iter)
     {
         mp.iteration();
-        std::cout << "iter: "<<iter<< ", lower bound: " << mp.lower_bound() << "\n";
+        const double lb = mp.lower_bound();
+        std::cout << "iteration " << iter << " lower bound: " << lb << "\n";
     }
     const double final_lb = mp.lower_bound();
     std::cout << "final lower bound: " << final_lb << "\n";

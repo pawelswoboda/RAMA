@@ -26,6 +26,9 @@ class multicut_message_passing {
             thrust::device_vector<int>&, thrust::device_vector<int>&);
 
     private:
+        double edge_lower_bound();
+        double triangle_lower_bound();
+
         thrust::device_vector<int> i;
         thrust::device_vector<int> j;
 
