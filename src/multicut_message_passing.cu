@@ -2,12 +2,16 @@
 #include <thrust/device_vector.h>
 #include <thrust/for_each.h>
 #include <thrust/transform.h>
+#include <algorithm>
 #include "parallel_gaec_utils.h"
 #include "stdio.h"
 
 __device__ int find_edge_index(const int i, const int j, const int* i_vec, const int * j_vec, const int* offsets)
 {
     assert(i < j);
+    assert(offsets[i] <= offsets[i+1]);
+    if(offsets[i] == offsets[i+1])
+        return -1;
     int lb = offsets[i];
     int ub = offsets[i+1]-1;
     if(i_vec[lb] != i)
@@ -17,8 +21,11 @@ __device__ int find_edge_index(const int i, const int j, const int* i_vec, const
 
     while(lb != ub)
     {
-        assert(i_vec[lb] == i);// && j_vec[lb] <= j);
-        assert(i_vec[ub] == i); // && j_vec[ub] >= j);
+        if(lb > ub)
+            return -1;
+        assert(lb <= ub);
+        assert(i_vec[lb] == i);
+        assert(i_vec[ub] == i);
         assert(j_vec[lb] <= j_vec[ub]);
 
         middle = (lb + ub)/2;
@@ -36,7 +43,7 @@ __device__ int find_edge_index(const int i, const int j, const int* i_vec, const
 
 __device__ bool edge_present(const int i, const int j, const int* i_vec, const int * j_vec, const int* offsets)
 {
-    const int c = find_edge_index(i,j,i_vec,j_vec,offsets);
+    const int c = find_edge_index(i, j, i_vec, j_vec, offsets);
     if(i == -1)
         return false;
     return i_vec[c] == i && j_vec[c] == j;
@@ -71,12 +78,16 @@ struct copy_edge_costs_func {
     {
         const int i = thrust::get<0>(t);
         const int j = thrust::get<1>(t);
+        assert(i < j);
         float& edge_cost = thrust::get<2>(t);
-        const int orig_idx = find_edge_index(i,j, orig_i, orig_j, orig_offsets);
-        if(orig_i[orig_idx] == i && orig_j[orig_idx] == j)
-            edge_cost = orig_edge_costs[orig_idx];
+        if(!edge_present(i, j, orig_i, orig_j, orig_offsets))
+            edge_cost = 0.0;
         else
-            edge_cost = 0.0; 
+        {
+            const int orig_idx = find_edge_index(i, j, orig_i, orig_j, orig_offsets);
+            assert(orig_i[orig_idx] == i && orig_j[orig_idx] == j);
+            edge_cost = orig_edge_costs[orig_idx];
+        }
     }
 };
 
@@ -142,16 +153,26 @@ multicut_message_passing::multicut_message_passing(
     t2(_t2),
     t3(_t3)
 {
+    std::cout << "triangle size = " << t1.size() << ", orig edges size = " << orig_i.size() << "\n";
     assert(orig_i.size() == orig_j.size());
     assert(orig_edge_costs.size() == orig_j.size());
     assert(t1.size() == t2.size() && t1.size() == t3.size()); 
 
+    const int nr_nodes = std::max({
+            *thrust::max_element(orig_i.begin(), orig_i.end()),
+            *thrust::max_element(orig_j.begin(), orig_j.end()),
+            *thrust::max_element(t1.begin(), t1.end()),
+            *thrust::max_element(t2.begin(), t2.end()),
+            *thrust::max_element(t3.begin(), t3.end())
+            });
+
     // bring edges into normal form (first node < second node)
-    //{
-    //    auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
-    //    auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end()));
-    //    thrust::for_each(first, last, sort_edge_nodes_func());
-    //}
+    {
+        auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
+        auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end()));
+        thrust::for_each(first, last, sort_edge_nodes_func());
+        coo_sorting(orig_i, orig_j, orig_edge_costs);
+    }
 
     // bring triangles into normal form (first node < second node < third node)
     {
@@ -163,6 +184,7 @@ multicut_message_passing::multicut_message_passing(
     // sort triangles and remove duplicates
     {
         coo_sorting(t1, t2, t3);
+        assert(thrust::is_sorted(t1.begin(), t1.end()));
         auto first = thrust::make_zip_iterator(thrust::make_tuple(t1.begin(), t2.begin(), t3.begin()));
         auto last = thrust::make_zip_iterator(thrust::make_tuple(t1.end(), t2.end(), t3.end()));
         auto new_last = thrust::unique(first, last);
@@ -171,8 +193,7 @@ multicut_message_passing::multicut_message_passing(
         t3.resize(std::distance(first, new_last)); 
     }
 
-    // edges that will participate in message passing are those in trianges. Hence, we use only these.
-    // Remove duplicate edges from triangles, copy over costs from given edges
+    // edges that will participate in message passing are those in triangles. Hence, we use only these.
     i = thrust::device_vector<int>(3*t1.size());
     j = thrust::device_vector<int>(3*t1.size());
     thrust::copy(t1.begin(), t1.end(), i.begin());
@@ -181,9 +202,11 @@ multicut_message_passing::multicut_message_passing(
     thrust::copy(t3.begin(), t3.end(), j.begin() + t1.size());
     thrust::copy(t2.begin(), t2.end(), i.begin() + 2*t1.size());
     thrust::copy(t3.begin(), t3.end(), j.begin() + 2*t1.size());
+
     // remove duplicate edges
     {
-        coo_sorting(j,i);
+        coo_sorting(i,j);
+        assert(thrust::is_sorted(i.begin(), i.end()));
         auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
         auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end()));
         auto new_last = thrust::unique(first, last);
@@ -191,10 +214,13 @@ multicut_message_passing::multicut_message_passing(
         j.resize(std::distance(first, new_last));
     }
 
-    // copy edge costs from given edges
+    // copy edge costs from given edges, todo: possibly use later
     {
         edge_costs = thrust::device_vector<float>(i.size());
-        thrust::device_vector<int> orig_offsets = compute_offsets(orig_i); // TODO: change name
+        assert(thrust::is_sorted(orig_i.begin(), orig_i.end()));
+        std::cout << "before computing orig offsets\n";
+        thrust::device_vector<int> orig_offsets = compute_offsets_non_contiguous(nr_nodes+1, orig_i); // TODO: change name
+        std::cout << "after computing orig offsets\n";
         auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin(), edge_costs.begin()));
         auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end(), edge_costs.end()));
         copy_edge_costs_func func({
@@ -203,6 +229,7 @@ multicut_message_passing::multicut_message_passing(
                 thrust::raw_pointer_cast(orig_edge_costs.data()),
                 thrust::raw_pointer_cast(orig_offsets.data())});
         thrust::for_each(first, last, func);
+        std::cout << "after copying edge costs occurring in triangles\n";
     }
 
     const int nr_edges = i.size();
@@ -214,7 +241,9 @@ multicut_message_passing::multicut_message_passing(
     triangle_correspondence_23 = thrust::device_vector<int>(t1.size());
     edge_counter = thrust::device_vector<int>(nr_edges, 0);
 
-    thrust::device_vector<int> offsets = compute_offsets(i);
+    std::cout << "before computing offsets\n";
+    thrust::device_vector<int> offsets = compute_offsets_non_contiguous(nr_nodes, i);
+    std::cout << "after computing offsets\n";
     edge_index_binary_search_func func({
             thrust::raw_pointer_cast(i.data()),
             thrust::raw_pointer_cast(j.data()),
@@ -246,23 +275,42 @@ multicut_message_passing::multicut_message_passing(
 
     // If some edges were not part of a triangle, append these edges and their original costs
     {
+        coo_sorting(i, j, edge_costs);
+        offsets = compute_offsets_non_contiguous(nr_nodes, i);
         auto orig_first = thrust::make_zip_iterator(thrust::make_tuple(orig_i.begin(), orig_j.begin(), orig_edge_costs.begin()));
         auto orig_last = thrust::make_zip_iterator(thrust::make_tuple(orig_i.end(), orig_j.end(), orig_edge_costs.end()));
         const int nr_triangle_edges = i.size();
-        i.resize(i.size() + orig_i.size());
-        j.resize(j.size() + orig_j.size());
-        edge_costs.resize(edge_costs.size() + orig_edge_costs.size());
-        auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin(), edge_costs.begin())) + nr_triangle_edges;
-        edge_not_present_func func({thrust::raw_pointer_cast(i.data()), thrust::raw_pointer_cast(j.data()), thrust::raw_pointer_cast(offsets.data())});
-        auto new_last = thrust::copy_if(orig_first, orig_last, first, func);
-        const int nr_new_edges = std::distance(first, new_last);
-        std::cout << "nr additional edges = " << nr_new_edges << "\n";
-        i.resize(nr_triangle_edges + nr_new_edges);
-        j.resize(nr_triangle_edges + nr_new_edges);
-        edge_costs.resize(nr_triangle_edges + nr_new_edges);
-        // TODO: add covering numbers 0 for non-triangle edges
-    }
+        assert(thrust::is_sorted(i.begin(), i.end()));
+        assert(offsets.back() == i.size());
+        assert(i.size() == j.size());
+        assert(i.size() == edge_costs.size());
+        //i.resize(i.size() + orig_i.size());
+        //j.resize(j.size() + orig_j.size());
+        //edge_costs.resize(edge_costs.size() + orig_edge_costs.size());
 
+        thrust::device_vector<int> i_not_covered(orig_i.size());;
+        thrust::device_vector<int> j_not_covered(orig_i.size());;
+        thrust::device_vector<float> edge_costs_not_covered(orig_i.size());;
+        //auto new_first = thrust::make_zip_iterator(thrust::make_tuple(i.begin() + nr_triangle_edges, j.begin() + nr_triangle_edges, edge_costs.begin() + nr_triangle_edges));
+        auto new_first = thrust::make_zip_iterator(thrust::make_tuple(i_not_covered.begin(), j_not_covered.begin(), edge_costs_not_covered.begin()));
+        edge_not_present_func func({thrust::raw_pointer_cast(i.data()), thrust::raw_pointer_cast(j.data()), thrust::raw_pointer_cast(offsets.data())});
+        std::cout << "before copy if\n";
+        auto new_last = thrust::copy_if(orig_first, orig_last, new_first, func);
+        std::cout << "after copy if\n";
+        const int nr_new_edges = std::distance(new_first, new_last);
+        std::cout << "nr triangle edges = " << nr_triangle_edges << ", nr additional edges = " << nr_new_edges << "\n";
+        i_not_covered.resize(nr_new_edges);
+        j_not_covered.resize(nr_new_edges);
+        edge_costs_not_covered.resize(nr_new_edges);
+
+        i.resize(i.size() + nr_new_edges);
+        thrust::copy(i_not_covered.begin(), i_not_covered.end(), i.begin() + nr_triangle_edges);
+        j.resize(j.size() + nr_new_edges);
+        thrust::copy(j_not_covered.begin(), j_not_covered.end(), j.begin() + nr_triangle_edges);
+        edge_costs.resize(edge_costs.size() + nr_new_edges);
+        thrust::copy(edge_costs_not_covered.begin(), edge_costs_not_covered.end(), edge_costs.begin() + nr_triangle_edges);
+        edge_counter.resize(i.size(), 0);
+    } 
 }
 
 struct neg_part //: public unary_function<float,float>
@@ -288,15 +336,21 @@ struct triangle_lb_func {
       } 
 };
 
-double multicut_message_passing::lower_bound()
+double multicut_message_passing::edge_lower_bound()
 {
-    float edges_lb = thrust::transform_reduce(edge_costs.begin(), edge_costs.end(), neg_part(), 0.0, thrust::plus<float>());
+    return thrust::transform_reduce(edge_costs.begin(), edge_costs.end(), neg_part(), 0.0, thrust::plus<float>());
+}
 
+double multicut_message_passing::triangle_lower_bound()
+{
     auto first = thrust::make_zip_iterator(thrust::make_tuple(t12_costs.begin(), t13_costs.begin(), t23_costs.begin()));
     auto last = thrust::make_zip_iterator(thrust::make_tuple(t12_costs.end(), t13_costs.end(), t23_costs.end()));
-    float triangles_lb = thrust::transform_reduce(first, last, triangle_lb_func(), 0.0, thrust::plus<float>());
+    return thrust::transform_reduce(first, last, triangle_lb_func(), 0.0, thrust::plus<float>());
+}
 
-    return edges_lb + triangles_lb; 
+double multicut_message_passing::lower_bound()
+{
+    return edge_lower_bound() + triangle_lower_bound(); 
 }
 
 struct increase_triangle_costs_func {
@@ -348,6 +402,8 @@ void multicut_message_passing::send_messages_to_triplets()
         auto last = thrust::make_zip_iterator(thrust::make_tuple(edge_costs.end(), edge_counter.end())); 
         thrust::for_each(first, last, decrease_edge_costs_func());
     } 
+
+    std::cout << "edge lb = " << edge_lower_bound() << " triangle lb = " << triangle_lower_bound() << "\n";
 }
 
 struct decrease_triangle_costs_func {

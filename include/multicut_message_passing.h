@@ -23,6 +23,9 @@ class multicut_message_passing {
             reparametrized_edge_costs() const;
 
     private:
+        double edge_lower_bound();
+        double triangle_lower_bound();
+
         thrust::device_vector<int> i;
         thrust::device_vector<int> j;
 
