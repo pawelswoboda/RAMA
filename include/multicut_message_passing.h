@@ -1,12 +1,11 @@
 #pragma once
 #include <thrust/device_vector.h>
+#include"dCOO.h"
 
 class multicut_message_passing {
     public:
         multicut_message_passing(
-                thrust::device_vector<int>& _i,
-                thrust::device_vector<int>& _j,
-                thrust::device_vector<float>& _edge_costs,
+                const dCOO& A,
                 thrust::device_vector<int>& _t1,
                 thrust::device_vector<int>& _t2,
                 thrust::device_vector<int>& _t3
@@ -22,10 +21,10 @@ class multicut_message_passing {
         std::tuple<const thrust::device_vector<int>&, const thrust::device_vector<int>&, const thrust::device_vector<float>>
             reparametrized_edge_costs() const;
 
+    private:
         void compute_triangle_edge_correspondence(const thrust::device_vector<int>&, const thrust::device_vector<int>&, 
             thrust::device_vector<int>&, thrust::device_vector<int>&);
 
-    private:
         double edge_lower_bound();
         double triangle_lower_bound();
 

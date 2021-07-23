@@ -122,26 +122,29 @@ inline std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust
     return {i, j, costs};
 }
 
-template<typename T>
-void apply_permutation(thrust::device_vector<T>& keys, thrust::device_vector<int>& permutation)
+struct sort_edge_nodes_func
 {
-    // copy keys to temporary vector
-    thrust::device_vector<T> temp(keys.begin(), keys.end());
+    __host__ __device__
+        void operator()(const thrust::tuple<int&,int&> t)
+        {
+            int& x = thrust::get<0>(t);
+            int& y = thrust::get<1>(t);
+            const int smallest = min(x, y);
+            const int largest = max(x, y);
+            assert(smallest < largest);
+            x = smallest;
+            y = largest;
+        }
+};
 
-    // permute the keys
-    thrust::gather(permutation.begin(), permutation.end(), temp.begin(), keys.begin());
-}
-
-inline void update_permutation(thrust::device_vector<int>& keys, thrust::device_vector<int>& permutation)
+inline void sort_edge_nodes(thrust::device_vector<int>& i, thrust::device_vector<int>& j)
 {
-    // temporary storage for keys
-    thrust::device_vector<int> temp(keys.size());
+    assert(i.size() == j.size());
 
-    // permute the keys with the current reordering
-    thrust::gather(permutation.begin(), permutation.end(), keys.begin(), temp.begin());
+    auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
+    auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end()));
 
-    // stable_sort the permuted keys and update the permutation
-    thrust::stable_sort_by_key(temp.begin(), temp.end(), permutation.begin());
+    thrust::for_each(first, last, sort_edge_nodes_func());
 }
 
 inline void coo_sorting(thrust::device_vector<int>& i, thrust::device_vector<int>& j, thrust::device_vector<int>& k)
@@ -149,73 +152,26 @@ inline void coo_sorting(thrust::device_vector<int>& i, thrust::device_vector<int
     assert(i.size() == j.size());
     assert(i.size() == k.size());
 
-    // auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin(), k.begin()));
-    // auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end(), k.end()));
+    auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin(), k.begin()));
+    auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end(), k.end()));
 
-    // thrust::sort(first, last);
-
-    const int N = i.size();
-    thrust::device_vector<int> permutation(N);
-    thrust::sequence(permutation.begin(), permutation.end());
-
-    update_permutation(k,  permutation);
-    update_permutation(j, permutation);
-    update_permutation(i, permutation);
-
-    apply_permutation(k,  permutation);
-    apply_permutation(j, permutation);
-    apply_permutation(i, permutation);
-    assert(thrust::is_sorted(i.begin(), i.end())); 
+    thrust::sort(first, last);
 }
 
 inline void coo_sorting(thrust::device_vector<int>& i, thrust::device_vector<int>& j)
 {
-    // auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
-    // auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end()));
-    // thrust::sort(first, last); //TODO: compare.
-
-    assert(i.size() == j.size());
-    const size_t N = i.size();
-    thrust::device_vector<int> permutation(N);
-    thrust::sequence(permutation.begin(), permutation.end());
-
-    update_permutation(j,  permutation);
-    update_permutation(i, permutation);
-
-    apply_permutation(j,  permutation);
-    apply_permutation(i, permutation);
-    assert(thrust::is_sorted(i.begin(), i.end()));
+    auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
+    auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end()));
+    thrust::sort(first, last);
 }
 
 inline void coo_sorting(thrust::device_vector<int>& i, thrust::device_vector<int>& j, thrust::device_vector<float>& data)
 {
     assert(i.size() == j.size());
     assert(i.size() == data.size());
-    const size_t N = i.size();
-    thrust::device_vector<int> permutation(N);
-    thrust::sequence(permutation.begin(), permutation.end());
-
-    update_permutation(j,  permutation);
-    update_permutation(i, permutation);
-
-    apply_permutation(j,  permutation);
-    apply_permutation(i, permutation);
-    apply_permutation(data, permutation);
-    assert(thrust::is_sorted(i.begin(), i.end()));
-}
-
-inline thrust::device_vector<int> compute_offsets(const thrust::device_vector<int>& i)
-{
-    assert(thrust::is_sorted(i.begin(), i.end()));
-    thrust::device_vector<int> offsets(i.back()+2);
-
-    thrust::unique_by_key_copy(i.begin(), i.end(),
-            thrust::make_counting_iterator(0),
-            thrust::make_discard_iterator(),   // discard the compacted keys
-            offsets.begin());
-    offsets.back() = i.size();
-
-    return offsets;
+    auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
+    auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end()));
+    thrust::sort_by_key(first, last, data.begin());
 }
 
 inline std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> get_unique_with_counts(const thrust::device_vector<int>& input)
@@ -256,7 +212,7 @@ inline thrust::device_vector<int> invert_unique(const thrust::device_vector<int>
     return out_values;
 }
 
-inline thrust::device_vector<int> compute_offsets_non_contiguous(const int max_value, const thrust::device_vector<int>& i)
+inline thrust::device_vector<int> compute_offsets(const thrust::device_vector<int>& i, const int max_value)
 {
     thrust::device_vector<int> offsets(max_value + 2, 0);
     thrust::device_vector<int> unique_ids, counts;
@@ -275,10 +231,16 @@ inline thrust::device_vector<int> concatenate(const thrust::device_vector<int>& 
     return ab;
 }
 
-inline void print_vector(const thrust::device_vector<int>& v, const char* name)
+inline void print_vector(const thrust::device_vector<int>& v, const char* name, const int num = 0)
 {
     std::cout<<name<<": ";
-    thrust::copy(v.begin(), v.end(), std::ostream_iterator<int>(std::cout, " "));
+    if (num == 0)
+        thrust::copy(v.begin(), v.end(), std::ostream_iterator<int>(std::cout, " "));
+    else
+    {
+        int size = std::distance(v.begin(), v.end());
+        thrust::copy(v.begin(), v.begin() + std::min(size, num), std::ostream_iterator<int>(std::cout, " "));
+    }
     std::cout<<"\n";
 }
 /*

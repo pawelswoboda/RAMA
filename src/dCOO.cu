@@ -13,35 +13,28 @@ __global__ void map_nodes(const int num_edges, const int* const __restrict__ nod
     int num_threads = blockDim.x * gridDim.x;
     for (int e = tid; e < num_edges; e += num_threads)
     {
-        rows[e] = node_mapping[rows[e]];
-        cols[e] = node_mapping[cols[e]];
+        assert(rows[e] < cols[e]);
+        const int i = node_mapping[rows[e]];
+        const int j = node_mapping[cols[e]];
+        rows[e] = min(i, j);
+        cols[e] = max(i, j);
     }
 }
-
-struct is_same_edge
-{
-    __host__ __device__
-        bool operator()(const thrust::tuple<int,int> e1, const thrust::tuple<int,int> e2)
-        {
-            if((thrust::get<0>(e1) == thrust::get<0>(e2)) && (thrust::get<1>(e1) == thrust::get<1>(e2)))
-                return true;
-            else
-                return false;
-        }
-};
 
 void dCOO::init(const bool is_sorted)
 {
     assert(col_ids.size() == data.size());
     assert(row_ids.size() == data.size());
-
     if(is_sorted)
     {
         assert(thrust::is_sorted(row_ids.begin(), row_ids.end())); 
-        // TODO: check if for every row index the column indices are sorted
+        assert(thrust::is_sorted(thrust::make_zip_iterator(thrust::make_tuple(row_ids.begin(), col_ids.begin())),
+                                thrust::make_zip_iterator(thrust::make_tuple(row_ids.end(), col_ids.end())))); 
     }
     else
     {
+        if (is_directed_)
+            sort_edge_nodes(row_ids, col_ids);
         coo_sorting(row_ids, col_ids, data);
         // now row indices are non-decreasing
         assert(thrust::is_sorted(row_ids.begin(), row_ids.end()));
@@ -53,11 +46,14 @@ void dCOO::init(const bool is_sorted)
     if(rows_ == 0)
         rows_ = row_ids.back() + 1;
     assert(rows_ > *thrust::max_element(row_ids.begin(), row_ids.end()));
+    if (!is_directed_)
+        assert(rows_ == cols_);
 }
 
 dCOO dCOO::contract_cuda(const thrust::device_vector<int>& node_mapping)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
+    assert(is_directed_);
 
     const int numThreads = 256;
 
@@ -67,7 +63,6 @@ dCOO dCOO::contract_cuda(const thrust::device_vector<int>& node_mapping)
 
     int num_edges = new_row_ids.size();
     int numBlocks = ceil(num_edges / (float) numThreads);
-
     map_nodes<<<numBlocks, numThreads>>>(num_edges, 
             thrust::raw_pointer_cast(node_mapping.data()), 
             thrust::raw_pointer_cast(new_row_ids.data()), 
@@ -75,15 +70,15 @@ dCOO dCOO::contract_cuda(const thrust::device_vector<int>& node_mapping)
 
     coo_sorting(new_row_ids, new_col_ids, new_data); // in-place sorting by rows.
 
-    auto first = thrust::make_zip_iterator(thrust::make_tuple(new_col_ids.begin(), new_row_ids.begin()));
-    auto last = thrust::make_zip_iterator(thrust::make_tuple(new_col_ids.end(), new_row_ids.end()));
+    auto first = thrust::make_zip_iterator(thrust::make_tuple(new_row_ids.begin(), new_col_ids.begin()));
+    auto last = thrust::make_zip_iterator(thrust::make_tuple(new_row_ids.end(), new_col_ids.end()));
 
     thrust::device_vector<int> out_rows(num_edges);
     thrust::device_vector<int> out_cols(num_edges);
-    auto first_output = thrust::make_zip_iterator(thrust::make_tuple(out_cols.begin(), out_rows.begin()));
+    auto first_output = thrust::make_zip_iterator(thrust::make_tuple(out_rows.begin(), out_cols.begin()));
     thrust::device_vector<float> out_data(num_edges);
 
-    auto new_end = thrust::reduce_by_key(first, last, new_data.begin(), first_output, out_data.begin(), is_same_edge());
+    auto new_end = thrust::reduce_by_key(first, last, new_data.begin(), first_output, out_data.begin());
     int new_num_edges = std::distance(out_data.begin(), new_end.second);
     out_rows.resize(new_num_edges);
     out_cols.resize(new_num_edges);
@@ -92,7 +87,7 @@ dCOO dCOO::contract_cuda(const thrust::device_vector<int>& node_mapping)
     int out_num_rows = out_rows.back() + 1;
     int out_num_cols = *thrust::max_element(out_cols.begin(), out_cols.end()) + 1;
 
-    return dCOO(out_num_rows, out_num_cols, std::move(out_cols), std::move(out_rows), std::move(out_data), true);
+    return dCOO(out_num_rows, out_num_cols, std::move(out_cols), std::move(out_rows), std::move(out_data), is_directed_, true);
 }
 
 struct is_diagonal
@@ -132,8 +127,7 @@ struct diag_func
 
 thrust::device_vector<float> dCOO::diagonal() const
 {
-    assert(std::abs(rows_ - cols_) <= 1);
-    thrust::device_vector<float> d(rows(), 0.0);
+    thrust::device_vector<float> d(std::max(rows(), cols()), 0.0);
 
     auto begin = thrust::make_zip_iterator(thrust::make_tuple(col_ids.begin(), row_ids.begin(), data.begin()));
     auto end = thrust::make_zip_iterator(thrust::make_tuple(col_ids.end(), row_ids.end(), data.end()));
@@ -145,18 +139,7 @@ thrust::device_vector<float> dCOO::diagonal() const
 
 thrust::device_vector<int> dCOO::compute_row_offsets() const
 {
-    return compute_offsets(row_ids);
-}
-
-thrust::device_vector<int> dCOO::compute_row_offsets_non_contiguous_rows(const int rows, const thrust::device_vector<int>& row_ids) const
-{
-    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
-    return compute_offsets_non_contiguous(rows - 1, row_ids);
-}
-
-thrust::device_vector<int> dCOO::compute_row_offsets_non_contiguous_rows() const
-{
-    return compute_row_offsets_non_contiguous_rows(rows_, row_ids);
+    return compute_offsets(row_ids, rows_ - 1);
 }
 
 float dCOO::sum() const
@@ -171,20 +154,22 @@ float dCOO::max() const
 
 dCOO dCOO::export_undirected() const
 {
+    assert(is_directed_);
     thrust::device_vector<int> row_ids_u, col_ids_u;
     thrust::device_vector<float> data_u;
 
     std::tie(row_ids_u, col_ids_u, data_u) = to_undirected(row_ids, col_ids, data);
-    return dCOO(std::move(col_ids_u), std::move(row_ids_u), std::move(data_u));
+    return dCOO(std::move(col_ids_u), std::move(row_ids_u), std::move(data_u), false);
 }
 
 dCOO dCOO::export_directed() const
 {
+    assert(!is_directed_);
     thrust::device_vector<int> row_ids_d, col_ids_d;
     thrust::device_vector<float> data_d;
 
     std::tie(row_ids_d, col_ids_d, data_d) = to_directed(row_ids, col_ids, data);
-    return dCOO(std::move(col_ids_d), std::move(row_ids_d), std::move(data_d));
+    return dCOO(std::move(col_ids_d), std::move(row_ids_d), std::move(data_d), true);
 }
 
 struct is_in_range
@@ -223,5 +208,5 @@ dCOO dCOO::export_filtered(const float lb, const float ub) const
     thrust::copy_if(first, last, first_f, is_in_range({lb,ub}));
 
     return dCOO(rows(), cols(), 
-            std::move(col_ids_f), std::move(row_ids_f), std::move(data_f), true); 
+            std::move(col_ids_f), std::move(row_ids_f), std::move(data_f), is_directed_, true); 
 }

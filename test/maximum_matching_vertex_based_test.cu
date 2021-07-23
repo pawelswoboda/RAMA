@@ -16,7 +16,7 @@ int main(int argc, char** argv)
 
     dCOO A(i_d.begin(), i_d.end(),
         j_d.begin(), j_d.end(),
-        costs_d.begin(), costs_d.end()); 
+        costs_d.begin(), costs_d.end(), true); 
 
     thrust::device_vector<int> node_mapping;
     int nr_matched_edges;

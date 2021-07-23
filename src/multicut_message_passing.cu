@@ -6,18 +6,14 @@
 #include "parallel_gaec_utils.h"
 #include "stdio.h"
 
-struct sort_edge_nodes_func
+struct triangle_duplicate_nodes
 {
     __host__ __device__
-        void operator()(const thrust::tuple<int&,int&> t)
+        bool operator()(const thrust::tuple<int,int,int>& t)
         {
-            int& x = thrust::get<0>(t);
-            int& y = thrust::get<1>(t);
-            const int smallest = min(x, y);
-            const int largest = max(x, y);
-            assert(smallest < largest);
-            x = smallest;
-            y = largest;
+            return thrust::get<0>(t) == thrust::get<1>(t) || 
+                thrust::get<0>(t) == thrust::get<2>(t) ||
+                thrust::get<1>(t) == thrust::get<2>(t);
         }
 };
 
@@ -88,9 +84,7 @@ void multicut_message_passing::compute_triangle_edge_correspondence(
 
 // return for each triangle the edge index of its three edges, plus number of triangles an edge is part of
 multicut_message_passing::multicut_message_passing(
-        thrust::device_vector<int>& orig_i, 
-        thrust::device_vector<int>& orig_j,
-        thrust::device_vector<float>& orig_edge_costs,
+        const dCOO& A,
         thrust::device_vector<int>& _t1,
         thrust::device_vector<int>& _t2,
         thrust::device_vector<int>& _t3)
@@ -98,32 +92,18 @@ multicut_message_passing::multicut_message_passing(
     t2(_t2),
     t3(_t3)
 {
-    std::cout << "triangle size = " << t1.size() << ", orig edges size = " << orig_i.size() << "\n";
-    assert(orig_i.size() == orig_j.size());
-    assert(orig_edge_costs.size() == orig_j.size());
+    std::cout << "triangle size = " << t1.size() << ", orig edges size = " << A.nnz() << "\n";
     assert(t1.size() == t2.size() && t1.size() == t3.size()); 
-
-    const int nr_nodes = std::max({
-            *thrust::max_element(orig_i.begin(), orig_i.end()),
-            *thrust::max_element(orig_j.begin(), orig_j.end()),
-            *thrust::max_element(t1.begin(), t1.end()),
-            *thrust::max_element(t2.begin(), t2.end()),
-            *thrust::max_element(t3.begin(), t3.end())
-            });
-
-    // bring edges into normal form (first node < second node)
-    {
-       auto first = thrust::make_zip_iterator(thrust::make_tuple(orig_i.begin(), orig_j.begin()));
-       auto last = thrust::make_zip_iterator(thrust::make_tuple(orig_i.end(), orig_j.end()));
-       thrust::for_each(first, last, sort_edge_nodes_func());
-        coo_sorting(orig_i, orig_j, orig_edge_costs);
-    }
 
     // bring triangles into normal form (first node < second node < third node)
     {
         auto first = thrust::make_zip_iterator(thrust::make_tuple(t1.begin(), t2.begin(), t3.begin()));
         auto last = thrust::make_zip_iterator(thrust::make_tuple(t1.end(), t2.end(), t3.end()));
-        thrust::for_each(first, last, sort_triangle_nodes_func());
+        auto new_last = thrust::remove_if(first, last, triangle_duplicate_nodes());
+        thrust::for_each(first, new_last, sort_triangle_nodes_func());
+        t1.resize(std::distance(first, new_last)); 
+        t2.resize(std::distance(first, new_last)); 
+        t3.resize(std::distance(first, new_last)); 
     }
 
     // sort triangles and remove duplicates
@@ -158,6 +138,10 @@ multicut_message_passing::multicut_message_passing(
         i.resize(std::distance(first, new_last));
         j.resize(std::distance(first, new_last));
     }
+
+    thrust::device_vector<int> orig_i = A.get_row_ids();
+    thrust::device_vector<int> orig_j = A.get_col_ids();
+    thrust::device_vector<int> orig_edge_costs = A.get_data();
 
     // copy edge costs from given edges, todo: possibly use later
     {
@@ -412,4 +396,3 @@ multicut_message_passing::reparametrized_edge_costs() const
 {
     return {i, j, edge_costs};
 }
-

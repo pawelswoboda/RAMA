@@ -10,9 +10,11 @@ int main(int argc, char** argv)
         const std::vector<int> j = {1, 2, 2, 3, 4, 3, 4, 4, 5, 5, 6, 6};
         const std::vector<float> costs = {2., 3., -1., 4., 1.5, 5., 2., -2., -3., 2., -1.5, 0.5};
 
-        dCOO A(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end());
+        dCOO A(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end(), true);
         thrust::device_vector<int> triangles_v1, triangles_v2, triangles_v3;
-        std::tie(triangles_v1, triangles_v2, triangles_v3) = enumerate_conflicted_cycles(A, 4);
+
+        conflicted_cycles conf_cyc(A, 6);
+        std::tie(triangles_v1, triangles_v2, triangles_v3) = conf_cyc.enumerate_conflicted_cycles();
 
         std::cout<<"Found triangles: \n";
 
@@ -27,13 +29,23 @@ int main(int argc, char** argv)
         const std::vector<int> j = {1, 2, 0};
         const std::vector<float> costs = {-1, 2, 1};
 
-        dCOO A(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end());
+        dCOO A(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end(), true);
         thrust::device_vector<int> triangles_v1, triangles_v2, triangles_v3;
-        std::tie(triangles_v1, triangles_v2, triangles_v3) = enumerate_conflicted_cycles(A, 3);
-        assert(triangles_v1.size() == 1);
-
-        std::tie(triangles_v1, triangles_v2, triangles_v3) = enumerate_conflicted_cycles(A, 4);
-        assert(triangles_v1.size() == 1);
+        {
+            conflicted_cycles conf_cyc(A, 3);
+            std::tie(triangles_v1, triangles_v2, triangles_v3) = conf_cyc.enumerate_conflicted_cycles();
+            assert(triangles_v1.size() == 1);
+        }
+        {
+            conflicted_cycles conf_cyc(A, 4);
+            std::tie(triangles_v1, triangles_v2, triangles_v3) = conf_cyc.enumerate_conflicted_cycles();
+            assert(triangles_v1.size() == 1);
+        }
+        {
+            conflicted_cycles conf_cyc(A, 6);
+            std::tie(triangles_v1, triangles_v2, triangles_v3) = conf_cyc.enumerate_conflicted_cycles();
+            assert(triangles_v1.size() == 1);
+        }
     }
     
     { // 4-cycle:
@@ -41,16 +53,28 @@ int main(int argc, char** argv)
         const std::vector<int> j = {1, 2, 3, 0};
         const std::vector<float> costs = {-1, 2, 1, 3};
 
-        dCOO A(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end());
+        dCOO A(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end(), true);
         thrust::device_vector<int> triangles_v1, triangles_v2, triangles_v3;
-        std::tie(triangles_v1, triangles_v2, triangles_v3) = enumerate_conflicted_cycles(A, 3);
-        assert(triangles_v1.size() == 0);
-
-        std::tie(triangles_v1, triangles_v2, triangles_v3) = enumerate_conflicted_cycles(A, 4);
-        assert(triangles_v1.size() == 2);
-
-        std::tie(triangles_v1, triangles_v2, triangles_v3) = enumerate_conflicted_cycles(A, 5);
-        assert(triangles_v1.size() == 2);
+        {
+            conflicted_cycles conf_cyc(A, 3);
+            std::tie(triangles_v1, triangles_v2, triangles_v3) = conf_cyc.enumerate_conflicted_cycles();
+            assert(triangles_v1.size() == 0);
+        }
+        {
+            conflicted_cycles conf_cyc(A, 4);
+            std::tie(triangles_v1, triangles_v2, triangles_v3) = conf_cyc.enumerate_conflicted_cycles();
+            assert(triangles_v1.size() == 2);
+        }
+        {
+            conflicted_cycles conf_cyc(A, 5);
+            std::tie(triangles_v1, triangles_v2, triangles_v3) = conf_cyc.enumerate_conflicted_cycles();
+            assert(triangles_v1.size() == 2);
+        }
+        {
+            conflicted_cycles conf_cyc(A, 6);
+            std::tie(triangles_v1, triangles_v2, triangles_v3) = conf_cyc.enumerate_conflicted_cycles();
+            assert(triangles_v1.size() == 2);
+        }
     }
 
         { // 4-cycle (non-conflicting):
@@ -58,16 +82,23 @@ int main(int argc, char** argv)
             const std::vector<int> j = {1, 2, 3, 0};
             const std::vector<float> costs = {-1, -2, 1, 3};
     
-            dCOO A(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end());
+            dCOO A(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end(), true);
             thrust::device_vector<int> triangles_v1, triangles_v2, triangles_v3;
-            std::tie(triangles_v1, triangles_v2, triangles_v3) = enumerate_conflicted_cycles(A, 3);
-            assert(triangles_v1.size() == 0);
-    
-            std::tie(triangles_v1, triangles_v2, triangles_v3) = enumerate_conflicted_cycles(A, 4);
-            assert(triangles_v1.size() == 0);
-    
-            std::tie(triangles_v1, triangles_v2, triangles_v3) = enumerate_conflicted_cycles(A, 5);
-            assert(triangles_v1.size() == 0);
+            {
+                conflicted_cycles conf_cyc(A, 3);
+                std::tie(triangles_v1, triangles_v2, triangles_v3) = conf_cyc.enumerate_conflicted_cycles();
+                assert(triangles_v1.size() == 0);
+            }
+            {
+                conflicted_cycles conf_cyc(A, 4);
+                std::tie(triangles_v1, triangles_v2, triangles_v3) = conf_cyc.enumerate_conflicted_cycles();
+                assert(triangles_v1.size() == 0);
+            }
+            {
+                conflicted_cycles conf_cyc(A, 5);
+                std::tie(triangles_v1, triangles_v2, triangles_v3) = conf_cyc.enumerate_conflicted_cycles();
+                assert(triangles_v1.size() == 0);
+            }
         }
 
     { // 5-cycle:
@@ -75,18 +106,29 @@ int main(int argc, char** argv)
         const std::vector<int> j = {1, 2, 3, 4, 0};
         const std::vector<float> costs = {-1, 2, 1, 3, 2};
 
-        dCOO A(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end());
+        dCOO A(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end(), true);
         thrust::device_vector<int> triangles_v1, triangles_v2, triangles_v3;
-        std::tie(triangles_v1, triangles_v2, triangles_v3) = enumerate_conflicted_cycles(A, 3);
-        assert(triangles_v1.size() == 0);
 
-        std::tie(triangles_v1, triangles_v2, triangles_v3) = enumerate_conflicted_cycles(A, 4);
-        assert(triangles_v1.size() == 0);
+        {
+            conflicted_cycles conf_cyc(A, 3);
+            std::tie(triangles_v1, triangles_v2, triangles_v3) = conf_cyc.enumerate_conflicted_cycles();
+            assert(triangles_v1.size() == 0);
+        }
+        {
+            conflicted_cycles conf_cyc(A, 4);
+            std::tie(triangles_v1, triangles_v2, triangles_v3) = conf_cyc.enumerate_conflicted_cycles();
+            assert(triangles_v1.size() == 0);
+        }
+        {
+            conflicted_cycles conf_cyc(A, 5);
+            std::tie(triangles_v1, triangles_v2, triangles_v3) = conf_cyc.enumerate_conflicted_cycles();
+            assert(triangles_v1.size() == 3);
+        }
 
-        std::tie(triangles_v1, triangles_v2, triangles_v3) = enumerate_conflicted_cycles(A, 5);
-        assert(triangles_v1.size() == 3);
-
-        std::tie(triangles_v1, triangles_v2, triangles_v3) = enumerate_conflicted_cycles(A, 6);
-        assert(triangles_v1.size() == 3);
+        {
+            conflicted_cycles conf_cyc(A, 6);
+            std::tie(triangles_v1, triangles_v2, triangles_v3) = conf_cyc.enumerate_conflicted_cycles();
+            assert(triangles_v1.size() == 3);
+        }
     }
 }
