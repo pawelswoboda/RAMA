@@ -83,6 +83,7 @@ struct is_unmatched {
 
 std::tuple<thrust::device_vector<int>, int> filter_edges_by_matching_vertex_based(const dCOO& A)
 {
+    assert(!A.is_directed());
     thrust::device_vector<int> v_best_neighbours(A.rows(), -1);
     thrust::device_vector<int> v_matched(A.rows(), 0);
     thrust::device_vector<int> node_mapping(A.rows());

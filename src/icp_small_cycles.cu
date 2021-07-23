@@ -362,10 +362,10 @@ std::tuple<dCOO, thrust::device_vector<int>, thrust::device_vector<int>, int> cr
         std::tie(pos_row_ids_symm, pos_col_ids_symm, pos_costs_symm) = to_undirected(row_ids_rep.begin(), row_ids_rep.begin() + nr_positive_edges,
                                                                                     col_ids_rep.begin(), col_ids_rep.begin() + nr_positive_edges,
                                                                                     costs.begin(), costs.begin() + nr_positive_edges);
-        A_pos = dCOO(std::max(A.rows(), A.cols()), std::max(A.rows(), A.cols()),
+        A_pos = dCOO(A.max_dim(), A.max_dim(),
                     pos_col_ids_symm.begin(), pos_col_ids_symm.end(),
                     pos_row_ids_symm.begin(), pos_row_ids_symm.end(), 
-                    pos_costs_symm.begin(), pos_costs_symm.end());
+                    pos_costs_symm.begin(), pos_costs_symm.end(), false);
     }
     return {A_pos, row_ids_rep, col_ids_rep, nr_positive_edges};
 }
@@ -390,8 +390,8 @@ std::tuple<double, thrust::device_vector<int>, thrust::device_vector<int>, thrus
 
     int num_rep_edges = num_edges - nr_positive_edges;
  
-    thrust::device_vector<int> A_row_offsets = A.compute_row_offsets_non_contiguous_rows();
-    thrust::device_vector<int> A_pos_row_offsets = A_pos.compute_row_offsets_non_contiguous_rows();
+    thrust::device_vector<int> A_row_offsets = A.compute_row_offsets();
+    thrust::device_vector<int> A_pos_row_offsets = A_pos.compute_row_offsets();
 
     int threadCount = 256;
     int blockCount = ceil(num_rep_edges / (float) threadCount);
@@ -459,7 +459,7 @@ std::tuple<double, dCOO, thrust::device_vector<int>, thrust::device_vector<int>,
     
     dCOO A(i.begin(), i.end(),
         j.begin(), j.end(), 
-        costs.begin(), costs.end());
+        costs.begin(), costs.end(), true);
     
     thrust::device_vector<int> triangles_v1, triangles_v2, triangles_v3;
     double lb;

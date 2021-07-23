@@ -97,8 +97,6 @@ struct negative_edge_indicator_func
     __host__ __device__
         bool operator()(const thrust::tuple<int,int,float> t)
         {
-            // if(thrust::get<0>(t) <= thrust::get<1>(t)) // we only want one representative
-            //     return true;
             if(thrust::get<2>(t) <= w)
                 return true;
             return false;
@@ -115,6 +113,7 @@ struct edge_comparator_func {
 
 std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_sorting(dCOO& A, const float retain_ratio)
 {
+    assert(A.is_directed());
     thrust::device_vector<int> row_ids = A.get_row_ids();
     thrust::device_vector<int> col_ids = A.get_col_ids();
     thrust::device_vector<float> data = A.get_data();
@@ -151,17 +150,17 @@ std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_sorting(dCOO&
 
     assert(col_ids.size() == row_ids.size());
     coo_sorting(row_ids, col_ids);
-    thrust::device_vector<int> row_offsets = compute_offsets(row_ids);
+    thrust::device_vector<int> row_offsets = compute_offsets(row_ids, A.max_dim() - 1);
 
-    thrust::device_vector<int> cc_labels(max(A.rows(), A.cols()));
-    computeCC_gpu(max(A.rows(), A.cols()), col_ids.size(), 
+    thrust::device_vector<int> cc_labels(A.max_dim());
+    computeCC_gpu(A.max_dim(), col_ids.size(), 
             thrust::raw_pointer_cast(row_offsets.data()), thrust::raw_pointer_cast(col_ids.data()), 
             thrust::raw_pointer_cast(cc_labels.data()), get_cuda_device());
 
     thrust::device_vector<int> node_mapping = compress_label_sequence(cc_labels, cc_labels.size() - 1);
     const int nr_ccs = *thrust::max_element(node_mapping.begin(), node_mapping.end()) + 1;
 
-    assert(nr_ccs < max(A.rows(), A.cols()));
+    assert(nr_ccs < A.max_dim());
 
     return {node_mapping, row_ids.size()};
 
@@ -180,6 +179,7 @@ std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_maximum_match
 std::vector<int> parallel_gaec_cuda(dCOO& A)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
+    assert(A.is_directed());
 
     const double initial_lb = A.sum();
     std::cout << "initial energy = " << initial_lb << "\n";
@@ -189,7 +189,6 @@ std::vector<int> parallel_gaec_cuda(dCOO& A)
     double contract_ratio = 0.5;
 
     bool try_edges_to_contract_by_maximum_matching = true;
-    // assert(A.rows() == A.cols());
     
     for(size_t iter=0;; ++iter)
     {
@@ -296,11 +295,7 @@ std::vector<int> parallel_gaec_cuda(const std::vector<int>& i, const std::vector
     cudaGetDeviceProperties(&prop, cuda_device);
     std::cout << "Going to use " << prop.name << " " << prop.major << "." << prop.minor << ", device number " << cuda_device << "\n";
 
-    // thrust::device_vector<int> i_un, j_un;
-    // thrust::device_vector<float> costs_un;
-    // std::tie(i_un, j_un, costs_un) = to_undirected(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end());
-    // dCOO A(std::move(i_un), std::move(j_un), std::move(costs_un));
-    dCOO A(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end());
+    dCOO A(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end(), true);
 
     const std::vector<int> h_node_mapping = parallel_gaec_cuda(A);
     print_obj_original(h_node_mapping, i, j, costs); 
@@ -310,7 +305,7 @@ std::vector<int> parallel_gaec_cuda(const std::vector<int>& i, const std::vector
 
 std::vector<int> parallel_gaec_cuda(thrust::device_vector<int>&& i, thrust::device_vector<int>&& j, thrust::device_vector<float>&& costs)
 {
-    dCOO A(std::move(i), std::move(j), std::move(costs));
+    dCOO A(std::move(i), std::move(j), std::move(costs), true);
     const std::vector<int> h_node_mapping = parallel_gaec_cuda(A);
     
     return h_node_mapping;
