@@ -7,14 +7,13 @@
 
 #define numThreads 256
 
-__device__ int get_best_neighbour(const int row_index,
+__device__ int get_best_neighbour(const int row_index, float max_value,
                                 const int* const __restrict__ row_offsets,
                                 const int* const __restrict__ col_ids, 
                                 const float* const __restrict__ data,
                                 const int* const __restrict__ ignore_vertices)
 {
     int n_id = -1;
-    float max_value = 0.0;
     for(int l = row_offsets[row_index]; l < row_offsets[row_index + 1]; ++l)
     {
         float current_val = data[l];
@@ -29,6 +28,7 @@ __device__ int get_best_neighbour(const int row_index,
 }
 
 __global__ void pick_best_neighbour(const int num_nodes, 
+                                    const float max_value,
                                     const int* const __restrict__ row_offsets, 
                                     const int* const __restrict__ col_ids, 
                                     const float* const __restrict__ costs,
@@ -42,7 +42,7 @@ __global__ void pick_best_neighbour(const int num_nodes,
         if (v_matched[v])
             continue;
 
-        v_best_neighbours[v] = get_best_neighbour(v, row_offsets, col_ids, costs, v_matched);
+        v_best_neighbours[v] = get_best_neighbour(v, max_value, row_offsets, col_ids, costs, v_matched);
     }
 }
 
@@ -73,15 +73,7 @@ __global__ void match_neighbours(const int num_nodes,
     }
 }
 
-struct is_unmatched {
-    __host__ __device__
-        inline int operator()(const thrust::tuple<int,int,int> e)
-        {
-            return thrust::get<2>(e) == 0;
-        }
-};
-
-std::tuple<thrust::device_vector<int>, int> filter_edges_by_matching_vertex_based(const dCOO& A)
+std::tuple<thrust::device_vector<int>, int> filter_edges_by_matching_vertex_based(const dCOO& A, const float retain_ratio)
 {
     assert(!A.is_directed());
     thrust::device_vector<int> v_best_neighbours(A.rows(), -1);
@@ -92,12 +84,16 @@ std::tuple<thrust::device_vector<int>, int> filter_edges_by_matching_vertex_base
     int numBlocks = ceil(A.rows() / (float) numThreads);
     thrust::device_vector<bool> still_running(1);
     thrust::device_vector<int> A_row_offsets = A.compute_row_offsets();
+
+    const float mid_edge_weight = retain_ratio * A.max();
+    assert(mid_edge_weight >= 0);
+
     int prev_num_edges = 0;
     for (int t = 0; t < 10; t++)
     {
         thrust::fill(thrust::device, still_running.begin(), still_running.end(), false);
 
-        pick_best_neighbour<<<numBlocks, numThreads>>>(A.rows(), 
+        pick_best_neighbour<<<numBlocks, numThreads>>>(A.rows(), mid_edge_weight,
             thrust::raw_pointer_cast(A_row_offsets.data()), 
             A.get_col_ids_ptr(), 
             A.get_data_ptr(), 
@@ -121,11 +117,5 @@ std::tuple<thrust::device_vector<int>, int> filter_edges_by_matching_vertex_base
     std::cout << "# vertices = " << A.rows() << "\n";
     std::cout << "# matched edges = " << prev_num_edges / 2 << " / "<< A.nnz() / 2 << "\n";
     
-    // thrust::copy(matched_rows.begin(), matched_rows.end(), std::ostream_iterator<int>(std::cout, " "));
-    // std::cout<<"\n";
-    // thrust::copy(v_best_neighbours.begin(), v_best_neighbours.end(), std::ostream_iterator<int>(std::cout, " "));
-    // std::cout<<"\n";
-
-
     return {node_mapping, prev_num_edges}; 
 }

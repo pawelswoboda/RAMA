@@ -6,35 +6,6 @@
 #include "parallel_gaec_utils.h"
 #include "stdio.h"
 
-struct triangle_duplicate_nodes
-{
-    __host__ __device__
-        bool operator()(const thrust::tuple<int,int,int>& t)
-        {
-            return thrust::get<0>(t) == thrust::get<1>(t) || 
-                thrust::get<0>(t) == thrust::get<2>(t) ||
-                thrust::get<1>(t) == thrust::get<2>(t);
-        }
-};
-
-struct sort_triangle_nodes_func
-{
-    __host__ __device__
-        void operator()(const thrust::tuple<int&,int&,int&> t)
-        {
-            int& x = thrust::get<0>(t);
-            int& y = thrust::get<1>(t);
-            int& z = thrust::get<2>(t);
-            const int smallest = min(min(x, y), z);
-            const int middle = max(min(x,y), min(max(x,y),z));
-            const int largest = max(max(x, y), z);
-            assert(smallest < middle && middle < largest);
-            x = smallest;
-            y = middle;
-            z = largest;
-        }
-};
-
 void multicut_message_passing::compute_triangle_edge_correspondence(
     const thrust::device_vector<int>& ta, const thrust::device_vector<int>& tb, 
     thrust::device_vector<int>& edge_counter, thrust::device_vector<int>& triangle_correspondence_ab)
@@ -94,30 +65,8 @@ multicut_message_passing::multicut_message_passing(
 {
     std::cout << "triangle size = " << t1.size() << ", orig edges size = " << A.nnz() << "\n";
     assert(t1.size() == t2.size() && t1.size() == t3.size()); 
-
-    // bring triangles into normal form (first node < second node < third node)
-    {
-        auto first = thrust::make_zip_iterator(thrust::make_tuple(t1.begin(), t2.begin(), t3.begin()));
-        auto last = thrust::make_zip_iterator(thrust::make_tuple(t1.end(), t2.end(), t3.end()));
-        auto new_last = thrust::remove_if(first, last, triangle_duplicate_nodes());
-        thrust::for_each(first, new_last, sort_triangle_nodes_func());
-        t1.resize(std::distance(first, new_last)); 
-        t2.resize(std::distance(first, new_last)); 
-        t3.resize(std::distance(first, new_last)); 
-    }
-
-    // sort triangles and remove duplicates
-    {
-        coo_sorting(t1, t2, t3);
-        assert(thrust::is_sorted(t1.begin(), t1.end()));
-        auto first = thrust::make_zip_iterator(thrust::make_tuple(t1.begin(), t2.begin(), t3.begin()));
-        auto last = thrust::make_zip_iterator(thrust::make_tuple(t1.end(), t2.end(), t3.end()));
-        auto new_last = thrust::unique(first, last);
-        t1.resize(std::distance(first, new_last)); 
-        t2.resize(std::distance(first, new_last)); 
-        t3.resize(std::distance(first, new_last)); 
-    }
-
+    normalize_triangles(t1, t2, t3);
+    
     // edges that will participate in message passing are those in triangles. Hence, we use only these.
     i = thrust::device_vector<int>(3*t1.size());
     j = thrust::device_vector<int>(3*t1.size());
@@ -130,7 +79,7 @@ multicut_message_passing::multicut_message_passing(
 
     // remove duplicate edges
     {
-        coo_sorting(i,j);
+        coo_sorting(i, j);
         assert(thrust::is_sorted(i.begin(), i.end()));
         auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
         auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end()));
@@ -139,9 +88,9 @@ multicut_message_passing::multicut_message_passing(
         j.resize(std::distance(first, new_last));
     }
 
-    thrust::device_vector<int> orig_i = A.get_row_ids();
-    thrust::device_vector<int> orig_j = A.get_col_ids();
-    thrust::device_vector<int> orig_edge_costs = A.get_data();
+    const thrust::device_vector<int> orig_i = A.get_row_ids();
+    const thrust::device_vector<int> orig_j = A.get_col_ids();
+    const thrust::device_vector<float> orig_edge_costs = A.get_data();
 
     // copy edge costs from given edges, todo: possibly use later
     {
@@ -192,6 +141,8 @@ multicut_message_passing::multicut_message_passing(
         thrust::swap(i, merged_i);
         thrust::swap(j, merged_j);
         thrust::swap(edge_costs, merged_costs);
+        coo_sorting(i, j, edge_costs);
+
         // TODO: add covering numbers 0 for non-triangle edges
     }
 
@@ -303,7 +254,7 @@ void multicut_message_passing::send_messages_to_triplets()
         thrust::for_each(first, last, decrease_edge_costs_func());
     } 
 
-    std::cout << "edge lb = " << edge_lower_bound() << " triangle lb = " << triangle_lower_bound() << "\n";
+    // std::cout << "edge lb = " << edge_lower_bound() << " triangle lb = " << triangle_lower_bound() << "\n";
 }
 
 struct decrease_triangle_costs_func {
