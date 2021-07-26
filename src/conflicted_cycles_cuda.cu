@@ -88,10 +88,10 @@ __global__ void find_triangles_parallel(const int num_rep_edges,
     }
 }
 
-__global__ void find_quadrangles_parallel(const int num_expansions, const int num_rep_edges, 
+__global__ void find_quadrangles_parallel(const long num_expansions, const int num_rep_edges, 
                                         const int* const __restrict__ row_ids_rep, 
                                         const int* const __restrict__ col_ids_rep, 
-                                        const int* const __restrict__ rep_row_offsets,
+                                        const long* const __restrict__ rep_row_offsets,
                                         const int* const __restrict__ A_symm_row_offsets,
                                         const int* const __restrict__ A_symm_col_ids,
                                         const float* const __restrict__ A_symm_data,
@@ -101,14 +101,14 @@ __global__ void find_quadrangles_parallel(const int num_expansions, const int nu
                                         int* __restrict__ empty_tri_index,
                                         const int max_triangles)
 {
-    const int start_index = blockIdx.x * blockDim.x + threadIdx.x;
-    const int num_threads = blockDim.x * gridDim.x;
-    for (int c_index = start_index; c_index < num_expansions && empty_tri_index[0] < max_triangles; c_index += num_threads) 
+    const long start_index = blockIdx.x * blockDim.x + threadIdx.x;
+    const long num_threads = blockDim.x * gridDim.x;
+    for (long c_index = start_index; c_index < num_expansions && empty_tri_index[0] < max_triangles; c_index += num_threads) 
     {
-        const int* next_rep_row_location = thrust::upper_bound(thrust::seq, rep_row_offsets, rep_row_offsets + num_rep_edges + 1, c_index);
-        const int rep_edge_index = thrust::distance(rep_row_offsets, next_rep_row_location) - 1;
-        assert(rep_edge_index < num_rep_edges);
-        const int local_offset = c_index - rep_row_offsets[rep_edge_index];
+        const long* next_rep_row_location = thrust::upper_bound(thrust::seq, rep_row_offsets, rep_row_offsets + num_rep_edges + 1, c_index);
+        const long rep_edge_index = thrust::distance(rep_row_offsets, next_rep_row_location) - 1;
+        assert(rep_edge_index < num_rep_edges && rep_edge_index >= 0);
+        const long local_offset = c_index - rep_row_offsets[rep_edge_index];
         assert(local_offset >= 0);
         const int v1 = row_ids_rep[rep_edge_index];
         const int v2 = col_ids_rep[rep_edge_index];
@@ -262,13 +262,11 @@ std::tuple<dCOO, thrust::device_vector<int>, thrust::device_vector<int>, int> cr
 }
 
 // A should be directed thus containing same number of elements as in original problem.
-std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<int>> conflicted_cycles_cuda(const dCOO& A, const int max_cycle_length, int max_num_tri)
+std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<int>> conflicted_cycles_cuda(const dCOO& A, const int max_cycle_length, const float tri_memory_factor = 2.0)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
     if (max_cycle_length > 5)
         throw std::runtime_error("max_cycle_length should be <= 5.");
-
-    int num_nodes = A.rows();
 
     // Make adjacency matrix and BFS search starting matrix.
     dCOO A_pos;
@@ -284,8 +282,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
     int threadCount = 256;
     int blockCount = ceil(num_rep_edges / (float) threadCount);
 
-    if (max_num_tri == 0)
-        max_num_tri = 2 * num_rep_edges;
+    const int max_num_tri = tri_memory_factor * num_rep_edges; // For memory pre-allocation.
     thrust::device_vector<int> triangles_v1(max_num_tri);
     thrust::device_vector<int> triangles_v2(max_num_tri); 
     thrust::device_vector<int> triangles_v3(max_num_tri);
@@ -309,7 +306,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
     {
         // Move valid triangles to starting indices to increase the budget.
         empty_tri_index[0] = rearrange_triangles(triangles_v1, triangles_v2, triangles_v3, empty_tri_index[0]); 
-        thrust::device_vector<int> rep_row_offsets(num_rep_edges + 1);
+        thrust::device_vector<long> rep_row_offsets(num_rep_edges + 1);
         {
             const thrust::device_vector<int> vertex_degrees = offsets_to_degrees(A_pos_row_offsets);
             thrust::gather(row_ids_rep.begin(), row_ids_rep.end(), vertex_degrees.begin(), rep_row_offsets.begin());
@@ -317,8 +314,9 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
             rep_row_offsets.back() = 0;
             thrust::exclusive_scan(rep_row_offsets.begin(), rep_row_offsets.end(), rep_row_offsets.begin());
         }
-        const int num_expansions = rep_row_offsets.back();
+        const long num_expansions = rep_row_offsets.back();
         blockCount = ceil(num_expansions / (float) threadCount);
+        std::cout<<"4-cycles: number of expansions: "<<num_expansions<<"\n";
 
         find_quadrangles_parallel<<<blockCount, threadCount>>>(num_expansions, num_rep_edges,
             thrust::raw_pointer_cast(row_ids_rep.data()),

@@ -6,7 +6,7 @@
 
 int main(int argc, char** argv)
 {
-    const int tri_budget = 20;
+    const float tri_budget = 10.0;
     {
         const std::vector<int> i = {0, 1, 0, 2, 3, 0, 2, 0, 3, 4, 5, 4};
         const std::vector<int> j = {1, 2, 2, 3, 4, 3, 4, 4, 5, 5, 6, 6};

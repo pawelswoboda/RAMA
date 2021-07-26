@@ -6,9 +6,9 @@ class multicut_message_passing {
     public:
         multicut_message_passing(
                 const dCOO& A,
-                thrust::device_vector<int>& _t1,
-                thrust::device_vector<int>& _t2,
-                thrust::device_vector<int>& _t3
+                thrust::device_vector<int>&& _t1,
+                thrust::device_vector<int>&& _t2,
+                thrust::device_vector<int>&& _t3
                 );
 
         void send_messages_to_triplets();
@@ -18,7 +18,7 @@ class multicut_message_passing {
 
         void iteration();
 
-        std::tuple<const thrust::device_vector<int>&, const thrust::device_vector<int>&, const thrust::device_vector<float>>
+        std::tuple<const thrust::device_vector<int>&, const thrust::device_vector<int>&, const thrust::device_vector<float>&>
             reparametrized_edge_costs() const;
 
     private:

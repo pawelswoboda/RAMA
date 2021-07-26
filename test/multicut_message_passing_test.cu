@@ -10,7 +10,7 @@ int main(int argc, char** argv)
     thrust::device_vector<int> t2 = std::vector<int>{1,2};
     thrust::device_vector<int> t3 = std::vector<int>{3,3};
     dCOO A(i.begin(), i.end(), j.begin(), j.end(), edge_costs.begin(), edge_costs.end(), true);
-    multicut_message_passing mcp(A, t1, t2, t3);
+    multicut_message_passing mcp(A, std::move(t1), std::move(t2), std::move(t3));
 
     const double initial_lb = mcp.lower_bound();
     std::cout << "initial lb = " << initial_lb << "\n";

@@ -56,12 +56,12 @@ void multicut_message_passing::compute_triangle_edge_correspondence(
 // return for each triangle the edge index of its three edges, plus number of triangles an edge is part of
 multicut_message_passing::multicut_message_passing(
         const dCOO& A,
-        thrust::device_vector<int>& _t1,
-        thrust::device_vector<int>& _t2,
-        thrust::device_vector<int>& _t3)
-    : t1(_t1),
-    t2(_t2),
-    t3(_t3)
+        thrust::device_vector<int>&& _t1,
+        thrust::device_vector<int>&& _t2,
+        thrust::device_vector<int>&& _t3)
+    : t1(std::move(_t1)),
+    t2(std::move(_t2)),
+    t3(std::move(_t3))
 {
     std::cout << "triangle size = " << t1.size() << ", orig edges size = " << A.nnz() << "\n";
     assert(t1.size() == t2.size() && t1.size() == t3.size()); 
@@ -342,7 +342,7 @@ void multicut_message_passing::iteration()
     send_messages_to_edges();
 }
 
-std::tuple<const thrust::device_vector<int>&, const thrust::device_vector<int>&, const thrust::device_vector<float>>
+std::tuple<const thrust::device_vector<int>&, const thrust::device_vector<int>&, const thrust::device_vector<float>&>
 multicut_message_passing::reparametrized_edge_costs() const
 {
     return {i, j, edge_costs};

@@ -2,4 +2,4 @@
 
 #include "dCOO.h"
 
-double dual_solver(dCOO& A, const int max_cycle_length, const int num_iter);
+double dual_solver(dCOO& A, const int max_cycle_length, const int num_iter, const float tri_memory_factor);

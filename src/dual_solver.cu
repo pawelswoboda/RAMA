@@ -4,15 +4,12 @@
 #include "time_measure_util.h"
 #include "parallel_gaec_utils.h"
 
-std::tuple<dCOO, double> dual_update_cycle_length(const dCOO& A, const int cycle_length, const int num_dual_steps_per_cycle)
+std::tuple<dCOO, double> dual_update_cycle_length(const dCOO& A, const int cycle_length, const int num_dual_steps_per_cycle, const float tri_memory_factor)
 {
-    if (cycle_length < 3 || num_dual_steps_per_cycle == 0)
-        return {A, get_lb(A.get_data())};
-
     thrust::device_vector<int> triangles_v1, triangles_v2, triangles_v3;
-    std::tie(triangles_v1, triangles_v2, triangles_v3) = conflicted_cycles_cuda(A, cycle_length);
+    std::tie(triangles_v1, triangles_v2, triangles_v3) = conflicted_cycles_cuda(A, cycle_length, tri_memory_factor);
 
-    multicut_message_passing mp(A, triangles_v1, triangles_v2, triangles_v3);
+    multicut_message_passing mp(A, std::move(triangles_v1), std::move(triangles_v2), std::move(triangles_v3));
     for(int iter = 0; iter < num_dual_steps_per_cycle; ++iter)
     {
         const double lb = mp.lower_bound();
@@ -28,13 +25,16 @@ std::tuple<dCOO, double> dual_update_cycle_length(const dCOO& A, const int cycle
     return {A_repam, final_lb};
 }
 
-double dual_solver(dCOO& A, const int max_cycle_length, const int num_iter)
+double dual_solver(dCOO& A, const int max_cycle_length, const int num_iter, const float tri_memory_factor)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
     double final_lb;
+    if (max_cycle_length < 3 || num_iter == 0)
+        return get_lb(A.get_data());
+
     for (int c = 3; c <= max_cycle_length; ++c)
     {
-        std::tie(A, final_lb) = dual_update_cycle_length(A, c, num_iter);
+        std::tie(A, final_lb) = dual_update_cycle_length(A, c, num_iter, tri_memory_factor);
     }
     return final_lb;
 }

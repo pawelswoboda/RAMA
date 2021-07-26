@@ -104,6 +104,21 @@ inline double get_lb(const thrust::device_vector<float>& costs)
     return thrust::transform_reduce(costs.begin(), costs.end(), compute_lb(), 0.0, thrust::plus<double>());
 }
 
+inline double get_obj(const std::vector<int>& h_node_mapping, const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs)
+{
+    double obj = 0;
+    const int nr_edges = costs.size();
+    for (int e = 0; e < nr_edges; e++)
+    {
+        const int e1 = i[e];
+        const int e2 = j[e];
+        const float c = costs[e];
+        if (h_node_mapping[e1] != h_node_mapping[e2])
+            obj += c;
+    }
+    return obj;
+}
+
 struct remove_reverse_edges_func {
     __host__ __device__
         inline int operator()(const thrust::tuple<int,int,float> e)
