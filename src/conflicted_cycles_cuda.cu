@@ -69,7 +69,7 @@ __global__ void find_triangles_parallel(const int num_rep_edges,
 {
     const int start_index = blockIdx.x * blockDim.x + threadIdx.x;
     const int num_threads = blockDim.x * gridDim.x;
-    for (int edge = start_index; edge < num_rep_edges; edge += num_threads) 
+    for (int edge = start_index; edge < num_rep_edges && empty_tri_index[0] < max_triangles; edge += num_threads) 
     {
         const int v1 = row_ids_rep[edge];
         const int v2 = col_ids_rep[edge];
@@ -103,7 +103,7 @@ __global__ void find_quadrangles_parallel(const int num_expansions, const int nu
 {
     const int start_index = blockIdx.x * blockDim.x + threadIdx.x;
     const int num_threads = blockDim.x * gridDim.x;
-    for (int c_index = start_index; c_index < num_expansions; c_index += num_threads) 
+    for (int c_index = start_index; c_index < num_expansions && empty_tri_index[0] < max_triangles; c_index += num_threads) 
     {
         const int* next_rep_row_location = thrust::upper_bound(thrust::seq, rep_row_offsets, rep_row_offsets + num_rep_edges + 1, c_index);
         const int rep_edge_index = thrust::distance(rep_row_offsets, next_rep_row_location) - 1;
@@ -143,7 +143,7 @@ __global__ void find_pentagons_parallel(const int num_expansions, const int num_
 {
     const int start_index = blockIdx.x * blockDim.x + threadIdx.x;
     const int num_threads = blockDim.x * gridDim.x;
-    for (int c_index = start_index; c_index < num_expansions; c_index += num_threads) 
+    for (int c_index = start_index; c_index < num_expansions && empty_tri_index[0] < max_triangles; c_index += num_threads) 
     {
         const int* next_rep_edge_location = thrust::upper_bound(thrust::seq, rep_edge_offsets, rep_edge_offsets + num_rep_edges + 1, c_index);
         const int rep_edge_index = thrust::distance(rep_edge_offsets, next_rep_edge_location) - 1;
@@ -304,8 +304,11 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
         triangles_v1.size());
     
     std::cout<<"3-cycles: found # of triangles: "<<empty_tri_index[0]<<", budget: "<<triangles_v1.size()<<std::endl;
-    if (max_cycle_length >= 4)
+
+    if (max_cycle_length >= 4 && empty_tri_index[0] < triangles_v1.size())
     {
+        // Move valid triangles to starting indices to increase the budget.
+        empty_tri_index[0] = rearrange_triangles(triangles_v1, triangles_v2, triangles_v3, empty_tri_index[0]); 
         thrust::device_vector<int> rep_row_offsets(num_rep_edges + 1);
         {
             const thrust::device_vector<int> vertex_degrees = offsets_to_degrees(A_pos_row_offsets);
@@ -333,8 +336,9 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
         std::cout<<"4-cycles: found # of triangles: "<<empty_tri_index[0]<<", budget: "<<triangles_v1.size()<<std::endl;
     }
 
-    if (max_cycle_length >= 5)
+    if (max_cycle_length >= 5 && empty_tri_index[0] < triangles_v1.size())
     {
+        empty_tri_index[0] = rearrange_triangles(triangles_v1, triangles_v2, triangles_v3, empty_tri_index[0]);
         thrust::device_vector<int> rep_edge_offsets(num_rep_edges + 1);
         {
             const thrust::device_vector<int> vertex_degrees = offsets_to_degrees(A_pos_row_offsets);
