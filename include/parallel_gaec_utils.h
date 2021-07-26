@@ -85,6 +85,12 @@ inline std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust
     return to_undirected(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end());
 }
 
+inline thrust::device_vector<int> offsets_to_degrees(const thrust::device_vector<int>& offsets)
+{
+    thrust::device_vector<int> degrees(offsets.size());
+    thrust::adjacent_difference(offsets.begin(), offsets.end(), degrees.begin());
+    return thrust::device_vector<int>(degrees.begin() + 1, degrees.end());
+}
 struct compute_lb
 {
     __host__ __device__ double operator()(const float& val) const

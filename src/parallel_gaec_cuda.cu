@@ -1,5 +1,4 @@
 #include <cuda_runtime.h>
-#include "dCOO.h"
 #include "union_find.hxx"
 #include "time_measure_util.h"
 #include <algorithm>
@@ -8,7 +7,8 @@
 #include <thrust/transform_scan.h>
 #include <thrust/transform.h>
 #include "maximum_matching_vertex_based.h"
-#include "icp_small_cycles.h"
+#include "multicut_solver_options.h"
+#include "dual_solver.h"
 #include "parallel_gaec_utils.h"
 
 thrust::device_vector<int> compress_label_sequence(const thrust::device_vector<int>& data, const int max_label)
@@ -176,7 +176,7 @@ std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_maximum_match
     return {compress_label_sequence(node_mapping, node_mapping.size() - 1), nr_matched_edges};
 }
 
-std::vector<int> parallel_gaec_cuda(dCOO& A)
+std::vector<int> parallel_gaec_cuda(dCOO& A, const multicut_solver_options& opts)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
     assert(A.is_directed());
@@ -193,12 +193,10 @@ std::vector<int> parallel_gaec_cuda(dCOO& A)
     for(size_t iter=0;; ++iter)
     {
         //const size_t nr_edges_to_contract = std::max(size_t(1), size_t(A.rows() * contract_ratio));
-        // if (iter > 0)
-        // {
-        //     dCOO A_dir = A.export_directed();
-        //     parallel_small_cycle_packing_cuda(A_dir, 1, 0);
-        //     A = A_dir.export_undirected(); //TODO: just replace data ?
-        // }
+        if (iter > 0)
+        {
+            dual_solver(A, opts.max_cycle_length_gaec, opts.num_dual_itr_gaec);
+        }
         thrust::device_vector<int> cur_node_mapping;
         int nr_edges_to_contract;
         if(try_edges_to_contract_by_maximum_matching)
@@ -236,8 +234,6 @@ std::vector<int> parallel_gaec_cuda(dCOO& A)
         {
             if(!try_edges_to_contract_by_maximum_matching)
                 contract_ratio *= 2.0; 
-            //contract_ratio = std::max(contract_ratio, 0.005);
-            // get contraction edges of the components which
             int nr_ccs = *thrust::max_element(cur_node_mapping.begin(), cur_node_mapping.end()) + 1;
             cur_node_mapping = discard_bad_contractions(new_A, cur_node_mapping);
             int good_nr_ccs = *thrust::max_element(cur_node_mapping.begin(), cur_node_mapping.end()) + 1;
@@ -284,10 +280,10 @@ void print_obj_original(const std::vector<int>& h_node_mapping, const std::vecto
         if (h_node_mapping[e1] != h_node_mapping[e2])
             obj += c;
     }
-    std::cout<<"Cost w.r.t original objective: "<<obj<<std::endl;
+    std::cout<<"\tcost w.r.t original objective: "<<obj<<std::endl;
 }
 
-std::vector<int> parallel_gaec_cuda(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs)
+std::vector<int> parallel_gaec_cuda(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs, const multicut_solver_options& opts)
 {
     const int cuda_device = get_cuda_device();
     cudaSetDevice(cuda_device);
@@ -297,16 +293,16 @@ std::vector<int> parallel_gaec_cuda(const std::vector<int>& i, const std::vector
 
     dCOO A(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end(), true);
 
-    const std::vector<int> h_node_mapping = parallel_gaec_cuda(A);
+    const std::vector<int> h_node_mapping = parallel_gaec_cuda(A, opts);
     print_obj_original(h_node_mapping, i, j, costs); 
     
     return h_node_mapping;
 }
 
-std::vector<int> parallel_gaec_cuda(thrust::device_vector<int>&& i, thrust::device_vector<int>&& j, thrust::device_vector<float>&& costs)
+std::vector<int> parallel_gaec_cuda(thrust::device_vector<int>&& i, thrust::device_vector<int>&& j, thrust::device_vector<float>&& costs, const multicut_solver_options& opts)
 {
     dCOO A(std::move(i), std::move(j), std::move(costs), true);
-    const std::vector<int> h_node_mapping = parallel_gaec_cuda(A);
+    const std::vector<int> h_node_mapping = parallel_gaec_cuda(A, opts);
     
     return h_node_mapping;
 

@@ -1,6 +1,7 @@
 #include <ECLgraph.h>
 #include "parallel_gaec_utils.h"
 #include <set>
+#include "test.h"
 
 void test_cc(const std::vector<int> row_offsets, const std::vector<int> col_ids, const int expected_nr_ccs)
 {
@@ -35,12 +36,12 @@ void test_cc(const std::vector<int> row_offsets, const std::vector<int> col_ids,
     for (int n = 0; n < num_rows; n++)
     {
         int c_id = node_stat_out[n];
-        assert(c_id >= 0);
+        test(c_id >= 0);
         for (int neighbour_index = row_offsets[n]; neighbour_index < row_offsets[n + 1]; neighbour_index++)
         {   
             int neighbour = col_ids[neighbour_index];
             std::cout<<"Node: "<<n<<" Neighbour: "<<neighbour<<std::endl;
-            assert(node_stat_out[neighbour] == c_id);
+            test(node_stat_out[neighbour] == c_id);
         }
     }
     if(all_cc_ids.size() != expected_nr_ccs)

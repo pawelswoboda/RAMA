@@ -3,6 +3,7 @@
 #include "parallel_gaec_utils.h"
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
+#include "test.h"
 
 int main(int argc, char** argv)
 {
@@ -27,5 +28,5 @@ int main(int argc, char** argv)
     std::cout<<"\n";
 
     std::cout<<"nr_matched_edges: "<<nr_matched_edges<<"\n";
-    assert(nr_matched_edges == 4); // relative to undirected graph.
+    test(nr_matched_edges == 4); // relative to undirected graph.
 }

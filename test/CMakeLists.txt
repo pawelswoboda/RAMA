@@ -7,9 +7,6 @@ target_link_libraries(multicut_message_passing_test dCOO multicut_message_passin
 add_executable(cc_gpu_test cc_gpu_test.cu)
 target_link_libraries(cc_gpu_test ECL-CC_11)
 
-add_executable(icp_test icp_test.cu)
-target_link_libraries(icp_test icp_small_cycles)
-
 add_executable(parallel_gaec_cuda_test parallel_gaec_cuda_test.cpp)
 target_link_libraries(parallel_gaec_cuda_test parallel_gaec_cuda)
 
@@ -21,4 +18,4 @@ add_executable(compute_offsets_test compute_offsets_test.cu)
 add_executable(compute_unique_test compute_unique_test.cu)
 
 add_executable(conflicted_cycles_test conflicted_cycles_test.cu)
-target_link_libraries(conflicted_cycles_test conflicted_cycles)
+target_link_libraries(conflicted_cycles_test conflicted_cycles_cuda)

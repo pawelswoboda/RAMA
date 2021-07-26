@@ -130,7 +130,7 @@ multicut_message_passing::multicut_message_passing(
 
     // remove duplicate edges
     {
-        coo_sorting(i,j);
+        coo_sorting(i, j);
         assert(thrust::is_sorted(i.begin(), i.end()));
         auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
         auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end()));
@@ -139,9 +139,9 @@ multicut_message_passing::multicut_message_passing(
         j.resize(std::distance(first, new_last));
     }
 
-    thrust::device_vector<int> orig_i = A.get_row_ids();
-    thrust::device_vector<int> orig_j = A.get_col_ids();
-    thrust::device_vector<int> orig_edge_costs = A.get_data();
+    const thrust::device_vector<int> orig_i = A.get_row_ids();
+    const thrust::device_vector<int> orig_j = A.get_col_ids();
+    const thrust::device_vector<float> orig_edge_costs = A.get_data();
 
     // copy edge costs from given edges, todo: possibly use later
     {
@@ -192,6 +192,8 @@ multicut_message_passing::multicut_message_passing(
         thrust::swap(i, merged_i);
         thrust::swap(j, merged_j);
         thrust::swap(edge_costs, merged_costs);
+        coo_sorting(i, j, edge_costs);
+
         // TODO: add covering numbers 0 for non-triangle edges
     }
 
@@ -303,7 +305,7 @@ void multicut_message_passing::send_messages_to_triplets()
         thrust::for_each(first, last, decrease_edge_costs_func());
     } 
 
-    std::cout << "edge lb = " << edge_lower_bound() << " triangle lb = " << triangle_lower_bound() << "\n";
+    // std::cout << "edge lb = " << edge_lower_bound() << " triangle lb = " << triangle_lower_bound() << "\n";
 }
 
 struct decrease_triangle_costs_func {
