@@ -147,6 +147,11 @@ float dCOO::sum() const
     return thrust::reduce(data.begin(), data.end(), (float) 0.0, thrust::plus<float>());
 }
 
+float dCOO::min() const
+{
+    return *thrust::min_element(data.begin(), data.end()); 
+}
+
 float dCOO::max() const
 {
     return *thrust::max_element(data.begin(), data.end()); 

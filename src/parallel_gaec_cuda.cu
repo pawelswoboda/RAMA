@@ -176,10 +176,12 @@ std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_maximum_match
     return {compress_label_sequence(node_mapping, node_mapping.size() - 1), nr_matched_edges};
 }
 
-std::vector<int> parallel_gaec_cuda(dCOO& A, const multicut_solver_options& opts)
+std::tuple<std::vector<int>, double> parallel_gaec_cuda(dCOO& A, const multicut_solver_options& opts)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
     assert(A.is_directed());
+
+    const double final_lb = dual_solver(A, opts.max_cycle_length_lb, opts.num_dual_itr_lb, opts.tri_memory_factor);
 
     const double initial_lb = A.sum();
     std::cout << "initial energy = " << initial_lb << "\n";
@@ -194,7 +196,6 @@ std::vector<int> parallel_gaec_cuda(dCOO& A, const multicut_solver_options& opts
     
     for(size_t iter=0;; ++iter)
     {
-        //const size_t nr_edges_to_contract = std::max(size_t(1), size_t(A.rows() * contract_ratio));
         if (iter > 0)
         {
             dual_solver(A, opts.max_cycle_length_gaec, opts.num_dual_itr_gaec, 1.0);
@@ -214,9 +215,6 @@ std::vector<int> parallel_gaec_cuda(dCOO& A, const multicut_solver_options& opts
         if(!try_edges_to_contract_by_maximum_matching)
             std::tie(cur_node_mapping, nr_edges_to_contract) = contraction_mapping_by_sorting(A, contract_ratio);
 
-
-        //std::cout << "iter " << iter << ", edge contraction ratio = " << contract_ratio << ", # edges to contract request " << nr_edges_to_contract << ", # nr edges to contract provided = " << contract_cols.size() << "\n";
-
         if(nr_edges_to_contract == 0)
         {
             std::cout << "# iterations = " << iter << "\n";
@@ -231,7 +229,6 @@ std::vector<int> parallel_gaec_cuda(dCOO& A, const multicut_solver_options& opts
         const thrust::device_vector<float> diagonal = new_A.diagonal();
         const float energy_reduction = thrust::reduce(diagonal.begin(), diagonal.end());
         std::cout << "energy reduction " << energy_reduction << "\n";
-        //if(energy_reduction < 0.0)
         if(has_bad_contractions(new_A))
         {
             if(!try_edges_to_contract_by_maximum_matching)
@@ -267,7 +264,7 @@ std::vector<int> parallel_gaec_cuda(dCOO& A, const multicut_solver_options& opts
 
     std::vector<int> h_node_mapping(node_mapping.size());
     thrust::copy(node_mapping.begin(), node_mapping.end(), h_node_mapping.begin());
-    return h_node_mapping;
+    return {h_node_mapping, final_lb};
 }
 
 std::tuple<std::vector<int>, double> parallel_gaec_cuda(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs, const multicut_solver_options& opts)
@@ -279,9 +276,6 @@ std::tuple<std::vector<int>, double> parallel_gaec_cuda(const std::vector<int>& 
     std::cout << "Going to use " << prop.name << " " << prop.major << "." << prop.minor << ", device number " << cuda_device << "\n";
 
     dCOO A(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end(), true);
-    double final_lb = dual_solver(A, opts.max_cycle_length_lb, opts.num_dual_itr_lb, opts.tri_memory_factor);
-
-    const std::vector<int> h_node_mapping = parallel_gaec_cuda(A, opts);
     
-    return {h_node_mapping, final_lb};
+    return parallel_gaec_cuda(A, opts);
 }

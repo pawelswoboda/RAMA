@@ -304,6 +304,7 @@ inline thrust::device_vector<int> invert_unique(const thrust::device_vector<int>
 
 inline thrust::device_vector<int> compute_offsets(const thrust::device_vector<int>& i, const int max_value)
 {
+    assert(thrust::is_sorted(i.begin(), i.end()));
     thrust::device_vector<int> offsets(max_value + 2, 0);
     thrust::device_vector<int> unique_ids, counts;
     std::tie(unique_ids, counts) = get_unique_with_counts(i);

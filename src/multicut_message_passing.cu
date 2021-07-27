@@ -4,6 +4,7 @@
 #include <thrust/transform.h>
 #include <algorithm>
 #include "parallel_gaec_utils.h"
+#include "time_measure_util.h"
 #include "stdio.h"
 
 void multicut_message_passing::compute_triangle_edge_correspondence(
@@ -63,6 +64,7 @@ multicut_message_passing::multicut_message_passing(
     t2(std::move(_t2)),
     t3(std::move(_t3))
 {
+    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
     std::cout << "triangle size = " << t1.size() << ", orig edges size = " << A.nnz() << "\n";
     assert(t1.size() == t2.size() && t1.size() == t3.size()); 
     normalize_triangles(t1, t2, t3);

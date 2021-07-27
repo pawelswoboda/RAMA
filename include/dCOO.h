@@ -37,6 +37,7 @@ class dCOO {
         size_t max_dim() const { return std::max(rows_, cols_); }
         size_t nnz() const { return data.size(); }
         float sum() const;
+        float min() const;
         float max() const;
 
         void remove_diagonal();
