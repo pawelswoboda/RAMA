@@ -10,6 +10,7 @@ struct multicut_solver_options {
     float matching_thresh_crossover_ratio = 0.1; 
     float tri_memory_factor = 2.0;
     bool only_compute_lb = false;
+    std::string out_info_file="";
 
     multicut_solver_options() {}
     multicut_solver_options(
@@ -42,6 +43,7 @@ struct multicut_solver_options {
         app.add_option("tri_memory_factor", tri_memory_factor, 
             "Average number of triangles per repulsive edge. (Used for memory allocation. Use lesser value in-case of out of memory errors during dual solve). (Default: 2.0).")->check(CLI::PositiveNumber);
         app.add_flag("-o,--only_lb", only_compute_lb, "Only compute the lower bound. (Default: false).");
+        app.add_option("--out_file", out_info_file, "(Optional) Path to (.csv) file to append the solver output.")->check(CLI::ExistingPath);
         try {
             app.parse(argc, argv);
             return -1;

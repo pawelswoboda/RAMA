@@ -277,5 +277,19 @@ std::tuple<std::vector<int>, double> parallel_gaec_cuda(const std::vector<int>& 
 
     dCOO A(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end(), true);
     
-    return parallel_gaec_cuda(A, opts);
+    std::vector<int> h_node_mapping;
+    double lb;
+    
+    std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+    std::tie(h_node_mapping, lb) = parallel_gaec_cuda(A, opts);
+    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+    auto time = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count();
+    if (opts.out_info_file != "")
+    {
+        std::ofstream outfile;
+        outfile.open(opts.out_info_file, std::ios_base::app);
+        outfile << time <<",";
+        outfile.close();
+    }
+    return {h_node_mapping, lb};
 }
