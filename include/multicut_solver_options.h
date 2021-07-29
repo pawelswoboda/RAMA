@@ -3,6 +3,7 @@
 
 struct multicut_solver_options {
     std::string input_file;
+    std::string output_sol_file="";
     int max_cycle_length_lb = 5;
     int num_dual_itr_lb = 10;
     int max_cycle_length_gaec = 3;
@@ -32,6 +33,7 @@ struct multicut_solver_options {
     int from_cl(int argc, char** argv) {
         CLI::App app{"Solver for multicut problem. "};
         app.add_option("-f,--file,file_pos", input_file, "Path to multicut instance (.txt)")->required()->check(CLI::ExistingPath);
+        app.add_option("-o,--out_sol_file", output_sol_file, "Path to save node labeling (.txt)");
         app.add_option("max_cycle_dual", max_cycle_length_lb, "Maximum length of conflicted cycles to consider for initial dual updates. (Default: 5).")->check(CLI::Range(0, 5));
         app.add_option("dual_itr", num_dual_itr_lb, "Number of dual update iterations per cycle. (Default: 10).")->check(CLI::NonNegativeNumber);
         app.add_option("max_cycle_primal", max_cycle_length_gaec, "Maximum length of conflicted cycles to consider during primal iterations for reparameterization. (Default: 3).")->check(CLI::Range(0, 5));
@@ -41,7 +43,7 @@ struct multicut_solver_options {
             "(Default: 0.1). Greater than 1 will always use thresholding.")->check(CLI::NonNegativeNumber);
         app.add_option("tri_memory_factor", tri_memory_factor, 
             "Average number of triangles per repulsive edge. (Used for memory allocation. Use lesser value in-case of out of memory errors during dual solve). (Default: 2.0).")->check(CLI::PositiveNumber);
-        app.add_flag("-o,--only_lb", only_compute_lb, "Only compute the lower bound. (Default: false).");
+        app.add_flag("--only_lb", only_compute_lb, "Only compute the lower bound. (Default: false).");
         try {
             app.parse(argc, argv);
             return -1;

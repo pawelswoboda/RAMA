@@ -1,10 +1,9 @@
 project(parallel_gaec LANGUAGES CXX CUDA)
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler -rdynamic")
-# set(CMAKE_CUDA_FLAGS_DEBUG "${CMAKE_CUDA_FLAGS_DEBUG} -g")
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -use_fast_math")
 
 cmake_minimum_required(VERSION 2.8.12)
 
-# set(CMAKE_CUDA_ARCHITECTURES 75) #Use JIT compilation? 
+set(CMAKE_CUDA_ARCHITECTURES OFF)
 
 include_directories(external/thrust/)
 include_directories(external/thrust/dependencies/cub)
