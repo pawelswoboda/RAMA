@@ -3,13 +3,13 @@
 
 struct multicut_solver_options {
     std::string input_file;
-    int max_cycle_length_lb = 5;
-    int num_dual_itr_lb = 10;
+    int max_cycle_length_lb = 3;
+    int num_dual_itr_lb = 5;
     int max_cycle_length_gaec = 3;
     int num_dual_itr_gaec = 5;
-    float mean_multiplier_mm = 0.0;
-    float max_multiplier_contraction = 0.5;
-    float matching_thresh_crossover_ratio = 0.1; 
+    float mean_multiplier_mm = 0.05;
+    float max_multiplier_contraction = 0.4;
+    float matching_thresh_crossover_ratio = 0.005; 
     float tri_memory_factor = 2.0;
     bool only_compute_lb = false;
     int max_time_sec = -1;

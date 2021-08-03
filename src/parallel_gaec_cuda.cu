@@ -166,7 +166,6 @@ std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_sorting(dCOO&
 std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_maximum_matching(dCOO& A, const float mean_multiplier_mm)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
-    MEASURE_FUNCTION_EXECUTION_TIME;
     thrust::device_vector<int> node_mapping;
     int nr_matched_edges;
     std::tie(node_mapping, nr_matched_edges) = filter_edges_by_matching_vertex_based(A.export_undirected(), mean_multiplier_mm);
@@ -280,7 +279,7 @@ std::tuple<std::vector<int>, double> parallel_gaec_cuda(dCOO& A, const multicut_
     return {h_node_mapping, final_lb};
 }
 
-std::tuple<std::vector<int>, double> parallel_gaec_cuda(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs, const multicut_solver_options& opts)
+std::tuple<std::vector<int>, double, int> parallel_gaec_cuda(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs, const multicut_solver_options& opts)
 {
     const int cuda_device = get_cuda_device();
     cudaSetDevice(cuda_device);
@@ -293,6 +292,9 @@ std::tuple<std::vector<int>, double> parallel_gaec_cuda(const std::vector<int>& 
     std::vector<int> h_node_mapping;
     double lb;
     
+    std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
     std::tie(h_node_mapping, lb) = parallel_gaec_cuda(A, opts);
-    return {h_node_mapping, lb};
+    std::chrono::steady_clock::time_point end_time = std::chrono::steady_clock::now();
+    int time_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    return {h_node_mapping, lb, time_duration};
 }

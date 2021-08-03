@@ -119,24 +119,6 @@ inline double get_obj(const std::vector<int>& h_node_mapping, const std::vector<
     return obj;
 }
 
-inline double get_corr_clustering_obj(const std::vector<int>& h_node_mapping, const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs)
-{
-    double obj = 0;
-    const int nr_edges = costs.size();
-    for (int e = 0; e < nr_edges; e++)
-    {
-        const int e1 = i[e];
-        const int e2 = j[e];
-        const float c = costs[e];
-        const float edge_label = h_node_mapping[e1] == h_node_mapping[e2] ? 0.0f : 1.0f;
-        if (c > 0)
-            obj += c * edge_label; 
-        else
-            obj += c * (1.0f - edge_label);
-    }
-    return obj;
-}
-
 struct remove_reverse_edges_func {
     __host__ __device__
         inline int operator()(const thrust::tuple<int,int,float> e)
@@ -213,23 +195,21 @@ inline void coo_sorting(thrust::device_vector<int>& i, thrust::device_vector<int
     thrust::sort_by_key(first, last, data.begin());
 }
 
-struct invalid_triangles
+struct triangle_duplicate_nodes
 {
-    float tol;
     __host__ __device__
-        bool operator()(const thrust::tuple<int,int,int,float>& t)
+        bool operator()(const thrust::tuple<int,int,int>& t)
         {
             return thrust::get<0>(t) == thrust::get<1>(t) || 
                 thrust::get<0>(t) == thrust::get<2>(t) ||
-                thrust::get<1>(t) == thrust::get<2>(t) || 
-                thrust::get<3>(t) < tol;
+                thrust::get<1>(t) == thrust::get<2>(t);
         }
 };
 
 struct sort_triangle_nodes_func
 {
     __host__ __device__
-        void operator()(const thrust::tuple<int&,int&,int&,float&> t)
+        void operator()(const thrust::tuple<int&,int&,int&> t)
         {
             int& x = thrust::get<0>(t);
             int& y = thrust::get<1>(t);
@@ -244,45 +224,44 @@ struct sort_triangle_nodes_func
         }
 };
 
-inline void normalize_triangles(thrust::device_vector<int>& t1, thrust::device_vector<int>& t2, thrust::device_vector<int>& t3, thrust::device_vector<float>& t_val)
-{
-    // bring triangles into normal form (first node < second node < third node)
-    auto first = thrust::make_zip_iterator(thrust::make_tuple(t1.begin(), t2.begin(), t3.begin(), t_val.begin()));
-    auto last = thrust::make_zip_iterator(thrust::make_tuple(t1.end(), t2.end(), t3.end(), t_val.end()));
-    auto new_last = thrust::remove_if(first, last, invalid_triangles());
-    thrust::for_each(first, new_last, sort_triangle_nodes_func());
-    int num_valid = std::distance(first, new_last);
-
-    // sort triangles and remove duplicates
-    auto first_key = thrust::make_zip_iterator(thrust::make_tuple(t1.begin(), t2.begin(), t3.begin()));
-    auto last_key = thrust::make_zip_iterator(thrust::make_tuple(t1.begin() + num_valid, t2.begin() + num_valid, t3.begin() + num_valid));
-
-    thrust::sort_by_key(first_key, last_key, t_val.begin());
-    auto new_last_unique = thrust::unique_by_key(first_key, last_key, t_val.begin());
-    int final_num_valid = std::distance(first_key, new_last_unique.first);
-
-    t1.resize(final_num_valid); 
-    t2.resize(final_num_valid); 
-    t3.resize(final_num_valid); 
-    t_val.resize(final_num_valid); 
-}
-
-inline int rearrange_triangles(thrust::device_vector<int>& t1, thrust::device_vector<int>& t2, thrust::device_vector<int>& t3, 
-    thrust::device_vector<float>& t_val, const int valid_num, const float tol = 0.0f)
+inline void normalize_triangles(thrust::device_vector<int>& t1, thrust::device_vector<int>& t2, thrust::device_vector<int>& t3)
 {
     
-    auto first = thrust::make_zip_iterator(thrust::make_tuple(t1.begin(), t2.begin(), t3.begin(), t_val.begin()));
-    auto last = thrust::make_zip_iterator(thrust::make_tuple(t1.begin() + valid_num, t2.begin() + valid_num, t3.begin() + valid_num, t_val.begin() + valid_num));
-    auto new_last = thrust::remove_if(first, last, invalid_triangles({tol}));
+    // bring triangles into normal form (first node < second node < third node)
+    {
+        auto first = thrust::make_zip_iterator(thrust::make_tuple(t1.begin(), t2.begin(), t3.begin()));
+        auto last = thrust::make_zip_iterator(thrust::make_tuple(t1.end(), t2.end(), t3.end()));
+        auto new_last = thrust::remove_if(first, last, triangle_duplicate_nodes());
+        thrust::for_each(first, new_last, sort_triangle_nodes_func());
+        t1.resize(std::distance(first, new_last)); 
+        t2.resize(std::distance(first, new_last)); 
+        t3.resize(std::distance(first, new_last)); 
+    }
+
+    // sort triangles and remove duplicates
+    {
+        coo_sorting(t1, t2, t3);
+        assert(thrust::is_sorted(t1.begin(), t1.end()));
+        auto first = thrust::make_zip_iterator(thrust::make_tuple(t1.begin(), t2.begin(), t3.begin()));
+        auto last = thrust::make_zip_iterator(thrust::make_tuple(t1.end(), t2.end(), t3.end()));
+        auto new_last = thrust::unique(first, last);
+        t1.resize(std::distance(first, new_last)); 
+        t2.resize(std::distance(first, new_last)); 
+        t3.resize(std::distance(first, new_last)); 
+    }
+}
+
+inline int rearrange_triangles(thrust::device_vector<int>& t1, thrust::device_vector<int>& t2, thrust::device_vector<int>& t3, int valid_num)
+{
+    
+    auto first = thrust::make_zip_iterator(thrust::make_tuple(t1.begin(), t2.begin(), t3.begin()));
+    auto last = thrust::make_zip_iterator(thrust::make_tuple(t1.begin() + valid_num, t2.begin() + valid_num, t3.begin() + valid_num));
+    auto new_last = thrust::remove_if(first, last, triangle_duplicate_nodes());
     thrust::for_each(first, new_last, sort_triangle_nodes_func());
-    int new_num_valid = std::distance(first, new_last);
 
-    auto first_key = thrust::make_zip_iterator(thrust::make_tuple(t1.begin(), t2.begin(), t3.begin()));
-    auto last_key = thrust::make_zip_iterator(thrust::make_tuple(t1.begin() + new_num_valid, t2.begin() + new_num_valid, t3.begin() + new_num_valid));
-
-    thrust::sort_by_key(first_key, last_key, t_val.begin());
-    auto new_last_unique = thrust::unique_by_key(first_key, last_key, t_val.begin());
-    return std::distance(first_key, new_last_unique.first);
+    thrust::sort(first, new_last);
+    auto new_last_unique = thrust::unique(first, new_last);
+    return std::distance(first, new_last_unique);
 }
 
 inline std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> get_unique_with_counts(const thrust::device_vector<int>& input)

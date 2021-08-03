@@ -19,7 +19,8 @@ int main(int argc, char** argv)
     std::tie(i, j, costs) = read_file(opts.input_file);
     std::vector<int> h_node_mapping;
     double lb;
-    std::tie(h_node_mapping, lb) = parallel_gaec_cuda(i, j, costs, opts);
+    int dur;
+    std::tie(h_node_mapping, lb, dur) = parallel_gaec_cuda(i, j, costs, opts);
     double obj = 0;
     if (!opts.only_compute_lb)
     {
@@ -27,4 +28,6 @@ int main(int argc, char** argv)
         std::cout<<"\tcost w.r.t original objective: "<<obj<<"\n";
     }
     std::cout<<"\tfinal lower bound: "<<lb<<"\n";
+    std::cout<<"\tGPU compute time: "<<dur<<"ms\n";
+
 }
