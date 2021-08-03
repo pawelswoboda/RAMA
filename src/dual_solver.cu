@@ -7,14 +7,21 @@
 std::tuple<dCOO, double> dual_update_cycle_length(const dCOO& A, const int cycle_length, const int num_dual_steps_per_cycle, const float tri_memory_factor)
 {
     thrust::device_vector<int> triangles_v1, triangles_v2, triangles_v3;
-    std::tie(triangles_v1, triangles_v2, triangles_v3) = conflicted_cycles_cuda(A, cycle_length, tri_memory_factor);
-
-    multicut_message_passing mp(A, std::move(triangles_v1), std::move(triangles_v2), std::move(triangles_v3));
+    thrust::device_vector<float> triangles_packing_value;
+    std::tie(triangles_v1, triangles_v2, triangles_v3, triangles_packing_value) = conflicted_cycles_cuda(A, cycle_length, tri_memory_factor);
+    if (triangles_v1.size() == 0)
+        return {A, get_lb(A.get_data())};
+        
+    multicut_message_passing mp(A, std::move(triangles_v1), std::move(triangles_v2), std::move(triangles_v3), std::move(triangles_packing_value));
+    double prev_lb = 0;
     for(int iter = 0; iter < num_dual_steps_per_cycle; ++iter)
     {
         const double lb = mp.lower_bound();
         std::cout << "dual updates cycle length: " << cycle_length << ", iteration: " << iter << ", lower bound: " << lb << "\n";
+        if (iter > 0 && (lb - prev_lb) < 1e-3)
+            break;
         mp.iteration();
+        prev_lb = lb;
     }
     const double final_lb = mp.lower_bound();
     std::cout << "dual updates cycle length: " << cycle_length << ", final lower bound: " << final_lb << "\n";

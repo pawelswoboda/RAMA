@@ -22,9 +22,9 @@ __device__ int compute_lowest_common_neighbour(const int v1, const int v2,
         const int v2_n = col_ids[v2_mid_edge_index];
         if (v1_n == v2_n)
         {
+            min_cost = min(data[v1_mid_edge_index], data[v2_mid_edge_index]);
             v1_mid_edge_index++;
             v2_mid_edge_index++;
-            min_cost = min(data[v1_mid_edge_index], data[v2_mid_edge_index]);
             return v1_n;
         }
         if (v1_n < v2_n)
@@ -37,10 +37,11 @@ __device__ int compute_lowest_common_neighbour(const int v1, const int v2,
 
 __device__ bool write_triangle(int* const __restrict__ tri_v1, 
                             int* const __restrict__ tri_v2, 
-                            int* const __restrict__ tri_v3, 
+                            int* const __restrict__ tri_v3,
+                            float* const __restrict__ tri_packing_val, 
                             int* __restrict__ empty_tri_index, 
                             const int max_triangles,
-                            const int v1, const int v2, const int v3)
+                            const int v1, const int v2, const int v3, const float val)
 {
     const int old_index = atomicAdd(empty_tri_index, 1);
     if (old_index >= max_triangles)
@@ -50,10 +51,11 @@ __device__ bool write_triangle(int* const __restrict__ tri_v1,
     tri_v1[old_index] = min_v;
     tri_v2[old_index] = max(min(v1, v2), min(max(v1, v2), v3));
     tri_v3[old_index] = max_v;
+    tri_packing_val[old_index] = val;
     return false;
 }
 
-__global__ void find_triangles_parallel(const int num_rep_edges, const float min_rep_thresh,
+__global__ void find_triangles_parallel(const int num_rep_edges,
                                     const int* const __restrict__ row_ids_rep, 
                                     const int* const __restrict__ col_ids_rep, 
                                     const float* const __restrict__ costs_rep, 
@@ -63,6 +65,7 @@ __global__ void find_triangles_parallel(const int num_rep_edges, const float min
                                     int* __restrict__ triangle_v1,
                                     int* __restrict__ triangle_v2,
                                     int* __restrict__ triangle_v3,
+                                    float* const __restrict__ tri_packing_val, 
                                     int* __restrict__ empty_tri_index,
                                     const int max_triangles)
 {
@@ -72,24 +75,23 @@ __global__ void find_triangles_parallel(const int num_rep_edges, const float min
     {
         const int v1 = row_ids_rep[edge];
         const int v2 = col_ids_rep[edge];
-        float remaining_neg_cost = costs_rep[edge];
+        const float rep_abs_cost = -costs_rep[edge];
         int v1_mid_edge_index = A_symm_row_offsets[v1];
         int v2_mid_edge_index = A_symm_row_offsets[v2];
         float current_min_att_cost;
         bool filled = false;
-        while(!filled && remaining_neg_cost < min_rep_thresh)
+        while(!filled)
         {
             const int mid = compute_lowest_common_neighbour(v1, v2, A_symm_row_offsets, A_symm_col_ids, A_symm_data, v1_mid_edge_index, v2_mid_edge_index, current_min_att_cost);
             if (mid == -1)
                 break;
             
-            remaining_neg_cost += current_min_att_cost;
-            filled = write_triangle(triangle_v1, triangle_v2, triangle_v3, empty_tri_index, max_triangles, v1, v2, mid);
+            filled = write_triangle(triangle_v1, triangle_v2, triangle_v3, tri_packing_val, empty_tri_index, max_triangles, v1, v2, mid, min(rep_abs_cost, current_min_att_cost));
         }
     }
 }
 
-__global__ void find_quadrangles_parallel(const long num_expansions, const int num_rep_edges, const float min_rep_thresh,
+__global__ void find_quadrangles_parallel(const long num_expansions, const int num_rep_edges,
                                         const int* const __restrict__ row_ids_rep,
                                         const int* const __restrict__ col_ids_rep,
                                         const float* const __restrict__ costs_rep,
@@ -100,6 +102,7 @@ __global__ void find_quadrangles_parallel(const long num_expansions, const int n
                                         int* __restrict__ triangle_v1,
                                         int* __restrict__ triangle_v2,
                                         int* __restrict__ triangle_v3,
+                                        float* const __restrict__ tri_packing_val, 
                                         int* __restrict__ empty_tri_index,
                                         const int max_triangles)
 {
@@ -114,26 +117,26 @@ __global__ void find_quadrangles_parallel(const long num_expansions, const int n
         assert(local_offset >= 0);
         const int v1 = row_ids_rep[rep_edge_index];
         const int v2 = col_ids_rep[rep_edge_index];
-        float remaining_neg_cost = costs_rep[rep_edge_index];
         const int v1_n1 = A_symm_col_ids[A_symm_row_offsets[v1] + local_offset];
+        const float cost_v2_to_v1_n1 = min(A_symm_data[A_symm_row_offsets[v1] + local_offset], -costs_rep[rep_edge_index]);
         int v1_n1_mid_edge_index = A_symm_row_offsets[v1_n1];
         int v2_mid_edge_index = A_symm_row_offsets[v2];
         bool filled = false;
         float current_min_att_cost;
-        while(!filled && remaining_neg_cost < min_rep_thresh)
+        while(!filled)
         {
             const int mid = compute_lowest_common_neighbour(v1_n1, v2, A_symm_row_offsets, A_symm_col_ids, A_symm_data, v1_n1_mid_edge_index, v2_mid_edge_index, current_min_att_cost);
             if (mid == -1)
                 break;
 
-            remaining_neg_cost += current_min_att_cost;  // ideally should be from global memory since multiple threads can operate on one repulsive edge.
-            write_triangle(triangle_v1, triangle_v2, triangle_v3, empty_tri_index, max_triangles, v1, v2, v1_n1);
-            filled = write_triangle(triangle_v1, triangle_v2, triangle_v3, empty_tri_index, max_triangles, v2, v1_n1, mid);
+            const float packing_val = min(cost_v2_to_v1_n1, current_min_att_cost);
+            write_triangle(triangle_v1, triangle_v2, triangle_v3, tri_packing_val, empty_tri_index, max_triangles, v1, v2, v1_n1, packing_val);
+            filled = write_triangle(triangle_v1, triangle_v2, triangle_v3, tri_packing_val, empty_tri_index, max_triangles, v2, v1_n1, mid, packing_val);
         }
     }
 }
 
-__global__ void find_pentagons_parallel(const int num_expansions, const int num_rep_edges, const float min_rep_thresh,
+__global__ void find_pentagons_parallel(const int num_expansions, const int num_rep_edges,
                                         const int* const __restrict__ row_ids_rep,
                                         const int* const __restrict__ col_ids_rep,
                                         const float* const __restrict__ costs_rep,
@@ -144,6 +147,7 @@ __global__ void find_pentagons_parallel(const int num_expansions, const int num_
                                         int* __restrict__ triangle_v1,
                                         int* __restrict__ triangle_v2,
                                         int* __restrict__ triangle_v3,
+                                        float* const __restrict__ tri_packing_val,
                                         int* __restrict__ empty_tri_index,
                                         const int max_triangles)
 {
@@ -167,19 +171,19 @@ __global__ void find_pentagons_parallel(const int num_expansions, const int num_
             continue;
         int v1_n1_mid_edge_index = A_symm_row_offsets[v1_n1];
         int v2_n1_mid_edge_index = A_symm_row_offsets[v2_n1];
-        float remaining_neg_cost = costs_rep[rep_edge_index];
+        const float packing_val = min(min(-costs_rep[rep_edge_index],  A_symm_data[A_symm_row_offsets[v1] + l1]), A_symm_data[A_symm_row_offsets[v2] + l2]);
         float current_min_att_cost;
         bool filled = false;
-        while(!filled && remaining_neg_cost < min_rep_thresh)
+        while(!filled)
         {
             const int mid = compute_lowest_common_neighbour(v1_n1, v2_n1, A_symm_row_offsets, A_symm_col_ids, A_symm_data, v1_n1_mid_edge_index, v2_n1_mid_edge_index, current_min_att_cost);
             if (mid == -1)
                 break;
 
-            remaining_neg_cost += current_min_att_cost; // ideally should be from global memory since multiple threads can operate on one repulsive edge.
-            write_triangle(triangle_v1, triangle_v2, triangle_v3, empty_tri_index, max_triangles, v1, v2, v1_n1);
-            write_triangle(triangle_v1, triangle_v2, triangle_v3, empty_tri_index, max_triangles, v2, v1_n1, mid);
-            filled = write_triangle(triangle_v1, triangle_v2, triangle_v3, empty_tri_index, max_triangles, v2, mid, v2_n1);
+            const float current_packing_value = min(packing_val, current_min_att_cost);
+            write_triangle(triangle_v1, triangle_v2, triangle_v3, tri_packing_val, empty_tri_index, max_triangles, v1, v2, v1_n1, current_packing_value);
+            write_triangle(triangle_v1, triangle_v2, triangle_v3, tri_packing_val, empty_tri_index, max_triangles, v2, v1_n1, mid, current_packing_value);
+            filled = write_triangle(triangle_v1, triangle_v2, triangle_v3, tri_packing_val, empty_tri_index, max_triangles, v2, mid, v2_n1, current_packing_value);
         }
     }
 }
@@ -266,13 +270,14 @@ std::tuple<dCOO, thrust::device_vector<int>, thrust::device_vector<int>, thrust:
 }
 
 // A should be directed thus containing same number of elements as in original problem.
-std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<int>> conflicted_cycles_cuda(const dCOO& A, const int max_cycle_length, const float tri_memory_factor, const float tol_ratio)
+std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<float>> 
+    conflicted_cycles_cuda(const dCOO& A, const int max_cycle_length, const float tri_memory_factor, const float tol_ratio)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
     if (max_cycle_length > 5)
         throw std::runtime_error("max_cycle_length should be <= 5.");
     if (max_cycle_length < 3)
-        return {thrust::device_vector<int>(0), thrust::device_vector<int>(0), thrust::device_vector<int>(0)};
+        return {thrust::device_vector<int>(0), thrust::device_vector<int>(0), thrust::device_vector<int>(0), thrust::device_vector<float>(0)};
 
     // Make adjacency matrix and BFS search starting matrix.
     dCOO A_pos;
@@ -282,7 +287,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
     std::tie(A_pos, row_ids_rep, col_ids_rep, costs_rep) = create_matrices(A, min_rep_thresh);
     int num_rep_edges = row_ids_rep.size();
     if (A_pos.nnz() == 0 || num_rep_edges == 0)
-        return {thrust::device_vector<int>(0), thrust::device_vector<int>(0), thrust::device_vector<int>(0)};
+        return {thrust::device_vector<int>(0), thrust::device_vector<int>(0), thrust::device_vector<int>(0), thrust::device_vector<float>(0)};
 
     thrust::device_vector<int> A_pos_row_offsets = A_pos.compute_row_offsets();
     assert(A_pos_row_offsets.size() == A.max_dim() + 1);
@@ -294,9 +299,10 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
     thrust::device_vector<int> triangles_v1(max_num_tri);
     thrust::device_vector<int> triangles_v2(max_num_tri); 
     thrust::device_vector<int> triangles_v3(max_num_tri);
+    thrust::device_vector<float> triangles_packing_value(max_num_tri);
     thrust::device_vector<int> empty_tri_index(1, 0);
 
-    find_triangles_parallel<<<blockCount, threadCount>>>(num_rep_edges, min_rep_thresh, 
+    find_triangles_parallel<<<blockCount, threadCount>>>(num_rep_edges,
         thrust::raw_pointer_cast(row_ids_rep.data()), 
         thrust::raw_pointer_cast(col_ids_rep.data()), 
         thrust::raw_pointer_cast(costs_rep.data()), 
@@ -306,6 +312,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
         thrust::raw_pointer_cast(triangles_v1.data()),
         thrust::raw_pointer_cast(triangles_v2.data()),
         thrust::raw_pointer_cast(triangles_v3.data()),
+        thrust::raw_pointer_cast(triangles_packing_value.data()),
         thrust::raw_pointer_cast(empty_tri_index.data()),
         triangles_v1.size());
     
@@ -314,7 +321,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
     if (max_cycle_length >= 4 && empty_tri_index[0] < triangles_v1.size())
     {
         // Move valid triangles to starting indices to increase the budget.
-        empty_tri_index[0] = rearrange_triangles(triangles_v1, triangles_v2, triangles_v3, empty_tri_index[0]); 
+        empty_tri_index[0] = rearrange_triangles(triangles_v1, triangles_v2, triangles_v3, triangles_packing_value, empty_tri_index[0], min_rep_thresh); 
         thrust::device_vector<long> rep_row_offsets(num_rep_edges + 1);
         {
             const thrust::device_vector<int> vertex_degrees = offsets_to_degrees(A_pos_row_offsets);
@@ -327,7 +334,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
         blockCount = ceil(num_expansions / (float) threadCount);
         std::cout<<"4-cycles: number of expansions: "<<num_expansions<<"\n";
 
-        find_quadrangles_parallel<<<blockCount, threadCount>>>(num_expansions, num_rep_edges, min_rep_thresh,
+        find_quadrangles_parallel<<<blockCount, threadCount>>>(num_expansions, num_rep_edges,
             thrust::raw_pointer_cast(row_ids_rep.data()),
             thrust::raw_pointer_cast(col_ids_rep.data()),
             thrust::raw_pointer_cast(costs_rep.data()),
@@ -338,6 +345,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
             thrust::raw_pointer_cast(triangles_v1.data()),
             thrust::raw_pointer_cast(triangles_v2.data()),
             thrust::raw_pointer_cast(triangles_v3.data()),
+            thrust::raw_pointer_cast(triangles_packing_value.data()),
             thrust::raw_pointer_cast(empty_tri_index.data()),
             triangles_v1.size());
         
@@ -346,7 +354,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
 
     if (max_cycle_length >= 5 && empty_tri_index[0] < triangles_v1.size())
     {
-        empty_tri_index[0] = rearrange_triangles(triangles_v1, triangles_v2, triangles_v3, empty_tri_index[0]);
+        empty_tri_index[0] = rearrange_triangles(triangles_v1, triangles_v2, triangles_v3, triangles_packing_value, empty_tri_index[0], min_rep_thresh);
         thrust::device_vector<int> rep_edge_offsets(num_rep_edges + 1);
         {
             const thrust::device_vector<int> vertex_degrees = offsets_to_degrees(A_pos_row_offsets);
@@ -362,7 +370,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
         const int num_expansions = rep_edge_offsets.back();
         blockCount = ceil(num_expansions / (float) threadCount);
         std::cout<<"5-cycles: number of expansions: "<<num_expansions<<"\n";
-        find_pentagons_parallel<<<blockCount, threadCount>>>(num_expansions, num_rep_edges, min_rep_thresh,
+        find_pentagons_parallel<<<blockCount, threadCount>>>(num_expansions, num_rep_edges,
             thrust::raw_pointer_cast(row_ids_rep.data()),
             thrust::raw_pointer_cast(col_ids_rep.data()),
             thrust::raw_pointer_cast(costs_rep.data()),
@@ -373,6 +381,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
             thrust::raw_pointer_cast(triangles_v1.data()),
             thrust::raw_pointer_cast(triangles_v2.data()),
             thrust::raw_pointer_cast(triangles_v3.data()),
+            thrust::raw_pointer_cast(triangles_packing_value.data()),
             thrust::raw_pointer_cast(empty_tri_index.data()),
             triangles_v1.size());
         
@@ -383,5 +392,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
     triangles_v1.resize(nr_triangles);
     triangles_v2.resize(nr_triangles);
     triangles_v3.resize(nr_triangles);
-    return {triangles_v1, triangles_v2, triangles_v3};
+    triangles_packing_value.resize(nr_triangles);
+
+    return {triangles_v1, triangles_v2, triangles_v3, triangles_packing_value};
 }

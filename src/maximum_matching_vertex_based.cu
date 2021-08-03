@@ -73,7 +73,37 @@ __global__ void match_neighbours(const int num_nodes,
     }
 }
 
-std::tuple<thrust::device_vector<int>, int> filter_edges_by_matching_vertex_based(const dCOO& A, const float retain_ratio)
+struct pos_part
+{
+    __host__ __device__
+        thrust::tuple<int, float> operator()(const thrust::tuple<int, float>& t)
+        {
+            if(thrust::get<1>(t) >= 0.0)
+                return t;
+            return thrust::make_tuple(0, 0.0f);
+        }
+};
+
+struct tuple_sum
+{
+    __host__ __device__
+        thrust::tuple<int, float> operator()(const thrust::tuple<int, float>& t1, const thrust::tuple<int, float>& t2)
+        {
+            return {thrust::get<0>(t1) + thrust::get<0>(t2), thrust::get<1>(t1) + thrust::get<1>(t2)};
+        }
+};
+
+float determine_matching_threshold(const dCOO& A, const float mean_multiplier_mm)
+{
+    thrust::device_vector<float> data = A.get_data();
+    auto first = thrust::make_zip_iterator(thrust::make_tuple(thrust::constant_iterator<int>(1), data.begin()));
+    auto last = thrust::make_zip_iterator(thrust::make_tuple(thrust::constant_iterator<int>(1) + data.size(), data.end()));
+    // compute average of positive edge costs:
+    auto red = thrust::transform_reduce(first, last, pos_part(), thrust::make_tuple(0, 0.0f), tuple_sum());
+    return mean_multiplier_mm * thrust::get<1>(red) / thrust::get<0>(red);
+}
+
+std::tuple<thrust::device_vector<int>, int> filter_edges_by_matching_vertex_based(const dCOO& A, const float mean_multiplier_mm)
 {
     assert(!A.is_directed());
     thrust::device_vector<int> v_best_neighbours(A.rows(), -1);
@@ -83,17 +113,16 @@ std::tuple<thrust::device_vector<int>, int> filter_edges_by_matching_vertex_base
 
     int numBlocks = ceil(A.rows() / (float) numThreads);
     thrust::device_vector<bool> still_running(1);
-    thrust::device_vector<int> A_row_offsets = A.compute_row_offsets();
-
-    const float mid_edge_weight = retain_ratio * A.max();
-    assert(mid_edge_weight >= 0);
+    const thrust::device_vector<int> A_row_offsets = A.compute_row_offsets();
+    const float min_edge_weight_to_match = determine_matching_threshold(A, mean_multiplier_mm);
+    assert(min_edge_weight_to_match >= 0);
 
     int prev_num_edges = 0;
     for (int t = 0; t < 10; t++)
     {
         thrust::fill(thrust::device, still_running.begin(), still_running.end(), false);
 
-        pick_best_neighbour<<<numBlocks, numThreads>>>(A.rows(), mid_edge_weight,
+        pick_best_neighbour<<<numBlocks, numThreads>>>(A.rows(), min_edge_weight_to_match,
             thrust::raw_pointer_cast(A_row_offsets.data()), 
             A.get_col_ids_ptr(), 
             A.get_data_ptr(), 

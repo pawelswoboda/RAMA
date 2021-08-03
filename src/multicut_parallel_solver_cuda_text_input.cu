@@ -17,19 +17,14 @@ int main(int argc, char** argv)
         return e;
         
     std::tie(i, j, costs) = read_file(opts.input_file);
-
     std::vector<int> h_node_mapping;
     double lb;
     std::tie(h_node_mapping, lb) = parallel_gaec_cuda(i, j, costs, opts);
-    
-    double obj = get_obj(h_node_mapping, i, j, costs); 
-    std::cout<<"\tcost w.r.t original objective: "<<obj<<"\n";
-    std::cout<<"\tfinal lower bound: "<<lb<<"\n";
-    if (opts.out_info_file != "")
+    double obj = 0;
+    if (!opts.only_compute_lb)
     {
-        std::ofstream outfile;
-        outfile.open(opts.out_info_file, std::ios_base::app);
-        outfile << std::fixed << opts.input_file << "," << obj << "," << lb << "\n";
-        outfile.close();
+        obj = get_obj(h_node_mapping, i, j, costs); 
+        std::cout<<"\tcost w.r.t original objective: "<<obj<<"\n";
     }
+    std::cout<<"\tfinal lower bound: "<<lb<<"\n";
 }

@@ -8,7 +8,8 @@ class multicut_message_passing {
                 const dCOO& A,
                 thrust::device_vector<int>&& _t1,
                 thrust::device_vector<int>&& _t2,
-                thrust::device_vector<int>&& _t3
+                thrust::device_vector<int>&& _t3,
+                thrust::device_vector<float>&& _t_val
                 );
 
         void send_messages_to_triplets();
@@ -23,7 +24,7 @@ class multicut_message_passing {
 
     private:
         void compute_triangle_edge_correspondence(const thrust::device_vector<int>&, const thrust::device_vector<int>&, 
-            thrust::device_vector<int>&, thrust::device_vector<int>&);
+            const thrust::device_vector<float>&, thrust::device_vector<float>&, thrust::device_vector<int>&);
 
         double edge_lower_bound();
         double triangle_lower_bound();
@@ -34,6 +35,7 @@ class multicut_message_passing {
         thrust::device_vector<int> t1;
         thrust::device_vector<int> t2;
         thrust::device_vector<int> t3;
+        thrust::device_vector<float> t_val;
 
         thrust::device_vector<float> edge_costs;
 
@@ -44,6 +46,6 @@ class multicut_message_passing {
         thrust::device_vector<int> triangle_correspondence_12;
         thrust::device_vector<int> triangle_correspondence_13;
         thrust::device_vector<int> triangle_correspondence_23;
-        thrust::device_vector<int> edge_counter;
+        thrust::device_vector<float> edge_total_capacity;
 };
 

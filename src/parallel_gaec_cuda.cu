@@ -111,21 +111,18 @@ struct edge_comparator_func {
         } 
 };
 
-std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_sorting(dCOO& A, const float retain_ratio)
+std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_sorting(dCOO& A, const float max_multiplier)
 {
     assert(A.is_directed());
     thrust::device_vector<int> row_ids = A.get_row_ids();
     thrust::device_vector<int> col_ids = A.get_col_ids();
     thrust::device_vector<float> data = A.get_data();
 
+    const float min_att_to_contract = A.max() * max_multiplier;
+
     auto first = thrust::make_zip_iterator(thrust::make_tuple(col_ids.begin(), row_ids.begin(), data.begin()));
     auto last = thrust::make_zip_iterator(thrust::make_tuple(col_ids.end(), row_ids.end(), data.end()));
-
-    const double smallest_edge_weight = *thrust::min_element(data.begin(), data.end());
-    const double largest_edge_weight = *thrust::max_element(data.begin(), data.end());
-    const float mid_edge_weight = retain_ratio * largest_edge_weight;
-
-    auto new_last = thrust::remove_if(first, last, negative_edge_indicator_func({mid_edge_weight}));
+    auto new_last = thrust::remove_if(first, last, negative_edge_indicator_func({min_att_to_contract}));
     const size_t nr_remaining_edges = std::distance(first, new_last);
     col_ids.resize(nr_remaining_edges);
     row_ids.resize(nr_remaining_edges);
@@ -166,19 +163,21 @@ std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_sorting(dCOO&
 
 }
 
-std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_maximum_matching(dCOO& A)
+std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_maximum_matching(dCOO& A, const float mean_multiplier_mm)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
     MEASURE_FUNCTION_EXECUTION_TIME;
     thrust::device_vector<int> node_mapping;
     int nr_matched_edges;
-    std::tie(node_mapping, nr_matched_edges) = filter_edges_by_matching_vertex_based(A.export_undirected());
+    std::tie(node_mapping, nr_matched_edges) = filter_edges_by_matching_vertex_based(A.export_undirected(), mean_multiplier_mm);
     return {compress_label_sequence(node_mapping, node_mapping.size() - 1), nr_matched_edges};
 }
 
 std::tuple<std::vector<int>, double> parallel_gaec_cuda(dCOO& A, const multicut_solver_options& opts)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
+    std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+
     assert(A.is_directed());
 
     const double final_lb = dual_solver(A, opts.max_cycle_length_lb, opts.num_dual_itr_lb, opts.tri_memory_factor);
@@ -188,7 +187,11 @@ std::tuple<std::vector<int>, double> parallel_gaec_cuda(dCOO& A, const multicut_
 
     thrust::device_vector<int> node_mapping(A.max_dim());
     thrust::sequence(node_mapping.begin(), node_mapping.end());
-    double contract_ratio = 0.5;
+
+    if (opts.only_compute_lb)
+        return {std::vector<int>(), final_lb};
+        
+    float max_multiplier_contraction = opts.max_multiplier_contraction;
 
     bool try_edges_to_contract_by_maximum_matching = true;
     if (opts.matching_thresh_crossover_ratio > 1.0)
@@ -204,7 +207,7 @@ std::tuple<std::vector<int>, double> parallel_gaec_cuda(dCOO& A, const multicut_
         int nr_edges_to_contract;
         if(try_edges_to_contract_by_maximum_matching)
         {
-            std::tie(cur_node_mapping, nr_edges_to_contract) = contraction_mapping_by_maximum_matching(A);
+            std::tie(cur_node_mapping, nr_edges_to_contract) = contraction_mapping_by_maximum_matching(A, opts.mean_multiplier_mm);
             if(nr_edges_to_contract < A.rows() * opts.matching_thresh_crossover_ratio)
             {
                 std::cout << "# edges to contract = " << nr_edges_to_contract << ", # vertices = " << A.rows() << "\n";
@@ -213,7 +216,7 @@ std::tuple<std::vector<int>, double> parallel_gaec_cuda(dCOO& A, const multicut_
             }
         }
         if(!try_edges_to_contract_by_maximum_matching)
-            std::tie(cur_node_mapping, nr_edges_to_contract) = contraction_mapping_by_sorting(A, contract_ratio);
+            std::tie(cur_node_mapping, nr_edges_to_contract) = contraction_mapping_by_sorting(A, max_multiplier_contraction);
 
         if(nr_edges_to_contract == 0)
         {
@@ -231,8 +234,6 @@ std::tuple<std::vector<int>, double> parallel_gaec_cuda(dCOO& A, const multicut_
         std::cout << "energy reduction " << energy_reduction << "\n";
         if(has_bad_contractions(new_A))
         {
-            if(!try_edges_to_contract_by_maximum_matching)
-                contract_ratio *= 2.0; 
             int nr_ccs = *thrust::max_element(cur_node_mapping.begin(), cur_node_mapping.end()) + 1;
             cur_node_mapping = discard_bad_contractions(new_A, cur_node_mapping);
             int good_nr_ccs = *thrust::max_element(cur_node_mapping.begin(), cur_node_mapping.end()) + 1;
@@ -242,14 +243,19 @@ std::tuple<std::vector<int>, double> parallel_gaec_cuda(dCOO& A, const multicut_
                 break;
             
             new_A = A.contract_cuda(cur_node_mapping);
+            if(!try_edges_to_contract_by_maximum_matching)
+            {
+                max_multiplier_contraction *= 2.0;
+                max_multiplier_contraction = std::max(max_multiplier_contraction, 0.1f);
+            }
             assert(!has_bad_contractions(new_A));
         }
         else
         {
             if(!try_edges_to_contract_by_maximum_matching)
             {
-                contract_ratio *= 0.5;//1.3;
-                contract_ratio = std::min(contract_ratio, 0.35);
+                max_multiplier_contraction *= 0.5;
+                max_multiplier_contraction = std::min(max_multiplier_contraction, opts.max_multiplier_contraction);
             }
         }
 
@@ -257,6 +263,13 @@ std::tuple<std::vector<int>, double> parallel_gaec_cuda(dCOO& A, const multicut_
         A.remove_diagonal();
         std::cout << "energy after iteration " << iter << ": " << A.sum() << ", #components = " << A.cols() << "\n";
         thrust::gather(node_mapping.begin(), node_mapping.end(), cur_node_mapping.begin(), node_mapping.begin());
+        if (opts.max_time_sec >= 0)
+        {
+            std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+            auto time = std::chrono::duration_cast<std::chrono::seconds>(end - begin).count();
+            if (time > opts.max_time_sec)
+                break;
+        }
     }
 
     const double lb = A.sum();
@@ -280,16 +293,6 @@ std::tuple<std::vector<int>, double> parallel_gaec_cuda(const std::vector<int>& 
     std::vector<int> h_node_mapping;
     double lb;
     
-    std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
     std::tie(h_node_mapping, lb) = parallel_gaec_cuda(A, opts);
-    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-    auto time = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count();
-    if (opts.out_info_file != "")
-    {
-        std::ofstream outfile;
-        outfile.open(opts.out_info_file, std::ios_base::app);
-        outfile << time <<",";
-        outfile.close();
-    }
     return {h_node_mapping, lb};
 }

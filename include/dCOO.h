@@ -59,6 +59,7 @@ class dCOO {
         dCOO export_directed() const;
         dCOO export_filtered(const float lb, const float ub) const;
         bool is_directed() const { return is_directed_; }
+        void print() const;
     private:
         void init(const bool is_sorted);
         int rows_ = 0;
