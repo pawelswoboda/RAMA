@@ -14,7 +14,9 @@ PYBIND11_MODULE(parallel_gaec_py, m) {
     m.doc() = "Python binding parallel gaec for multicut";
     py::class_<multicut_solver_options>(m, "multicut_solver_options")
         .def(py::init<>())
-        .def(py::init<const int&, const int&, const int&, const int&, const float&, const float&, const bool&>());
+        .def(py::init<const int&, const int&, const int&, const int&, 
+                const float&, const float&, const float&, const float&, 
+                const bool&, const int&>());
 
     m.def("parallel_gaec_eigen", [](const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& edge_costs) {
             return parallel_gaec_eigen(i,j,edge_costs); 

@@ -322,15 +322,16 @@ inline thrust::device_vector<int> concatenate(const thrust::device_vector<int>& 
     return ab;
 }
 
-inline void print_vector(const thrust::device_vector<int>& v, const char* name, const int num = 0)
+template<typename T>
+inline void print_vector(const thrust::device_vector<T>& v, const char* name, const int num = 0)
 {
     std::cout<<name<<": ";
     if (num == 0)
-        thrust::copy(v.begin(), v.end(), std::ostream_iterator<int>(std::cout, " "));
+        thrust::copy(v.begin(), v.end(), std::ostream_iterator<T>(std::cout, " "));
     else
     {
         int size = std::distance(v.begin(), v.end());
-        thrust::copy(v.begin(), v.begin() + std::min(size, num), std::ostream_iterator<int>(std::cout, " "));
+        thrust::copy(v.begin(), v.begin() + std::min(size, num), std::ostream_iterator<T>(std::cout, " "));
     }
     std::cout<<"\n";
 }

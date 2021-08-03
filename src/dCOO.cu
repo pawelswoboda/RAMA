@@ -215,3 +215,12 @@ dCOO dCOO::export_filtered(const float lb, const float ub) const
     return dCOO(rows(), cols(), 
             std::move(col_ids_f), std::move(row_ids_f), std::move(data_f), is_directed_, true); 
 }
+
+void dCOO::print() const
+{
+    std::cout<<"A: \n";
+    print_vector(row_ids, "row_ids");
+    print_vector(col_ids, "col_ids");
+    print_vector(data   , "data   ");
+    std::cout<<"\n";
+}
