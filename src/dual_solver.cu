@@ -31,16 +31,23 @@ std::tuple<dCOO, double> dual_update_cycle_length(const dCOO& A, const int cycle
     return {A_repam, final_lb};
 }
 
-double dual_solver(dCOO& A, const int max_cycle_length, const int num_iter, const float tri_memory_factor)
+double dual_solver(dCOO& A, const int max_cycle_length, const int num_iter, const float tri_memory_factor, const int num_outer_itr)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
     double final_lb;
     if (max_cycle_length < 3 || num_iter == 0)
         return get_lb(A.get_data());
 
-    for (int c = 3; c <= max_cycle_length; ++c)
+    double prev_lb = 0;
+    for (int outer_itr = 0; outer_itr < num_outer_itr; outer_itr++)
     {
-        std::tie(A, final_lb) = dual_update_cycle_length(A, c, num_iter, tri_memory_factor);
+        for (int c = 3; c <= max_cycle_length; ++c)
+        {
+            std::tie(A, final_lb) = dual_update_cycle_length(A, c, num_iter, tri_memory_factor);
+        }
+        if (outer_itr > 0 && (final_lb - prev_lb) < 1e-3)
+            break;
+        prev_lb = final_lb;
     }
     return final_lb;
 }

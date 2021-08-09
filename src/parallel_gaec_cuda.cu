@@ -179,7 +179,7 @@ std::tuple<std::vector<int>, double> parallel_gaec_cuda(dCOO& A, const multicut_
 
     assert(A.is_directed());
 
-    const double final_lb = dual_solver(A, opts.max_cycle_length_lb, opts.num_dual_itr_lb, opts.tri_memory_factor);
+    const double final_lb = dual_solver(A, opts.max_cycle_length_lb, opts.num_dual_itr_lb, opts.tri_memory_factor, opts.num_outer_itr_dual);
 
     const double initial_lb = A.sum();
     std::cout << "initial energy = " << initial_lb << "\n";
@@ -200,7 +200,7 @@ std::tuple<std::vector<int>, double> parallel_gaec_cuda(dCOO& A, const multicut_
     {
         if (iter > 0)
         {
-            dual_solver(A, opts.max_cycle_length_gaec, opts.num_dual_itr_gaec, 1.0);
+            dual_solver(A, opts.max_cycle_length_gaec, opts.num_dual_itr_gaec, 1.0, 1);
         }
         thrust::device_vector<int> cur_node_mapping;
         int nr_edges_to_contract;
