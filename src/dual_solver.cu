@@ -35,7 +35,7 @@ double dual_solver(dCOO& A, const int max_cycle_length, const int num_iter, cons
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
     double final_lb;
-    if (max_cycle_length < 3 || num_iter == 0)
+    if (max_cycle_length < 3 || num_iter == 0 || num_outer_itr == 0)
         return get_lb(A.get_data());
 
     double prev_lb = 0;
