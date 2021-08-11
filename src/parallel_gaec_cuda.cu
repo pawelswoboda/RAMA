@@ -7,6 +7,7 @@
 #include <thrust/transform_scan.h>
 #include <thrust/transform.h>
 #include "maximum_matching_vertex_based.h"
+#include "fully_attractive_nodes.h"
 #include "multicut_solver_options.h"
 #include "dual_solver.h"
 #include "parallel_gaec_utils.h"
@@ -163,6 +164,30 @@ std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_sorting(dCOO&
 
 }
 
+std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_fully_att_nodes(dCOO& A, const float max_multiplier)
+{
+    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
+
+    const float min_att_to_contract = A.max() * max_multiplier;
+    thrust::device_vector<int> row_ids, col_ids;
+    std::tie(row_ids, col_ids) = edges_of_fully_attractive_nodes(A.export_undirected(), min_att_to_contract);
+    assert(col_ids.size() == row_ids.size());
+
+    thrust::device_vector<int> row_offsets = compute_offsets(row_ids, A.max_dim() - 1);
+
+    thrust::device_vector<int> cc_labels(A.max_dim());
+    computeCC_gpu(A.max_dim(), col_ids.size(), 
+            thrust::raw_pointer_cast(row_offsets.data()), thrust::raw_pointer_cast(col_ids.data()), 
+            thrust::raw_pointer_cast(cc_labels.data()), get_cuda_device());
+
+    thrust::device_vector<int> node_mapping = compress_label_sequence(cc_labels, cc_labels.size() - 1);
+    const int nr_ccs = *thrust::max_element(node_mapping.begin(), node_mapping.end()) + 1;
+
+    assert(nr_ccs < A.max_dim());
+
+    return {node_mapping, row_ids.size()};
+}
+
 std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_maximum_matching(dCOO& A, const float mean_multiplier_mm)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
@@ -172,7 +197,7 @@ std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_maximum_match
     return {compress_label_sequence(node_mapping, node_mapping.size() - 1), nr_matched_edges};
 }
 
-std::tuple<std::vector<int>, double> parallel_gaec_cuda(dCOO& A, const multicut_solver_options& opts)
+std::tuple<std::vector<int>, double, std::vector<std::vector<int>> > parallel_gaec_cuda(dCOO& A, const multicut_solver_options& opts)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
     std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
@@ -187,8 +212,10 @@ std::tuple<std::vector<int>, double> parallel_gaec_cuda(dCOO& A, const multicut_
     thrust::device_vector<int> node_mapping(A.max_dim());
     thrust::sequence(node_mapping.begin(), node_mapping.end());
 
+    std::vector<std::vector<int>> timeline;
+
     if (opts.only_compute_lb)
-        return {std::vector<int>(), final_lb};
+        return {std::vector<int>(), final_lb, timeline};
         
     float max_multiplier_contraction = opts.max_multiplier_contraction;
 
@@ -196,6 +223,7 @@ std::tuple<std::vector<int>, double> parallel_gaec_cuda(dCOO& A, const multicut_
     if (opts.matching_thresh_crossover_ratio > 1.0)
         try_edges_to_contract_by_maximum_matching = false;
     
+
     for(size_t iter=0;; ++iter)
     {
         if (iter > 0)
@@ -219,8 +247,13 @@ std::tuple<std::vector<int>, double> parallel_gaec_cuda(dCOO& A, const multicut_
 
         if(nr_edges_to_contract == 0)
         {
-            std::cout << "# iterations = " << iter << "\n";
-            break;
+            std::tie(cur_node_mapping, nr_edges_to_contract) = contraction_mapping_by_fully_att_nodes(A, 0.0);
+            std::cout<< "Found = " <<nr_edges_to_contract<<" edges to contract by fully attractive nodes\n";
+            if(nr_edges_to_contract == 0)
+            {
+                std::cout << "# iterations = " << iter << "\n";
+                break;
+            }
         }
 
         dCOO new_A = A.contract_cuda(cur_node_mapping);
@@ -238,14 +271,12 @@ std::tuple<std::vector<int>, double> parallel_gaec_cuda(dCOO& A, const multicut_
             int good_nr_ccs = *thrust::max_element(cur_node_mapping.begin(), cur_node_mapping.end()) + 1;
             assert(good_nr_ccs > nr_ccs);
             std::cout << "Reverted from " << nr_ccs << " connected components to " << good_nr_ccs << "\n";
-            if (good_nr_ccs == cur_node_mapping.size()) 
-                break;
             
             new_A = A.contract_cuda(cur_node_mapping);
             if(!try_edges_to_contract_by_maximum_matching)
             {
                 max_multiplier_contraction *= 2.0;
-                max_multiplier_contraction = std::max(max_multiplier_contraction, 0.1f);
+                // max_multiplier_contraction = std::min(max_multiplier_contraction, 1.0f);
             }
             assert(!has_bad_contractions(new_A));
         }
@@ -254,7 +285,6 @@ std::tuple<std::vector<int>, double> parallel_gaec_cuda(dCOO& A, const multicut_
             if(!try_edges_to_contract_by_maximum_matching)
             {
                 max_multiplier_contraction *= 0.5;
-                max_multiplier_contraction = std::min(max_multiplier_contraction, opts.max_multiplier_contraction);
             }
         }
 
@@ -262,6 +292,12 @@ std::tuple<std::vector<int>, double> parallel_gaec_cuda(dCOO& A, const multicut_
         A.remove_diagonal();
         std::cout << "energy after iteration " << iter << ": " << A.sum() << ", #components = " << A.cols() << "\n";
         thrust::gather(node_mapping.begin(), node_mapping.end(), cur_node_mapping.begin(), node_mapping.begin());
+        if (opts.dump_timeline)
+        {
+            std::vector<int> current_timeline(node_mapping.size());
+            thrust::copy(node_mapping.begin(), node_mapping.end(), current_timeline.begin());
+            timeline.push_back(current_timeline);
+        }
         if (opts.max_time_sec >= 0)
         {
             std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
@@ -276,10 +312,10 @@ std::tuple<std::vector<int>, double> parallel_gaec_cuda(dCOO& A, const multicut_
 
     std::vector<int> h_node_mapping(node_mapping.size());
     thrust::copy(node_mapping.begin(), node_mapping.end(), h_node_mapping.begin());
-    return {h_node_mapping, final_lb};
+    return {h_node_mapping, final_lb, timeline};
 }
 
-std::tuple<std::vector<int>, double, int> parallel_gaec_cuda(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs, const multicut_solver_options& opts)
+std::tuple<std::vector<int>, double, int, std::vector<std::vector<int>> > parallel_gaec_cuda(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs, const multicut_solver_options& opts)
 {
     const int cuda_device = get_cuda_device();
     cudaSetDevice(cuda_device);
@@ -291,10 +327,11 @@ std::tuple<std::vector<int>, double, int> parallel_gaec_cuda(const std::vector<i
     
     std::vector<int> h_node_mapping;
     double lb;
+    std::vector<std::vector<int>> timeline;
     
     std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
-    std::tie(h_node_mapping, lb) = parallel_gaec_cuda(A, opts);
+    std::tie(h_node_mapping, lb, timeline) = parallel_gaec_cuda(A, opts);
     std::chrono::steady_clock::time_point end_time = std::chrono::steady_clock::now();
     int time_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
-    return {h_node_mapping, lb, time_duration};
+    return {h_node_mapping, lb, time_duration, timeline};
 }

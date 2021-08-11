@@ -20,7 +20,8 @@ int main(int argc, char** argv)
     std::vector<int> h_node_mapping;
     double lb;
     int dur;
-    std::tie(h_node_mapping, lb, dur) = parallel_gaec_cuda(i, j, costs, opts);
+    std::vector<std::vector<int>> timeline;
+    std::tie(h_node_mapping, lb, dur, timeline) = parallel_gaec_cuda(i, j, costs, opts);
     double obj = 0;
     if (!opts.only_compute_lb)
     {

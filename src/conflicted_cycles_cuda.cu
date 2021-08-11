@@ -123,10 +123,10 @@ __global__ void find_quadrangles_parallel(const long num_expansions, const int n
     }
 }
 
-__global__ void find_pentagons_parallel(const int num_expansions, const int num_rep_edges,
+__global__ void find_pentagons_parallel(const long num_expansions, const int num_rep_edges,
                                         const int* const __restrict__ row_ids_rep,
                                         const int* const __restrict__ col_ids_rep,
-                                        const int* const __restrict__ rep_edge_offsets,
+                                        const long* const __restrict__ rep_edge_offsets,
                                         const int* const __restrict__ A_symm_row_offsets,
                                         const int* const __restrict__ A_symm_col_ids,
                                         const float* const __restrict__ A_symm_data,
@@ -136,14 +136,14 @@ __global__ void find_pentagons_parallel(const int num_expansions, const int num_
                                         int* __restrict__ empty_tri_index,
                                         const int max_triangles)
 {
-    const int start_index = blockIdx.x * blockDim.x + threadIdx.x;
-    const int num_threads = blockDim.x * gridDim.x;
-    for (int c_index = start_index; c_index < num_expansions && empty_tri_index[0] < max_triangles; c_index += num_threads) 
+    const long start_index = blockIdx.x * blockDim.x + threadIdx.x;
+    const long num_threads = blockDim.x * gridDim.x;
+    for (long c_index = start_index; c_index < num_expansions && empty_tri_index[0] < max_triangles; c_index += num_threads) 
     {
-        const int* next_rep_edge_location = thrust::upper_bound(thrust::seq, rep_edge_offsets, rep_edge_offsets + num_rep_edges + 1, c_index);
-        const int rep_edge_index = thrust::distance(rep_edge_offsets, next_rep_edge_location) - 1;
+        const long* next_rep_edge_location = thrust::upper_bound(thrust::seq, rep_edge_offsets, rep_edge_offsets + num_rep_edges + 1, c_index);
+        const long rep_edge_index = thrust::distance(rep_edge_offsets, next_rep_edge_location) - 1;
         assert(rep_edge_index < num_rep_edges);
-        const int local_offset = c_index - rep_edge_offsets[rep_edge_index];
+        const long local_offset = c_index - rep_edge_offsets[rep_edge_index];
         assert(local_offset >= 0);
         const int v1 = row_ids_rep[rep_edge_index];
         const int v2 = col_ids_rep[rep_edge_index];
@@ -329,7 +329,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
     if (max_cycle_length >= 5 && empty_tri_index[0] < triangles_v1.size())
     {
         empty_tri_index[0] = rearrange_triangles(triangles_v1, triangles_v2, triangles_v3, empty_tri_index[0]);
-        thrust::device_vector<int> rep_edge_offsets(num_rep_edges + 1);
+        thrust::device_vector<long> rep_edge_offsets(num_rep_edges + 1);
         {
             const thrust::device_vector<int> vertex_degrees = offsets_to_degrees(A_pos_row_offsets);
             thrust::device_vector<int> row_ids_degrees(num_rep_edges);
@@ -341,7 +341,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
             rep_edge_offsets.back() = 0;
             thrust::exclusive_scan(rep_edge_offsets.begin(), rep_edge_offsets.end(), rep_edge_offsets.begin());
         }
-        const int num_expansions = rep_edge_offsets.back();
+        const long num_expansions = rep_edge_offsets.back();
         blockCount = ceil(num_expansions / (float) threadCount);
         std::cout<<"5-cycles: number of expansions: "<<num_expansions<<"\n";
         find_pentagons_parallel<<<blockCount, threadCount>>>(num_expansions, num_rep_edges,

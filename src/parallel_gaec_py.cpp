@@ -16,7 +16,7 @@ PYBIND11_MODULE(parallel_gaec_py, m) {
         .def(py::init<>())
         .def(py::init<const int&, const int&, const int&, const int&, const int&, 
                 const float&, const float&, const float&, const float&, 
-                const bool&, const int&>());
+                const bool&, const int&, const bool&>());
 
     m.def("parallel_gaec_eigen", [](const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& edge_costs) {
             return parallel_gaec_eigen(i,j,edge_costs); 
