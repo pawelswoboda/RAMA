@@ -115,8 +115,9 @@ std::tuple<thrust::device_vector<int>, int> filter_edges_by_matching_vertex_base
     thrust::device_vector<bool> still_running(1);
     const thrust::device_vector<int> A_row_offsets = A.compute_row_offsets();
     const float min_edge_weight_to_match = determine_matching_threshold(A, mean_multiplier_mm);
-    assert(min_edge_weight_to_match >= 0);
-
+    if (min_edge_weight_to_match < 0)
+        return {node_mapping, 0}; 
+    
     int prev_num_edges = 0;
     for (int t = 0; t < 10; t++)
     {

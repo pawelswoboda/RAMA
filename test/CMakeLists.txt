@@ -13,6 +13,9 @@ target_link_libraries(parallel_gaec_cuda_test parallel_gaec_cuda)
 add_executable(maximum_matching_vertex_based_test maximum_matching_vertex_based_test.cu)
 target_link_libraries(maximum_matching_vertex_based_test dCOO maximum_matching_vertex_based)
 
+add_executable(edge_contractions_woc_test edge_contractions_woc_test.cu)
+target_link_libraries(edge_contractions_woc_test dCOO edge_contractions_woc)
+
 add_executable(compute_offsets_test compute_offsets_test.cu)
 
 add_executable(compute_unique_test compute_unique_test.cu)

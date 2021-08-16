@@ -26,6 +26,32 @@ inline void checkCudaError(cudaError_t status, std::string errorMsg)
     }
 }
 
+// Assumes a symmetric CSR matrix.
+// Initialize v1_mid_edge_index by row_offsets[v1] and v2_mid_edge_index by row_offsets[v2].
+__device__ inline int compute_lowest_common_neighbour(const int v1, const int v2, 
+                                            const int* const __restrict__ row_offsets, 
+                                            const int* const __restrict__ col_ids, 
+                                            const float* const __restrict__ data,
+                                            int& v1_mid_edge_index, int& v2_mid_edge_index)
+{
+    while(v1_mid_edge_index < row_offsets[v1 + 1] && v2_mid_edge_index < row_offsets[v2 + 1])
+    {
+        const int v1_n = col_ids[v1_mid_edge_index];
+        const int v2_n = col_ids[v2_mid_edge_index];
+        if (v1_n == v2_n)
+        {
+            ++v1_mid_edge_index;
+            ++v2_mid_edge_index;
+            return v1_n;
+        }
+        if (v1_n < v2_n)
+            ++v1_mid_edge_index;
+        if (v1_n > v2_n)
+            ++v2_mid_edge_index;
+    }
+    return -1;
+}
+
 template<typename ROW_ITERATOR, typename COL_ITERATOR>
 std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> to_undirected(
         ROW_ITERATOR row_id_begin, ROW_ITERATOR row_id_end,
@@ -91,6 +117,34 @@ inline thrust::device_vector<int> offsets_to_degrees(const thrust::device_vector
     thrust::adjacent_difference(offsets.begin(), offsets.end(), degrees.begin());
     return thrust::device_vector<int>(degrees.begin() + 1, degrees.end());
 }
+
+inline thrust::device_vector<int> degrees_to_offsets(const thrust::device_vector<int>& degrees)
+{
+    thrust::device_vector<int> offsets(degrees.size() + 1);
+    thrust::exclusive_scan(degrees.begin(), degrees.end(), offsets.begin());
+    offsets[offsets.size() - 1] = offsets[offsets.size() - 2] + degrees[degrees.size() - 1];
+    return offsets;
+}
+
+inline thrust::device_vector<int> compress_label_sequence(const thrust::device_vector<int>& data, const int max_label)
+{
+    assert(*thrust::max_element(data.begin(), data.end()) <= max_label);
+
+    // first get mask of used labels
+    thrust::device_vector<int> label_mask(max_label + 1, 0);
+    thrust::scatter(thrust::constant_iterator<int>(1), thrust::constant_iterator<int>(1) + data.size(), data.begin(), label_mask.begin());
+
+    // get map of original labels to consecutive ones
+    thrust::device_vector<int> label_to_consecutive(max_label + 1);
+    thrust::exclusive_scan(label_mask.begin(), label_mask.end(), label_to_consecutive.begin());
+
+    // apply compressed label map
+    thrust::device_vector<int> result(data.size(), 0);
+    thrust::gather(data.begin(), data.end(), label_to_consecutive.begin(), result.begin());
+
+    return result;
+}
+
 struct compute_lb
 {
     __host__ __device__ double operator()(const float& val) const
@@ -314,9 +368,36 @@ inline thrust::device_vector<int> compute_offsets(const thrust::device_vector<in
     return offsets;
 }
 
-inline thrust::device_vector<int> concatenate(const thrust::device_vector<int>& a, const thrust::device_vector<int>& b)
+struct map_values_func
 {
-    thrust::device_vector<int> ab(a.size() + b.size());
+    const int* mapping;
+    size_t mapping_size;
+    __host__ __device__ int operator()(const int& v)
+    {
+        assert(v >= 0);
+        assert(v < mapping_size);
+        return mapping[v];
+    }
+};
+
+// Map old_values to 0:size(old_values) - 1 and replace all old values which are in src by this map.
+// Values which are not in old_values are mapped to -1. 
+inline void map_old_values_consec(thrust::device_vector<int>& src, 
+                                const thrust::device_vector<int>& old_values, 
+                                const int old_max_value)
+{
+    thrust::device_vector<int> mapping(old_max_value + 1, -1);
+    thrust::scatter(thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(0) + old_values.size(), 
+                    old_values.begin(), mapping.begin());
+
+    map_values_func mapper({thrust::raw_pointer_cast(mapping.data()), mapping.size()}); 
+    thrust::transform(src.begin(), src.end(), src.begin(), mapper);
+}
+
+template<typename T>
+inline thrust::device_vector<T> concatenate(const thrust::device_vector<T>& a, const thrust::device_vector<T>& b)
+{
+    thrust::device_vector<T> ab(a.size() + b.size());
     thrust::copy(a.begin(), a.end(), ab.begin());
     thrust::copy(b.begin(), b.end(), ab.begin() + a.size());
     return ab;

@@ -32,5 +32,13 @@ add_subdirectory(external/pybind11)
 add_library(ECL-CC_11 external/ECL-CC/ECL-CC_11.cu)
 target_include_directories(ECL-CC_11 INTERFACE external/ECL-CC)
 
+add_library(gpuMST_boruvka external/cudaMST/gpuMST/gpuMST.cu)
+target_include_directories(gpuMST_boruvka PUBLIC external/cudaMST/gpuMST/)
+target_include_directories(gpuMST_boruvka PUBLIC external/cudaMST/common/)
+
+add_library(gpuMST_kruskal external/cudaMST/gpuMSTdpk/gpuMST.cu)
+target_include_directories(gpuMST_kruskal PUBLIC external/cudaMST/gpuMSTdpk/)
+target_include_directories(gpuMST_kruskal PUBLIC external/cudaMST/common/)
+
 add_subdirectory(src)
 add_subdirectory(test)

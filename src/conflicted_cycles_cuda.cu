@@ -7,32 +7,6 @@
 #include "parallel_gaec_utils.h"
 #include <thrust/execution_policy.h>
 
-// Assumes a symmetric CSR matrix.
-// Initialize v1_mid_edge_index by row_offsets[v1] and v2_mid_edge_index by row_offsets[v2].
-__device__ int compute_lowest_common_neighbour(const int v1, const int v2, 
-                                            const int* const __restrict__ row_offsets, 
-                                            const int* const __restrict__ col_ids, 
-                                            const float* const __restrict__ data,
-                                            int& v1_mid_edge_index, int& v2_mid_edge_index)
-{
-    while(v1_mid_edge_index < row_offsets[v1 + 1] && v2_mid_edge_index < row_offsets[v2 + 1])
-    {
-        const int v1_n = col_ids[v1_mid_edge_index];
-        const int v2_n = col_ids[v2_mid_edge_index];
-        if (v1_n == v2_n)
-        {
-            v1_mid_edge_index++;
-            v2_mid_edge_index++;
-            return v1_n;
-        }
-        if (v1_n < v2_n)
-            ++v1_mid_edge_index;
-        if (v1_n > v2_n)
-            ++v2_mid_edge_index;        
-    }
-    return -1;
-}
-
 __device__ bool write_triangle(int* const __restrict__ tri_v1, 
                             int* const __restrict__ tri_v2, 
                             int* const __restrict__ tri_v3, 

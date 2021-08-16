@@ -11,7 +11,7 @@ struct multicut_solver_options {
     int num_outer_itr_dual = 1;
     float mean_multiplier_mm = 0.05;
     float max_multiplier_contraction = 0.4;
-    float matching_thresh_crossover_ratio = 0.005; 
+    float matching_thresh_crossover_ratio = 0.1; 
     float tri_memory_factor = 2.0;
     bool only_compute_lb = false;
     int max_time_sec = -1;
@@ -56,8 +56,8 @@ struct multicut_solver_options {
         app.add_option("dual_itr_outer", num_outer_itr_dual, "Number of outer dual iterations for initial dual updates. Larger number detects conflicted cycles again. (Default: 1).")->check(CLI::NonNegativeNumber);
         app.add_option("mean_multiplier_mm", mean_multiplier_mm, "Match the edges which have cost more than mean(pos edges) * mean_multiplier_mm.")->check(CLI::NonNegativeNumber);
         app.add_option("max_multiplier_contraction", max_multiplier_contraction, "Contract the edges which have cost more than max(pos edges) * max_multiplier_contraction.")->check(CLI::Range(0.0f, 1.0f));
-        app.add_option("matching_thresh_crossover_ratio", matching_thresh_crossover_ratio, "Ratio of (# contract edges / # nodes ) at which to change from maximum matching based contraction to threshold based. "
-            "(Default: 0.005). Greater than 1 will always use thresholding.")->check(CLI::NonNegativeNumber);
+        app.add_option("matching_thresh_crossover_ratio", matching_thresh_crossover_ratio, "Ratio of (# contract edges / # nodes ) at which to change from maximum matching based contraction to MST based. "
+            "(Default: 0.1). Greater than 1 will always use MST.")->check(CLI::NonNegativeNumber);
         app.add_option("tri_memory_factor", tri_memory_factor, 
             "Average number of triangles per repulsive edge. (Used for memory allocation. Use lesser value in-case of out of memory errors during dual solve). (Default: 2.0).")->check(CLI::PositiveNumber);
         app.add_flag("--only_lb", only_compute_lb, "Only compute the lower bound. (Default: false).");
