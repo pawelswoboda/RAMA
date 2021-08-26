@@ -59,7 +59,7 @@ std::tuple<std::vector<int>, double, std::vector<std::vector<int>> > rama_cuda(d
     if (opts.matching_thresh_crossover_ratio > 1.0)
         try_edges_to_contract_by_maximum_matching = false;
     
-    for(size_t iter=0;; ++iter)
+    for(size_t iter=0; A.nnz() > 0; ++iter)
     {
         if (iter > 0)
         {
@@ -98,7 +98,7 @@ std::tuple<std::vector<int>, double, std::vector<std::vector<int>> > rama_cuda(d
         const float energy_reduction = thrust::reduce(diagonal.begin(), diagonal.end());
         std::cout << "energy reduction " << energy_reduction << "\n";
         if(has_bad_contractions(new_A))
-            throw std::runtime_error(" Found bad contractions \n");
+        std::cout<< " Found bad contractions! \n";
 
         thrust::swap(A,new_A);
         A.remove_diagonal();
