@@ -5,7 +5,7 @@
 #include <thrust/iterator/zip_iterator.h>
 #include <ECLgraph.h>
 #include "time_measure_util.h"
-#include "parallel_gaec_utils.h"
+#include "rama_utils.h"
 
 __global__ void map_nodes(const int num_edges, const int* const __restrict__ node_mapping, int* __restrict__ rows, int* __restrict__ cols)
 {

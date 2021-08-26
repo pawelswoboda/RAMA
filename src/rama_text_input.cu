@@ -1,7 +1,7 @@
-#include "parallel_gaec_cuda.h"
+#include "rama_cuda.h"
 #include "multicut_text_parser.h"
 #include "multicut_solver_options.h"
-#include "parallel_gaec_utils.h"
+#include "rama_utils.h"
 #include <stdexcept>
 #include <string>
 
@@ -21,7 +21,7 @@ int main(int argc, char** argv)
     double lb;
     int dur;
     std::vector<std::vector<int>> timeline;
-    std::tie(h_node_mapping, lb, dur, timeline) = parallel_gaec_cuda(i, j, costs, opts);
+    std::tie(h_node_mapping, lb, dur, timeline) = rama_cuda(i, j, costs, opts);
     double obj = 0;
     if (!opts.only_compute_lb)
     {

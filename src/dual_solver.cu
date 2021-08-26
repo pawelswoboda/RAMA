@@ -2,7 +2,7 @@
 #include "conflicted_cycles_cuda.h"
 #include "multicut_message_passing.h"
 #include "time_measure_util.h"
-#include "parallel_gaec_utils.h"
+#include "rama_utils.h"
 
 std::tuple<dCOO, double, int> dual_update_cycle_length(const dCOO& A, const int cycle_length, const int num_dual_steps_per_cycle, const float tri_memory_factor, const float tol_ratio)
 {

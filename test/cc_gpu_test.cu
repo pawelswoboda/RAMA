@@ -1,5 +1,5 @@
 #include <ECLgraph.h>
-#include "parallel_gaec_utils.h"
+#include "rama_utils.h"
 #include <set>
 #include "test.h"
 

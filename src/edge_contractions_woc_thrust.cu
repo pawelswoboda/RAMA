@@ -1,7 +1,7 @@
 #include "edge_contractions_woc_thrust.h"
 #include <gpuMST.h>
 #include "ECLgraph.h"
-#include "parallel_gaec_utils.h"
+#include "rama_utils.h"
 
 struct is_positive_edge
 {

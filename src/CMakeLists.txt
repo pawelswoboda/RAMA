@@ -1,8 +1,5 @@
 add_library(multicut_text_parser multicut_text_parser.cpp)
 
-add_library(parallel_gaec_eigen parallel_gaec_eigen.cpp)
-target_link_libraries(parallel_gaec_eigen parallel_gaec) 
-
 add_library(dCOO dCOO.cu)
 target_link_libraries(dCOO ECL-CC_11)
 
@@ -23,14 +20,11 @@ target_link_libraries(edge_contractions_woc_thrust dCOO ECL-CC_11 gpuMST_boruvka
 add_library(edge_contractions_woc edge_contractions_woc.cu)
 target_link_libraries(edge_contractions_woc edge_contractions_woc_thrust dCOO ECL-CC_11 gpuMST_boruvka)
 
-add_library(parallel_gaec_cuda parallel_gaec_cuda.cu)
-target_link_libraries(parallel_gaec_cuda dCOO dual_solver maximum_matching_vertex_based edge_contractions_woc)
+add_library(rama_cuda rama_cuda.cu)
+target_link_libraries(rama_cuda dCOO dual_solver maximum_matching_vertex_based edge_contractions_woc)
 
-add_executable(multicut_parallel_gaec_eigen_text_input multicut_parallel_gaec_eigen_text_input.cpp)
-target_link_libraries(multicut_parallel_gaec_eigen_text_input multicut_text_parser parallel_gaec_eigen)
+add_executable(rama_text_input rama_text_input.cu)
+target_link_libraries(rama_text_input multicut_text_parser rama_cuda)
 
-add_executable(multicut_parallel_solver_cuda_text_input multicut_parallel_solver_cuda_text_input.cu)
-target_link_libraries(multicut_parallel_solver_cuda_text_input multicut_text_parser parallel_gaec_cuda)
-
-pybind11_add_module(parallel_gaec_py parallel_gaec_py.cpp)
-target_link_libraries(parallel_gaec_py PRIVATE parallel_gaec_eigen multicut_text_parser parallel_gaec_cuda) 
+pybind11_add_module(rama_py rama_py.cpp)
+target_link_libraries(rama_py PRIVATE multicut_text_parser rama_cuda) 

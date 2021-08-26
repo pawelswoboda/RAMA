@@ -1,14 +1,11 @@
-add_executable(parallel_gaec_eigen_test parallel_gaec_eigen_test.cpp)
-target_link_libraries(parallel_gaec_eigen_test parallel_gaec_eigen)
-
 add_executable(multicut_message_passing_test multicut_message_passing_test.cu)
 target_link_libraries(multicut_message_passing_test dCOO multicut_message_passing)
 
 add_executable(cc_gpu_test cc_gpu_test.cu)
 target_link_libraries(cc_gpu_test ECL-CC_11)
 
-add_executable(parallel_gaec_cuda_test parallel_gaec_cuda_test.cpp)
-target_link_libraries(parallel_gaec_cuda_test parallel_gaec_cuda)
+add_executable(rama_cuda_test rama_cuda_test.cpp)
+target_link_libraries(rama_cuda_test rama_cuda)
 
 add_executable(maximum_matching_vertex_based_test maximum_matching_vertex_based_test.cu)
 target_link_libraries(maximum_matching_vertex_based_test dCOO maximum_matching_vertex_based)

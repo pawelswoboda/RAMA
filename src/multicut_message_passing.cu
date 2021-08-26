@@ -3,7 +3,7 @@
 #include <thrust/for_each.h>
 #include <thrust/transform.h>
 #include <algorithm>
-#include "parallel_gaec_utils.h"
+#include "rama_utils.h"
 #include "time_measure_util.h"
 #include "stdio.h"
 

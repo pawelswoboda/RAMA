@@ -1,4 +1,4 @@
-#include "parallel_gaec_utils.h"
+#include "rama_utils.h"
 #include <vector>
 #include <thrust/device_vector.h>
 #include "test.h"

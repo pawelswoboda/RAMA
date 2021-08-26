@@ -1,6 +1,6 @@
 #include "conflicted_cycles_cuda.h"
 #include <thrust/device_vector.h>
-#include "parallel_gaec_utils.h"
+#include "rama_utils.h"
 #include "dCOO.h"
 #include "test.h"
 

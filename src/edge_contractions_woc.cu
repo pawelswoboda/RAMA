@@ -3,7 +3,7 @@
 #include <thrust/binary_search.h>
 #include <gpuMST.h>
 #include "ECLgraph.h"
-#include "parallel_gaec_utils.h"
+#include "rama_utils.h"
 
 __global__ void check_triangles_cuda(const int num_rep_edges,
     const int* const __restrict__ rep_row_ids,

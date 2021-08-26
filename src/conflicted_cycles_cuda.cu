@@ -4,7 +4,7 @@
 #include <thrust/binary_search.h>
 #include "time_measure_util.h"
 #include <thrust/partition.h>
-#include "parallel_gaec_utils.h"
+#include "rama_utils.h"
 #include <thrust/execution_policy.h>
 
 __device__ bool write_triangle(int* const __restrict__ tri_v1, 

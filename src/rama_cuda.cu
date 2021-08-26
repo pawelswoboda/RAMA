@@ -10,7 +10,7 @@
 #include "multicut_solver_options.h"
 #include "dual_solver.h"
 #include "edge_contractions_woc.h"
-#include "parallel_gaec_utils.h"
+#include "rama_utils.h"
 
 struct is_negative
 {
@@ -35,7 +35,7 @@ std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_maximum_match
     return {compress_label_sequence(node_mapping, node_mapping.size() - 1), nr_matched_edges};
 }
 
-std::tuple<std::vector<int>, double, std::vector<std::vector<int>> > parallel_gaec_cuda(dCOO& A, const multicut_solver_options& opts)
+std::tuple<std::vector<int>, double, std::vector<std::vector<int>> > rama_cuda(dCOO& A, const multicut_solver_options& opts)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
     std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
@@ -63,7 +63,7 @@ std::tuple<std::vector<int>, double, std::vector<std::vector<int>> > parallel_ga
     {
         if (iter > 0)
         {
-            dual_solver(A, opts.max_cycle_length_gaec, opts.num_dual_itr_gaec, 1.0, 1);
+            dual_solver(A, opts.max_cycle_length_primal, opts.num_dual_itr_primal, 1.0, 1);
         }
         thrust::device_vector<int> cur_node_mapping;
         int nr_edges_to_contract;
@@ -127,7 +127,7 @@ std::tuple<std::vector<int>, double, std::vector<std::vector<int>> > parallel_ga
     return {h_node_mapping, final_lb, timeline};
 }
 
-std::tuple<std::vector<int>, double, int, std::vector<std::vector<int>> > parallel_gaec_cuda(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs, const multicut_solver_options& opts)
+std::tuple<std::vector<int>, double, int, std::vector<std::vector<int>> > rama_cuda(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs, const multicut_solver_options& opts)
 {
     const int cuda_device = get_cuda_device();
     cudaSetDevice(cuda_device);
@@ -142,7 +142,7 @@ std::tuple<std::vector<int>, double, int, std::vector<std::vector<int>> > parall
     std::vector<std::vector<int>> timeline;
     
     std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
-    std::tie(h_node_mapping, lb, timeline) = parallel_gaec_cuda(A, opts);
+    std::tie(h_node_mapping, lb, timeline) = rama_cuda(A, opts);
     std::chrono::steady_clock::time_point end_time = std::chrono::steady_clock::now();
     int time_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
     return {h_node_mapping, lb, time_duration, timeline};

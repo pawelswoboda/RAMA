@@ -110,11 +110,11 @@ class CMakeBuild(build_ext):
         subprocess.check_call(['cmake', '--build', '.', '--target', ext.name] + build_args, cwd=self.build_temp)
 
 setup(
-    name='Parallel_GAEC',
+    name='RAMA',
     version='0.0.1',
-    description='Bindings for parallel GAEC',
+    description='Bindings for RAMA: Rapid algorithm for multicut.',
     packages=find_packages('.'),
-    ext_modules=[CMakeExtension(name='parallel_gaec_py')],
+    ext_modules=[CMakeExtension(name='rama_py')],
     cmdclass=dict(build_ext=CMakeBuild),
     zip_safe=False,
     setup_requires=['wheel']

@@ -1,6 +1,6 @@
 #include "maximum_matching_vertex_based.h"
 #include "dCOO.h"
-#include "parallel_gaec_utils.h"
+#include "rama_utils.h"
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
 #include "test.h"
