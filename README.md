@@ -1,10 +1,10 @@
-# RAMA
-Rapid algorithm for multicut problem. We solve the multicut (correlation clustering) problems orders of magnitude faster than CPU based solvers without compromising solution quality using NVIDIA GPU. It also gives lower bound guarantees. 
+# RAMA: Rapid algorithm for multicut problem
+Solves multicut (correlation clustering) problems orders of magnitude faster than CPU based solvers without compromising solution quality using NVIDIA GPU. It also gives lower bound guarantees. 
 
 ![animation](./misc/contraction_animation.gif)
 
 ## Requirements
-We mostly use `CUDA 11.2` and `GCC 10`. Other combinations might also work but not tested. `CMake` is required for compilation.
+We use `CUDA 11.2` and `GCC 10`. Other combinations might also work but not tested. `CMake` is required for compilation.
 
 ## Installation
 
