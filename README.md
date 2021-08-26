@@ -40,7 +40,7 @@ which corresponds to a graph with `N` edges. Where `i` and `j` should be vertex 
 ```
 
 ### Python solver:
-An example to compute multicut on a 
+An example to compute multicut on a triangle graph:
 ```python
 import rama_py
 rama_py.rama_cuda([0, 1, 2], [1, 2, 0], [1.1, -2, 3], rama_py.multicut_solver_options()) 
