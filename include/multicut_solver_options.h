@@ -10,7 +10,6 @@ struct multicut_solver_options {
     int num_dual_itr_gaec = 5;
     int num_outer_itr_dual = 1;
     float mean_multiplier_mm = 0.05;
-    float max_multiplier_contraction = 0.4;
     float matching_thresh_crossover_ratio = 0.1; 
     float tri_memory_factor = 2.0;
     bool only_compute_lb = false;
@@ -25,7 +24,6 @@ struct multicut_solver_options {
         const int _num_dual_itr_gaec, 
         const int _num_outer_itr_dual,
         const float _mean_multiplier_mm,
-        const float _max_multiplier_contraction,
         const float _matching_thresh_crossover_ratio,
         const float _tri_memory_factor,
         const bool _only_compute_lb,
@@ -37,7 +35,6 @@ struct multicut_solver_options {
         num_dual_itr_gaec(_num_dual_itr_gaec), 
         num_outer_itr_dual(_num_outer_itr_dual),
         mean_multiplier_mm(_mean_multiplier_mm),
-        max_multiplier_contraction(_max_multiplier_contraction),
         matching_thresh_crossover_ratio(_matching_thresh_crossover_ratio),
         tri_memory_factor(_tri_memory_factor),
         only_compute_lb(_only_compute_lb),
@@ -55,7 +52,6 @@ struct multicut_solver_options {
         app.add_option("dual_itr_primal", num_dual_itr_gaec, "Number of dual update iterations per cycle during primal reparametrization. (Default: 5).")->check(CLI::NonNegativeNumber);
         app.add_option("dual_itr_outer", num_outer_itr_dual, "Number of outer dual iterations for initial dual updates. Larger number detects conflicted cycles again. (Default: 1).")->check(CLI::NonNegativeNumber);
         app.add_option("mean_multiplier_mm", mean_multiplier_mm, "Match the edges which have cost more than mean(pos edges) * mean_multiplier_mm.")->check(CLI::NonNegativeNumber);
-        app.add_option("max_multiplier_contraction", max_multiplier_contraction, "Contract the edges which have cost more than max(pos edges) * max_multiplier_contraction.")->check(CLI::Range(0.0f, 1.0f));
         app.add_option("matching_thresh_crossover_ratio", matching_thresh_crossover_ratio, "Ratio of (# contract edges / # nodes ) at which to change from maximum matching based contraction to MST based. "
             "(Default: 0.1). Greater than 1 will always use MST.")->check(CLI::NonNegativeNumber);
         app.add_option("tri_memory_factor", tri_memory_factor, 

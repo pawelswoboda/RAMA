@@ -7,17 +7,10 @@
 #include <thrust/transform_scan.h>
 #include <thrust/transform.h>
 #include "maximum_matching_vertex_based.h"
-#include "fully_attractive_nodes.h"
 #include "multicut_solver_options.h"
 #include "dual_solver.h"
 #include "edge_contractions_woc.h"
 #include "parallel_gaec_utils.h"
-
-thrust::device_vector<float> per_cc_cost(const dCOO& A, const dCOO& C, const thrust::device_vector<int>& node_mapping, const int nr_ccs)
-{
-    thrust::device_vector<float> d = A.diagonal();
-    return d;
-}
 
 struct is_negative
 {
@@ -31,142 +24,6 @@ bool has_bad_contractions(const dCOO& A)
 {
     const thrust::device_vector<float> d = A.diagonal();
     return thrust::count_if(d.begin(), d.end(), is_negative()) > 0;
-}
-
-struct remove_bad_contraction_edges_func
-{
-    const int nr_ccs;
-    const float* cc_cost;
-    __host__ __device__
-        int operator()(thrust::tuple<int,int> t)
-        {
-            const int cc = thrust::get<0>(t);
-            const int node_id = thrust::get<1>(t);
-            if (cc_cost[cc] > 0.0)
-                return cc;
-            return node_id + nr_ccs;
-        }
-};
-
-thrust::device_vector<int> discard_bad_contractions(const dCOO& contracted_A, const thrust::device_vector<int>& node_mapping)
-{
-    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
-    int nr_ccs = *thrust::max_element(node_mapping.begin(), node_mapping.end()) + 1;
-    // for each component, how profitable was it to contract it?
-    const thrust::device_vector<float> d = contracted_A.diagonal();
-
-    remove_bad_contraction_edges_func func({nr_ccs, thrust::raw_pointer_cast(d.data())}); 
-
-    thrust::device_vector<int> good_node_mapping = node_mapping;
-    thrust::device_vector<int> input_node_ids(node_mapping.size());
-    thrust::sequence(input_node_ids.begin(), input_node_ids.end(), 0);
-
-    auto first = thrust::make_zip_iterator(thrust::make_tuple(good_node_mapping.begin(), input_node_ids.begin()));
-    auto last = thrust::make_zip_iterator(thrust::make_tuple(good_node_mapping.end(), input_node_ids.end()));
-    thrust::transform(first, last, good_node_mapping.begin(), func);
-    
-    good_node_mapping = compress_label_sequence(good_node_mapping, nr_ccs + node_mapping.size());
-    assert(*thrust::max_element(good_node_mapping.begin(), good_node_mapping.end()) > nr_ccs);
-    return good_node_mapping;
-}
-
-struct negative_edge_indicator_func
-{
-    const float w = 0.0;
-    __host__ __device__
-        bool operator()(const thrust::tuple<int,int,float> t)
-        {
-            if(thrust::get<2>(t) <= w)
-                return true;
-            return false;
-        }
-};
-
-struct edge_comparator_func {
-    __host__ __device__
-        inline bool operator()(const thrust::tuple<int, int, float>& a, const thrust::tuple<int, int, float>& b)
-        {
-            return thrust::get<2>(a) > thrust::get<2>(b);
-        } 
-};
-
-std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_sorting(dCOO& A, const float max_multiplier)
-{
-    assert(A.is_directed());
-    thrust::device_vector<int> row_ids = A.get_row_ids();
-    thrust::device_vector<int> col_ids = A.get_col_ids();
-    thrust::device_vector<float> data = A.get_data();
-
-    const float min_att_to_contract = A.max() * max_multiplier;
-
-    auto first = thrust::make_zip_iterator(thrust::make_tuple(col_ids.begin(), row_ids.begin(), data.begin()));
-    auto last = thrust::make_zip_iterator(thrust::make_tuple(col_ids.end(), row_ids.end(), data.end()));
-    auto new_last = thrust::remove_if(first, last, negative_edge_indicator_func({min_att_to_contract}));
-    const size_t nr_remaining_edges = std::distance(first, new_last);
-    col_ids.resize(nr_remaining_edges);
-    row_ids.resize(nr_remaining_edges);
-    data.resize(nr_remaining_edges);
-    if (nr_remaining_edges == 0)
-        return {thrust::device_vector<int>(0), 0};
-
-    /*
-    if(max_contractions < nr_positive_edges)
-    {
-        auto first = thrust::make_zip_iterator(thrust::make_tuple(col_ids.begin(), row_ids.begin(), data.begin()));
-        auto last = thrust::make_zip_iterator(thrust::make_tuple(col_ids.end(), row_ids.end(), data.end()));
-        thrust::sort(first, last, edge_comparator_func()); // TODO: faster through sort by keys?
-
-        col_ids.resize(max_contractions);
-        row_ids.resize(max_contractions);
-        data.resize(max_contractions);
-    }
-    */
-
-    // add reverse edges
-    std::tie(row_ids, col_ids) = to_undirected(row_ids.begin(), row_ids.end(), col_ids.begin(), col_ids.end());
-
-    assert(col_ids.size() == row_ids.size());
-    coo_sorting(row_ids, col_ids);
-    thrust::device_vector<int> row_offsets = compute_offsets(row_ids, A.max_dim() - 1);
-
-    thrust::device_vector<int> cc_labels(A.max_dim());
-    computeCC_gpu(A.max_dim(), col_ids.size(), 
-            thrust::raw_pointer_cast(row_offsets.data()), thrust::raw_pointer_cast(col_ids.data()), 
-            thrust::raw_pointer_cast(cc_labels.data()), get_cuda_device());
-
-    thrust::device_vector<int> node_mapping = compress_label_sequence(cc_labels, cc_labels.size() - 1);
-    const int nr_ccs = *thrust::max_element(node_mapping.begin(), node_mapping.end()) + 1;
-
-    assert(nr_ccs < A.max_dim());
-
-    return {node_mapping, row_ids.size()};
-
-}
-
-std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_fully_att_nodes(dCOO& A, const float max_multiplier)
-{
-    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
-
-    const float min_att_to_contract = A.max() * max_multiplier;
-    thrust::device_vector<int> row_ids, col_ids;
-    std::tie(row_ids, col_ids) = edges_of_fully_attractive_nodes(A.export_undirected(), min_att_to_contract);
-    assert(col_ids.size() == row_ids.size());
-    if (row_ids.size() == 0)
-        return {thrust::device_vector<int>(0), 0};
-
-    thrust::device_vector<int> row_offsets = compute_offsets(row_ids, A.max_dim() - 1);
-
-    thrust::device_vector<int> cc_labels(A.max_dim());
-    computeCC_gpu(A.max_dim(), col_ids.size(), 
-            thrust::raw_pointer_cast(row_offsets.data()), thrust::raw_pointer_cast(col_ids.data()), 
-            thrust::raw_pointer_cast(cc_labels.data()), get_cuda_device());
-
-    thrust::device_vector<int> node_mapping = compress_label_sequence(cc_labels, cc_labels.size() - 1);
-    const int nr_ccs = *thrust::max_element(node_mapping.begin(), node_mapping.end()) + 1;
-
-    assert(nr_ccs < A.max_dim());
-
-    return {node_mapping, row_ids.size()};
 }
 
 std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_maximum_matching(dCOO& A, const float mean_multiplier_mm)
@@ -198,13 +55,10 @@ std::tuple<std::vector<int>, double, std::vector<std::vector<int>> > parallel_ga
     if (opts.only_compute_lb)
         return {std::vector<int>(), final_lb, timeline};
         
-    float max_multiplier_contraction = opts.max_multiplier_contraction;
-
     bool try_edges_to_contract_by_maximum_matching = true;
     if (opts.matching_thresh_crossover_ratio > 1.0)
         try_edges_to_contract_by_maximum_matching = false;
     
-
     for(size_t iter=0;; ++iter)
     {
         if (iter > 0)
@@ -219,26 +73,20 @@ std::tuple<std::vector<int>, double, std::vector<std::vector<int>> > parallel_ga
             if(nr_edges_to_contract < A.rows() * opts.matching_thresh_crossover_ratio)
             {
                 std::cout << "# edges to contract = " << nr_edges_to_contract << ", # vertices = " << A.rows() << "\n";
-                std::cout << "switching to sorting based contraction edge selection\n";
+                std::cout << "switching to MST based contraction edge selection\n";
                 try_edges_to_contract_by_maximum_matching = false;    
             }
         }
-        if(!try_edges_to_contract_by_maximum_matching)
+        else
         {
             edge_contractions_woc c_mapper(A);
             std::tie(cur_node_mapping, nr_edges_to_contract) = c_mapper.find_contraction_mapping();
         }
-            // std::tie(cur_node_mapping, nr_edges_to_contract) = contraction_mapping_by_sorting(A, max_multiplier_contraction);
 
         if(nr_edges_to_contract == 0)
         {
-            // std::tie(cur_node_mapping, nr_edges_to_contract) = contraction_mapping_by_fully_att_nodes(A, 0.0);
-            // std::cout<< "Found = " <<nr_edges_to_contract<<" edges to contract by fully attractive nodes\n";
-            // if(nr_edges_to_contract == 0)
-            // {
             std::cout << "# iterations = " << iter << "\n";
             break;
-            // }
         }
 
         dCOO new_A = A.contract_cuda(cur_node_mapping);
@@ -250,30 +98,7 @@ std::tuple<std::vector<int>, double, std::vector<std::vector<int>> > parallel_ga
         const float energy_reduction = thrust::reduce(diagonal.begin(), diagonal.end());
         std::cout << "energy reduction " << energy_reduction << "\n";
         if(has_bad_contractions(new_A))
-        {
-            std::cout <<" Found bad contractions \n";
-            assert(false);
-            // int nr_ccs = *thrust::max_element(cur_node_mapping.begin(), cur_node_mapping.end()) + 1;
-            // cur_node_mapping = discard_bad_contractions(new_A, cur_node_mapping);
-            // int good_nr_ccs = *thrust::max_element(cur_node_mapping.begin(), cur_node_mapping.end()) + 1;
-            // assert(good_nr_ccs > nr_ccs);
-            // std::cout << "Reverted from " << nr_ccs << " connected components to " << good_nr_ccs << "\n";
-            
-            // new_A = A.contract_cuda(cur_node_mapping);
-            // if(!try_edges_to_contract_by_maximum_matching)
-            // {
-            //     max_multiplier_contraction *= 2.0;
-            //     // max_multiplier_contraction = std::min(max_multiplier_contraction, 1.0f);
-            // }
-            // assert(!has_bad_contractions(new_A));
-        }
-        else
-        {
-            if(!try_edges_to_contract_by_maximum_matching)
-            {
-                max_multiplier_contraction *= 0.5;
-            }
-        }
+            throw std::runtime_error(" Found bad contractions \n");
 
         thrust::swap(A,new_A);
         A.remove_diagonal();

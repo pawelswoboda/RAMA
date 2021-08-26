@@ -17,9 +17,6 @@ target_link_libraries(dual_solver dCOO conflicted_cycles_cuda multicut_message_p
 add_library(maximum_matching_vertex_based maximum_matching_vertex_based.cu)
 target_link_libraries(maximum_matching_vertex_based dCOO)
 
-add_library(fully_attractive_nodes fully_attractive_nodes.cu)
-target_link_libraries(fully_attractive_nodes dCOO)
-
 add_library(edge_contractions_woc_thrust edge_contractions_woc_thrust.cu)
 target_link_libraries(edge_contractions_woc_thrust dCOO ECL-CC_11 gpuMST_boruvka)
 
@@ -27,7 +24,7 @@ add_library(edge_contractions_woc edge_contractions_woc.cu)
 target_link_libraries(edge_contractions_woc edge_contractions_woc_thrust dCOO ECL-CC_11 gpuMST_boruvka)
 
 add_library(parallel_gaec_cuda parallel_gaec_cuda.cu)
-target_link_libraries(parallel_gaec_cuda dCOO dual_solver maximum_matching_vertex_based fully_attractive_nodes edge_contractions_woc)
+target_link_libraries(parallel_gaec_cuda dCOO dual_solver maximum_matching_vertex_based edge_contractions_woc)
 
 add_executable(multicut_parallel_gaec_eigen_text_input multicut_parallel_gaec_eigen_text_input.cpp)
 target_link_libraries(multicut_parallel_gaec_eigen_text_input multicut_text_parser parallel_gaec_eigen)

@@ -131,6 +131,8 @@ int edge_contractions_woc_thrust::filter_by_cc()
     rep_row_ids.resize(num_rep_edges);
     rep_col_ids.resize(num_rep_edges);
 
+    // Re-initialize the frontiers. Another (probably faster) possibility is to only filter-out the found conflicted cycles and keep going, however
+    // then we need to keep track of all predecessors which requires more memory. 
     row_frontier = frontier(rep_row_ids);
     col_frontier = frontier(rep_col_ids);
 
@@ -397,10 +399,11 @@ bool edge_contractions_woc_thrust::filter_cycles()
     mst_valid_indices.resize(num_valid_mst_edges);
 
     // Since MST has changed, map old mst indices to new ones present in bottleneck_edge_index and remove invalid.
-    row_frontier.filter_by_mst_edges(mst_valid_indices);
-    col_frontier.filter_by_mst_edges(mst_valid_indices);
-    row_frontier.reassign_mst_indices(mst_valid_indices, mst_row_ids.size());
-    col_frontier.reassign_mst_indices(mst_valid_indices, mst_row_ids.size());
+    // Since we re-initialize the frontiers anyway therefore no need to filter out. 
+    // row_frontier.filter_by_mst_edges(mst_valid_indices);
+    // col_frontier.filter_by_mst_edges(mst_valid_indices);
+    // row_frontier.reassign_mst_indices(mst_valid_indices, mst_row_ids.size());
+    // col_frontier.reassign_mst_indices(mst_valid_indices, mst_row_ids.size());
 
     thrust::swap(mst_row_ids_valid, mst_row_ids);
     thrust::swap(mst_col_ids_valid, mst_col_ids);
