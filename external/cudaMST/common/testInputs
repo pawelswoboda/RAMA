@@ -1,0 +1,16 @@
+#!/usr/bin/python
+
+bnchmrk="MST"
+benchmark="Minimum Spanning Tree"
+checkProgram="../common/MSTCheck"
+dataDir = "../graphData/data"
+
+tests = [
+    [1, "randLocalGraph_WE_5_10000000", "", ""],
+    [1, "rMatGraph_WE_5_10000000", "", ""],
+    [1, "2Dgrid_WE_10000000", "", ""],
+    ]
+
+import runTests
+runTests.timeAllArgs(bnchmrk, benchmark, checkProgram, dataDir, tests)
+
