@@ -12,4 +12,4 @@
 	url = https://github.com/CLIUtils/CLI11.git
 [submodule "external/cudaMST"]
 	path = external/cudaMST
-	url = https://github.com/jiachengpan/cudaMST.git
+	url = https://github.com/aabbas90/cudaMST.git
