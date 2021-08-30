@@ -100,6 +100,8 @@ float determine_matching_threshold(const dCOO& A, const float mean_multiplier_mm
     auto last = thrust::make_zip_iterator(thrust::make_tuple(thrust::constant_iterator<int>(1) + data.size(), data.end()));
     // compute average of positive edge costs:
     auto red = thrust::transform_reduce(first, last, pos_part(), thrust::make_tuple(0, 0.0f), tuple_sum());
+    if (thrust::get<0>(red) == 0)
+        return -1.0;
     return mean_multiplier_mm * thrust::get<1>(red) / thrust::get<0>(red);
 }
 

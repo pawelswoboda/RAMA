@@ -98,7 +98,7 @@ std::tuple<std::vector<int>, double, std::vector<std::vector<int>> > rama_cuda(d
         const float energy_reduction = thrust::reduce(diagonal.begin(), diagonal.end());
         std::cout << "energy reduction " << energy_reduction << "\n";
         if(has_bad_contractions(new_A))
-        std::cout<< " Found bad contractions! \n";
+            throw std::runtime_error("Found bad contractions");
 
         thrust::swap(A,new_A);
         A.remove_diagonal();
