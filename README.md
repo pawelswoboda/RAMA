@@ -34,9 +34,9 @@ i_2, j_2, cost_2
 ...
 i_n, j_n, cost_n
 ```
-which corresponds to a graph with `N` edges. Where `i` and `j` should be vertex indices and `cost` is a floating point number. Positive costs implies that the nodes are similar would prefer to be in same component and viceversa. Afterwards just run:
+which corresponds to a graph with `N` edges. Where `i` and `j` should be vertex indices and `cost` is a floating point number. Positive costs implies that the nodes are similar and thus would prefer to be in same component and viceversa. Afterwards run:
 ```bash
-./rama_text_input <PATH_TO_MULTICUT_INSTANCE>
+./rama_text_input -f <PATH_TO_MULTICUT_INSTANCE>
 ```
 
 For more details and downloading multicut instances see [LPMP](https://github.com/LPMP/LPMP/blob/master/doc/Multicut.md).
@@ -46,3 +46,23 @@ An example to compute multicut on a triangle graph:
 import rama_py
 rama_py.rama_cuda([0, 1, 2], [1, 2, 0], [1.1, -2, 3], rama_py.multicut_solver_options()) 
 ```
+
+### Parameters:
+The default set of parameters are defined [here](https://github.com/pawelswoboda/RAMA/blob/master/include/multicut_solver_options.h) which correspond to algorithm `PD` from the paper. This algorithm offers best compute time versus solution quality trade-off.  Parameters for other variants are:
+
+ - **Fast purely primal algorithm (P)**:
+ This algorithm can be slightly worse than sequential CPU heuristics but is 30 to 50 times faster. 
+	```bash
+	./rama_text_input -f <PATH_TO_MULTICUT_INSTANCE> 0 0 0 0
+	```
+- **Best primal algorithm (PD+)** :
+This algorithm can even be better than CPU solvers in terms of solution quality as it uses dual information. Still, it is 5 to 10 faster than best CPU solver.
+	```bash
+	./rama_text_input -f <PATH_TO_MULTICUT_INSTANCE> 5 10 5 10
+	```
+- **Dual algorithm (D)**:
+Use this algorithm for only computing the lower bound. Our lower bounds are slightly better than [ICP](http://proceedings.mlr.press/v80/lange18a.html) and are computed up to 100 times faster.
+	```bash
+	./rama_text_input -f <PATH_TO_MULTICUT_INSTANCE> 5 10 0 0 5
+	```
+Run  `./rama_text_input --help` for details about the parameters. 
