@@ -17,6 +17,39 @@ struct multicut_solver_options {
     bool dump_timeline = false;
 
     multicut_solver_options() {}
+    multicut_solver_options(const std::string& solver_type) {
+        if(solver_type == "PD")
+        {
+            std::cout<<"Running solver type PD which offers best compute time versus quality tradeoff."<<std::endl;
+        }
+        else if(solver_type == "P")
+        {
+            std::cout<<"Running purely primal solver (better runtime, worse quality)"<<std::endl;
+            max_cycle_length_lb = 0;
+            num_dual_itr_lb = 0;
+            max_cycle_length_primal = 0;
+            num_dual_itr_primal = 0;
+        }
+        else if(solver_type == "PD+")
+        {
+            std::cout<<"Running PD+ solver (worse runtime, better quality)"<<std::endl;
+            max_cycle_length_lb = 5;
+            num_dual_itr_lb = 10;
+            max_cycle_length_primal = 5;
+            num_dual_itr_primal = 10;
+        }
+        else if(solver_type == "D")
+        {
+            std::cout<<"Running dual solver to compute only the lower bound."<<std::endl;
+            max_cycle_length_lb = 5;
+            num_dual_itr_lb = 10;
+            num_outer_itr_dual = 5;
+            only_compute_lb = true;
+        }
+        else
+            std::runtime_error("invalid solver_type specified.");
+    }
+
     multicut_solver_options(
         const int _max_cycle_length_lb, 
         const int _num_dual_itr_lb, 

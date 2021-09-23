@@ -9,9 +9,13 @@
 namespace py=pybind11;
 
 PYBIND11_MODULE(rama_py, m) {
-    m.doc() = "Bindings for RAMA: Rapid algorithm for multicut.";
+    m.doc() = "Bindings for RAMA: Rapid algorithm for multicut. "
+                "For running purely primal algorithm initialize multicut_solver_options with \"P\". "
+                "For algorithm with best quality call with \"PD+\" where \"PD\" is default algorithm. "
+                "For only computing the lower bound call with \"D\". ";
     py::class_<multicut_solver_options>(m, "multicut_solver_options")
         .def(py::init<>())
+        .def(py::init<const std::string&>())
         .def(py::init<const int&, const int&, const int&, const int&, const int&, 
                 const float&, const float&, const float&, 
                 const bool&, const int&, const bool&>());
