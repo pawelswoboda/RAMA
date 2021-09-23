@@ -46,7 +46,7 @@ An example to compute multicut on a triangle graph:
 import rama_py
 rama_py.rama_cuda([0, 1, 2], [1, 2, 0], [1.1, -2, 3], rama_py.multicut_solver_options("PD")) 
 ```
-For running purely primal algorithm (best runtime) initialize multicut_solver_options with "P" and for best quality call with "PD+". For only computing the lower bound call with "D".
+For running purely primal algorithm (best runtime) initialize multicut_solver_options with `"P"` and for best quality call with `"PD+"`. For only computing the lower bound call with `"D"`.
  
 ### Parameters:
 The default set of parameters are defined [here](https://github.com/pawelswoboda/RAMA/blob/master/include/multicut_solver_options.h) which correspond to algorithm `PD` from the paper. This algorithm offers best compute time versus solution quality trade-off.  Parameters for other variants are:
