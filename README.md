@@ -46,7 +46,11 @@ An example to compute multicut on a triangle graph:
 import rama_py
 rama_py.rama_cuda([0, 1, 2], [1, 2, 0], [1.1, -2, 3], rama_py.multicut_solver_options("PD")) 
 ```
-For running purely primal algorithm (best runtime) initialize multicut_solver_options with `"P"` and for best quality call with `"PD+"`. For only computing the lower bound call with `"D"`.
+The solver supports different modes which can be chosen by initializing multicut_solver_options by following:
+- `"P"`: For running purely primal algorithm (best runtime).
+- `"PD"`: This one offers good runtime vs quality tradeoff and is the default solver.
+- `"PD+"`: For better quality primal algorithm (worse runtime). 
+- `"D"`: For only computing the lower bound.
  
 ### Parameters:
 The default set of parameters are defined [here](https://github.com/pawelswoboda/RAMA/blob/master/include/multicut_solver_options.h) which correspond to algorithm `PD` from the paper. This algorithm offers best compute time versus solution quality trade-off.  Parameters for other variants are:
@@ -56,7 +60,7 @@ The default set of parameters are defined [here](https://github.com/pawelswoboda
 	```bash
 	./rama_text_input -f <PATH_TO_MULTICUT_INSTANCE> 0 0 0 0
 	```
-- **Best primal algorithm (PD+)** :
+- **Better quality primal algorithm (PD+)** :
 This algorithm can even be better than CPU solvers in terms of solution quality as it uses dual information. Still, it is 5 to 10 faster than best CPU solver.
 	```bash
 	./rama_text_input -f <PATH_TO_MULTICUT_INSTANCE> 5 10 5 10
