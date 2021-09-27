@@ -77,6 +77,7 @@ class edge_contractions_woc_thrust
     private:
         void expand_frontier(frontier& f);
         bool filter_cycles();
+        bool filter_by_thresholding(const float& mean_multiplier);
         int filter_by_cc();
 
         const int num_nodes;

@@ -10,6 +10,9 @@ target_link_libraries(rama_cuda_test rama_cuda)
 add_executable(maximum_matching_vertex_based_test maximum_matching_vertex_based_test.cu)
 target_link_libraries(maximum_matching_vertex_based_test dCOO maximum_matching_vertex_based)
 
+#add_executable(maximum_matching_thrust_test maximum_matching_thrust_test.cu)
+#target_link_libraries(maximum_matching_thrust_test dCOO maximum_matching_thrust)
+
 add_executable(edge_contractions_woc_test edge_contractions_woc_test.cu)
 target_link_libraries(edge_contractions_woc_test dCOO edge_contractions_woc)
 

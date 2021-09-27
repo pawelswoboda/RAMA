@@ -10,7 +10,7 @@ struct multicut_solver_options {
     int num_dual_itr_primal = 5;
     int num_outer_itr_dual = 1;
     float mean_multiplier_mm = 0.05;
-    float matching_thresh_crossover_ratio = 0.1; 
+    float matching_thresh_crossover_ratio = 0.05;
     float tri_memory_factor = 2.0;
     bool only_compute_lb = false;
     int max_time_sec = -1;

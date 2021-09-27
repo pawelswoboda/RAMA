@@ -517,6 +517,37 @@ edge_contractions_woc_thrust::edge_contractions_woc_thrust(const dCOO& A) : num_
     coo_sorting(mst_row_ids, mst_col_ids, mst_data);
 }
 
+struct is_below_thresh_func
+{
+    const float min_thresh;
+    __host__ __device__ bool operator()(const thrust::tuple<int,int,float>& t)
+    {
+        return thrust::get<2>(t) < min_thresh;
+    }
+};
+
+bool edge_contractions_woc_thrust::filter_by_thresholding(const float& mean_multiplier = 0.9f)
+{
+    auto first = thrust::make_zip_iterator(thrust::make_tuple(thrust::constant_iterator<int>(1), mst_data.begin()));
+    auto last = thrust::make_zip_iterator(thrust::make_tuple(thrust::constant_iterator<int>(1) + mst_data.size(), mst_data.end()));
+    // compute average of positive edge costs:
+    auto red = thrust::transform_reduce(first, last, pos_part(), thrust::make_tuple(0, 0.0f), tuple_sum());
+    const float min_thresh = mean_multiplier * thrust::get<1>(red) / thrust::get<0>(red);
+
+    // Remove all mst edges below min_thresh:
+    auto first_mst = thrust::make_zip_iterator(thrust::make_tuple(mst_row_ids.begin(), mst_col_ids.begin(), mst_data.begin()));
+    auto last_mst = thrust::make_zip_iterator(thrust::make_tuple(mst_row_ids.end(), mst_col_ids.end(), mst_data.end()));
+
+    auto last_mst_valid = thrust::remove_if(first_mst, last_mst, is_below_thresh_func({min_thresh}));
+    const int new_size = std::distance(first_mst, last_mst_valid);
+    if(new_size == mst_row_ids.size())
+        return false;
+    mst_row_ids.resize(new_size);
+    mst_col_ids.resize(new_size);
+    mst_data.resize(new_size);
+    return true;
+}
+
 std::tuple<thrust::device_vector<int>, int> edge_contractions_woc_thrust::find_contraction_mapping()
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
@@ -534,6 +565,13 @@ std::tuple<thrust::device_vector<int>, int> edge_contractions_woc_thrust::find_c
     int itr = 0;
     while(num_rep_valid > 0 && mst_row_ids.size() > 0)
     {
+        if (itr % 5 == 0)
+            if(filter_by_thresholding())
+                num_rep_valid = filter_by_cc();
+
+        if (num_rep_valid == 0 || mst_row_ids.size() == 0)
+            break;
+    
         // filter odd length conflicted cycles:
         std::cout<<"Conflicted cycle removal MST, Iteration: "<<itr<<", # MST edges "<<mst_row_ids.size()<<", # Repulsive edges  "<<num_rep_valid<<"\n";
         expand_frontier(row_frontier);

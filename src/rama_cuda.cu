@@ -32,6 +32,7 @@ std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_maximum_match
     thrust::device_vector<int> node_mapping;
     int nr_matched_edges;
     std::tie(node_mapping, nr_matched_edges) = filter_edges_by_matching_vertex_based(A.export_undirected(), mean_multiplier_mm);
+    // std::tie(node_mapping, nr_matched_edges) = filter_edges_by_matching_thrust(A.export_undirected(), mean_multiplier_mm);
     return {compress_label_sequence(node_mapping, node_mapping.size() - 1), nr_matched_edges};
 }
 

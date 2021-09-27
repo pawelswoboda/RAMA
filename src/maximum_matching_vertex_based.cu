@@ -73,26 +73,6 @@ __global__ void match_neighbours(const int num_nodes,
     }
 }
 
-struct pos_part
-{
-    __host__ __device__
-        thrust::tuple<int, float> operator()(const thrust::tuple<int, float>& t)
-        {
-            if(thrust::get<1>(t) >= 0.0)
-                return t;
-            return thrust::make_tuple(0, 0.0f);
-        }
-};
-
-struct tuple_sum
-{
-    __host__ __device__
-        thrust::tuple<int, float> operator()(const thrust::tuple<int, float>& t1, const thrust::tuple<int, float>& t2)
-        {
-            return {thrust::get<0>(t1) + thrust::get<0>(t2), thrust::get<1>(t1) + thrust::get<1>(t2)};
-        }
-};
-
 float determine_matching_threshold(const dCOO& A, const float mean_multiplier_mm)
 {
     thrust::device_vector<float> data = A.get_data();

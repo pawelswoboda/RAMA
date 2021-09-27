@@ -416,6 +416,28 @@ inline void print_vector(const thrust::device_vector<T>& v, const char* name, co
     }
     std::cout<<"\n";
 }
+
+struct pos_part
+{
+    __host__ __device__
+        thrust::tuple<int, float> operator()(const thrust::tuple<int, float>& t)
+        {
+            if(thrust::get<1>(t) >= 0.0)
+                return t;
+            return thrust::make_tuple(0, 0.0f);
+        }
+};
+
+struct tuple_sum
+{
+    template<typename T1, typename T2>
+    __host__ __device__
+        thrust::tuple<T1, T2> operator()(const thrust::tuple<T1, T2>& t1, const thrust::tuple<T1, T2>& t2)
+        {
+            return {thrust::get<0>(t1) + thrust::get<0>(t2), thrust::get<1>(t1) + thrust::get<1>(t2)};
+        }
+};
+
 /*
 __host__ __device__
 int min(const int a, const int b)
