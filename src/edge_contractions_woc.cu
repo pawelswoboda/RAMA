@@ -409,16 +409,17 @@ std::tuple<thrust::device_vector<int>, int> edge_contractions_woc::find_contract
     std::cout<<"Conflicted 3-cycle removal, # MST edges "<<mst_row_ids.size()<<", # Repulsive edges  "<<rep_row_ids.size()<<"\n";
 
     any_removed = check_quadrangles();
-    if (any_removed)
-        filter_by_cc();
+    // if (any_removed)
+    //     filter_by_cc();
 
     std::cout<<"Conflicted 4-cycle removal, # MST edges "<<mst_row_ids.size()<<", # Repulsive edges  "<<rep_row_ids.size()<<"\n";
 
-    any_removed = check_pentagons();
+    // 5-cycle finding by custom kernel can be slow for high average degree graph. So offloading this task to thrust impl.
+    // any_removed = check_pentagons(); 
     // if (any_removed) // would be done by next thrust based mapper.
     //     filter_by_cc();
 
-    std::cout<<"Conflicted 5-cycle removal, # MST edges "<<mst_row_ids.size()<<", # Repulsive edges  "<<rep_row_ids.size()<<"\n";
+    // std::cout<<"Conflicted 5-cycle removal, # MST edges "<<mst_row_ids.size()<<", # Repulsive edges  "<<rep_row_ids.size()<<"\n";
 
     edge_contractions_woc_thrust c_mapper_full(num_nodes, std::move(mst_row_ids), std::move(mst_col_ids), std::move(mst_data), 
                                                 std::move(rep_row_ids), std::move(rep_col_ids), std::move(cc_labels));
