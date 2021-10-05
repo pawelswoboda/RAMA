@@ -144,15 +144,6 @@ __global__ void find_pentagons_parallel(const long num_expansions, const int num
     }
 }
 
-struct is_positive_edge
-{
-    const float tol;
-    __host__ __device__ bool operator()(const thrust::tuple<int,int,float>& t)
-    {
-        return thrust::get<2>(t) > tol;
-    }
-};
-
 struct is_neg_edge
 {
     const float tol;

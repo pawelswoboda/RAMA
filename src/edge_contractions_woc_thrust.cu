@@ -3,15 +3,6 @@
 #include "ECLgraph.h"
 #include "rama_utils.h"
 
-struct is_positive_edge
-{
-    __host__ __device__
-        bool operator()(const thrust::tuple<int,int,float> t)
-        {
-            return thrust::get<2>(t) > 0;
-        }
-};
-
 struct edge_index_in_same_cc_func
 {
     const int* cc_labels;
@@ -497,7 +488,7 @@ edge_contractions_woc_thrust::edge_contractions_woc_thrust(const dCOO& A) : num_
     rep_col_ids = thrust::device_vector<int>(col_ids.size());
     auto first_rep = thrust::make_zip_iterator(thrust::make_tuple(rep_row_ids.begin(), rep_col_ids.begin(), thrust::make_discard_iterator()));
 
-    auto ends = thrust::partition_copy(first, last, first_pos, first_rep, is_positive_edge());
+    auto ends = thrust::partition_copy(first, last, first_pos, first_rep, is_positive_edge({0.0}));
 
     const int num_positive = std::distance(first_pos, ends.first);
     if (num_positive == 0)

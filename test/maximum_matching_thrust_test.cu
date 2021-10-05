@@ -21,7 +21,7 @@ int main(int argc, char** argv)
 
     thrust::device_vector<int> node_mapping;
     int nr_matched_edges;
-    std::tie(node_mapping, nr_matched_edges) = filter_edges_by_matching_thrust(A.export_undirected());
+    std::tie(node_mapping, nr_matched_edges) = filter_edges_by_matching_thrust(A);
 
     std::cout<<"node_mapping: \n";
     thrust::copy(node_mapping.begin(), node_mapping.end(), std::ostream_iterator<float>(std::cout, " "));

@@ -26,6 +26,19 @@ inline void checkCudaError(cudaError_t status, std::string errorMsg)
     }
 }
 
+// float atomicMax
+__device__ __forceinline__ float atomicMax(float *address, float val)
+{
+    int ret = __float_as_int(*address);
+    while(val > __int_as_float(ret))
+    {
+        int old = ret;
+        if((ret = atomicCAS((int *)address, old, __float_as_int(val))) == old)
+            break;
+    }
+    return __int_as_float(ret);
+}
+
 // Assumes a symmetric CSR matrix.
 // Initialize v1_mid_edge_index by row_offsets[v1] and v2_mid_edge_index by row_offsets[v2].
 __device__ inline int compute_lowest_common_neighbour(const int v1, const int v2, 
@@ -436,6 +449,15 @@ struct tuple_sum
         {
             return {thrust::get<0>(t1) + thrust::get<0>(t2), thrust::get<1>(t1) + thrust::get<1>(t2)};
         }
+};
+
+struct is_positive_edge
+{
+    const float tol;
+    __host__ __device__ bool operator()(const thrust::tuple<int,int,float>& t)
+    {
+        return thrust::get<2>(t) > tol;
+    }
 };
 
 /*

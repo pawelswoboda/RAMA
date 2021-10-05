@@ -41,15 +41,21 @@ double dual_solver(dCOO& A, const int max_cycle_length, const int num_iter, cons
 
     double prev_lb = 0;
     int num_triangles;
-    for (int outer_itr = 0; outer_itr < num_outer_itr; outer_itr++)
-    {
-        for (int c = 3; c <= max_cycle_length; ++c)
+    try {
+        for (int outer_itr = 0; outer_itr < num_outer_itr; outer_itr++)
         {
-            std::tie(A, final_lb, num_triangles) = dual_update_cycle_length(A, c, num_iter, tri_memory_factor, tol_ratio);
+            for (int c = 3; c <= max_cycle_length; ++c)
+            {
+                std::tie(A, final_lb, num_triangles) = dual_update_cycle_length(A, c, num_iter, tri_memory_factor, tol_ratio);
+            }
+            if (num_triangles == 0 || (outer_itr > 0 && (final_lb - prev_lb) < 1e-3))
+                break;
+            prev_lb = final_lb;
         }
-        if (num_triangles == 0 || (outer_itr > 0 && (final_lb - prev_lb) < 1e-3))
-            break;
-        prev_lb = final_lb;
+    }
+    catch(const std::bad_alloc& ex) { 
+        std::cerr<<"Dual solver out of memory, returning trivial lower bound\n";
+        final_lb = get_lb(A.get_data());
     }
     return final_lb;
 }

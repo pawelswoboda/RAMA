@@ -33,6 +33,7 @@ PYBIND11_MODULE(rama_py, m) {
             return std::string("<multicut_solver_options>:") +
                         "max_cycle_length_lb: " + std::to_string(a.max_cycle_length_lb) +
                         ", num_dual_itr_lb: " + std::to_string(a.num_dual_itr_lb) +
+                        ", num_dual_itr_primal" + std::to_string(a.num_dual_itr_primal) +
                         ", max_cycle_length_primal: " + std::to_string(a.max_cycle_length_primal) +
                         ", num_outer_itr_dual: " + std::to_string(a.num_outer_itr_dual) +
                         ", mean_multiplier_mm: " + std::to_string(a.mean_multiplier_mm) +

@@ -14,6 +14,9 @@ target_link_libraries(dual_solver dCOO conflicted_cycles_cuda multicut_message_p
 add_library(maximum_matching_vertex_based maximum_matching_vertex_based.cu)
 target_link_libraries(maximum_matching_vertex_based dCOO)
 
+#add_library(maximum_matching_thrust maximum_matching_thrust.cu)
+#target_link_libraries(maximum_matching_thrust dCOO)
+
 add_library(edge_contractions_woc_thrust edge_contractions_woc_thrust.cu)
 target_link_libraries(edge_contractions_woc_thrust dCOO ECL-CC_11 gpuMST_boruvka)
 
