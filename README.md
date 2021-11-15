@@ -1,5 +1,5 @@
 # RAMA: Rapid algorithm for multicut problem
-Solves multicut (correlation clustering) problems orders of magnitude faster than CPU based solvers without compromising solution quality on NVIDIA GPU. It also gives lower bound guarantees. Paper available [here](https://arxiv.org/abs/2109.01838).
+Solves multicut (correlation clustering) problems orders of magnitude faster than CPU based solvers without compromising solution quality on NVIDIA GPU. It also gives lower bound guarantees.
 
 ![animation](./misc/contraction_animation.gif)
 
@@ -39,7 +39,6 @@ which corresponds to a graph with `N` edges. Where `i` and `j` should be vertex 
 ./rama_text_input -f <PATH_TO_MULTICUT_INSTANCE>
 ```
 
-For more details and downloading multicut instances see [LPMP](https://github.com/LPMP/LPMP/blob/master/doc/Multicut.md).
 ### Python solver:
 An example to compute multicut on a triangle graph:
 ```python
@@ -53,7 +52,7 @@ The solver supports different modes which can be chosen by initializing multicut
 - `"D"`: For only computing the lower bound.
  
 ### Parameters:
-The default set of parameters are defined [here](https://github.com/pawelswoboda/RAMA/blob/master/include/multicut_solver_options.h) which correspond to algorithm `PD` from the paper. This algorithm offers best compute time versus solution quality trade-off.  Parameters for other variants are:
+The default set of parameters are defined [here](include/multicut_solver_options.h) which correspond to algorithm `PD` from the paper. This algorithm offers best compute time versus solution quality trade-off.  Parameters for other variants are:
 
  - **Fast purely primal algorithm (P)**:
  This algorithm can be slightly worse than sequential CPU heuristics but is 30 to 50 times faster. 
