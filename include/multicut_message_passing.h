@@ -8,7 +8,8 @@ class multicut_message_passing {
                 const dCOO& A,
                 thrust::device_vector<int>&& _t1,
                 thrust::device_vector<int>&& _t2,
-                thrust::device_vector<int>&& _t3
+                thrust::device_vector<int>&& _t3,
+                const bool verbose = true
                 );
 
         void send_messages_to_triplets();

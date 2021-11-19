@@ -6,7 +6,7 @@
 class edge_contractions_woc
 {
     public:
-        edge_contractions_woc(const dCOO& A);
+        edge_contractions_woc(const dCOO& A, const bool _verbose = true);
         std::tuple<thrust::device_vector<int>, int> find_contraction_mapping();
 
     private:
@@ -25,4 +25,5 @@ class edge_contractions_woc
         thrust::device_vector<int> rep_row_ids, rep_col_ids;
 
         thrust::device_vector<int> cc_labels;
+        bool verbose;
 };

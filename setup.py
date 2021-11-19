@@ -98,7 +98,15 @@ class CMakeBuild(build_ext):
         else:
             cmake_args += ['-DCMAKE_BUILD_TYPE=' + cfg]
             build_args += ['--', '-j8']
+        build_with_torch = os.environ.get("WITH_TORCH", "OFF")
+        print(f"build_with_torch:{build_with_torch}\n\n")
 
+        if build_with_torch.upper() == 'ON':
+            print("Building with torch")
+            cmake_args += ['-DWITH_TORCH=ON']
+            import torch
+            cmake_args += ['-DCMAKE_PREFIX_PATH='+torch.utils.cmake_prefix_path]
+            print(cmake_args)
         self._prepare_environment()
         env = os.environ.copy()
         env['CXXFLAGS'] = '{} -DVERSION_INFO=\\"{}\\"'.format(env.get('CXXFLAGS', ''),
@@ -111,7 +119,7 @@ class CMakeBuild(build_ext):
 
 setup(
     name='RAMA',
-    version='0.0.4',
+    version='0.0.5',
     description='Bindings for RAMA: Rapid algorithm for multicut.',
     packages=find_packages('.'),
     ext_modules=[CMakeExtension(name='rama_py')],

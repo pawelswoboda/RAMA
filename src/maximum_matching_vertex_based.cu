@@ -85,7 +85,7 @@ float determine_matching_threshold(const dCOO& A, const float mean_multiplier_mm
     return mean_multiplier_mm * thrust::get<1>(red) / thrust::get<0>(red);
 }
 
-std::tuple<thrust::device_vector<int>, int> filter_edges_by_matching_vertex_based(const dCOO& A, const float mean_multiplier_mm)
+std::tuple<thrust::device_vector<int>, int> filter_edges_by_matching_vertex_based(const dCOO& A, const float mean_multiplier_mm, const bool verbose)
 {
     assert(!A.is_directed());
     thrust::device_vector<int> v_best_neighbours(A.rows(), -1);
@@ -120,14 +120,18 @@ std::tuple<thrust::device_vector<int>, int> filter_edges_by_matching_vertex_base
 
         int current_num_edges = thrust::reduce(v_matched.begin(), v_matched.end(), 0);
         float rel_increase = (current_num_edges - prev_num_edges) / (prev_num_edges + 1.0f);
-        std::cout << "matched sum: " << current_num_edges << ", rel_increase: " << rel_increase <<"\n";
+        if (verbose)
+            std::cout << "matched sum: " << current_num_edges << ", rel_increase: " << rel_increase <<"\n";
         prev_num_edges = current_num_edges;
         if (!still_running[0] || rel_increase < 0.1)
             break;
     }
 
-    std::cout << "# vertices = " << A.rows() << "\n";
-    std::cout << "# matched edges = " << prev_num_edges / 2 << " / "<< A.nnz() / 2 << "\n";
-    
+    if (verbose) 
+    {
+        std::cout << "# vertices = " << A.rows() << "\n";
+        std::cout << "# matched edges = " << prev_num_edges / 2 << " / "<< A.nnz() / 2 << "\n";
+    }
+
     return {node_mapping, prev_num_edges}; 
 }

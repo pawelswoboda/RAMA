@@ -61,16 +61,17 @@ class frontier
 class edge_contractions_woc_thrust
 {
     public:
-        edge_contractions_woc_thrust(const dCOO& A);
+        edge_contractions_woc_thrust(const dCOO& A, const bool _verbose = true);
         edge_contractions_woc_thrust(const int _num_nodes,
                             const thrust::device_vector<int>&& _mst_row_ids, 
                             const thrust::device_vector<int>&& _mst_col_ids, 
                             const thrust::device_vector<float>&& _mst_data, 
                             const thrust::device_vector<int>&& _rep_row_ids,
                             const thrust::device_vector<int>&& _rep_col_ids,
-                            const thrust::device_vector<int>&& _cc_labels) : 
+                            const thrust::device_vector<int>&& _cc_labels, 
+                            const bool _verbose = true) : 
         num_nodes(_num_nodes), mst_row_ids(std::move(_mst_row_ids)), mst_col_ids(std::move(_mst_col_ids)), mst_data(std::move(_mst_data)),
-        rep_row_ids(std::move(_rep_row_ids)), rep_col_ids(std::move(_rep_col_ids)), cc_labels(std::move(_cc_labels)) { }
+        rep_row_ids(std::move(_rep_row_ids)), rep_col_ids(std::move(_rep_col_ids)), cc_labels(std::move(_cc_labels)), verbose(_verbose) { }
 
         std::tuple<thrust::device_vector<int>, int> find_contraction_mapping();
 
@@ -88,4 +89,5 @@ class edge_contractions_woc_thrust
         thrust::device_vector<int> rep_row_ids, rep_col_ids;
 
         thrust::device_vector<int> cc_labels;
+        bool verbose;
 };

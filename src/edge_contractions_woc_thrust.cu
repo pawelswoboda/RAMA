@@ -466,7 +466,7 @@ void edge_contractions_woc_thrust::expand_frontier(frontier& f)
                 std::move(expanded_bottleneck_edge_value));
 }
 
-edge_contractions_woc_thrust::edge_contractions_woc_thrust(const dCOO& A) : num_nodes(A.max_dim())
+edge_contractions_woc_thrust::edge_contractions_woc_thrust(const dCOO& A, const bool _verbose) : num_nodes(A.max_dim()), verbose(_verbose)
 {
     cc_labels = thrust::device_vector<int>(num_nodes);
 
@@ -546,7 +546,8 @@ std::tuple<thrust::device_vector<int>, int> edge_contractions_woc_thrust::find_c
     if (mst_row_ids.size() == 0)
         return {thrust::device_vector<int>(0), 0};
 
-    std::cout<<"# MST edges "<<mst_row_ids.size()<<", # Repulsive edges "<<rep_row_ids.size()<<"\n";
+    if (verbose)
+        std::cout<<"# MST edges "<<mst_row_ids.size()<<", # Repulsive edges "<<rep_row_ids.size()<<"\n";
 
     row_frontier = frontier(rep_row_ids);
     col_frontier = frontier(rep_col_ids);
@@ -564,7 +565,8 @@ std::tuple<thrust::device_vector<int>, int> edge_contractions_woc_thrust::find_c
             break;
     
         // filter odd length conflicted cycles:
-        std::cout<<"Conflicted cycle removal MST, Iteration: "<<itr<<", # MST edges "<<mst_row_ids.size()<<", # Repulsive edges  "<<num_rep_valid<<"\n";
+        if (verbose)
+            std::cout<<"Conflicted cycle removal MST, Iteration: "<<itr<<", # MST edges "<<mst_row_ids.size()<<", # Repulsive edges  "<<num_rep_valid<<"\n";
         expand_frontier(row_frontier);
         bool any_removed = filter_cycles();
         if (any_removed)
@@ -574,7 +576,8 @@ std::tuple<thrust::device_vector<int>, int> edge_contractions_woc_thrust::find_c
             break;
 
         // filter even length conflicted cycles:
-        std::cout<<"Conflicted cycle removal MST, Iteration: "<<itr<<", # MST edges "<<mst_row_ids.size()<<", # Repulsive edges  "<<num_rep_valid<<"\n";
+        if (verbose)
+            std::cout<<"Conflicted cycle removal MST, Iteration: "<<itr<<", # MST edges "<<mst_row_ids.size()<<", # Repulsive edges  "<<num_rep_valid<<"\n";
         expand_frontier(col_frontier);
         any_removed = filter_cycles();
         if (any_removed)
@@ -585,7 +588,8 @@ std::tuple<thrust::device_vector<int>, int> edge_contractions_woc_thrust::find_c
 
     thrust::device_vector<int> node_mapping = compress_label_sequence(cc_labels, cc_labels.size() - 1);
     int nr_ccs = *thrust::max_element(node_mapping.begin(), node_mapping.end()) + 1;
-    std::cout<<"Found conflict-free contraction mapping with: "<<nr_ccs<<" connected components\n";
+    if (verbose)
+        std::cout<<"Found conflict-free contraction mapping with: "<<nr_ccs<<" connected components\n";
 
     assert(nr_ccs < num_nodes);
 

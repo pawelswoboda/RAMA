@@ -282,14 +282,15 @@ struct char2int
     }
 };
 
-std::tuple<thrust::device_vector<int>, int> filter_edges_by_matching_thrust(const dCOO& A, const float mean_multiplier_mm)
+std::tuple<thrust::device_vector<int>, int> filter_edges_by_matching_thrust(const dCOO& A, const float mean_multiplier_mm, const bool verbose)
 {
     assert(A.is_directed());
     thrust::device_vector<int> node_mapping(A.max_dim());
     thrust::sequence(node_mapping.begin(), node_mapping.end(), 0);
 
     const float min_edge_weight_to_match = determine_matching_threshold(A, mean_multiplier_mm); //TODO: Remove edges below this thresh?
-    std::cout<<"min_edge_weight_to_match: "<<min_edge_weight_to_match<<"\n";
+    if (verbose)
+        std::cout<<"min_edge_weight_to_match: "<<min_edge_weight_to_match<<"\n";
     if (min_edge_weight_to_match < 0)
         return {node_mapping, 0}; 
 
@@ -314,15 +315,19 @@ std::tuple<thrust::device_vector<int>, int> filter_edges_by_matching_thrust(cons
 
         int current_num_edges = thrust::transform_reduce(v_matched.begin(), v_matched.end(), char2int<unsigned char,int>(), 0, thrust::plus<int>());
         float rel_increase = (current_num_edges - prev_num_edges) / (prev_num_edges + 1.0f);
-        std::cout << "matched sum: " << current_num_edges << ", rel_increase: " << rel_increase <<"\n";
+        if (verbose)
+            std::cout << "matched sum: " << current_num_edges << ", rel_increase: " << rel_increase <<"\n";
         prev_num_edges = current_num_edges;
 
         if (!still_running[0] || rel_increase < 0.1)
             break;
     }
 
-    std::cout << "# vertices = " << A.max_dim() << "\n";
-    std::cout << "# matched edges = " << prev_num_edges << " / "<< A.nnz() << "\n";
+    if (verbose)
+    {
+        std::cout << "# vertices = " << A.max_dim() << "\n";
+        std::cout << "# matched edges = " << prev_num_edges << " / "<< A.nnz() << "\n";
+    }
     
     return {node_mapping, prev_num_edges}; 
 }

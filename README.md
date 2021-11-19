@@ -51,6 +51,14 @@ The solver supports different modes which can be chosen by initializing multicut
 - `"PD+"`: For better quality primal algorithm (worse runtime). 
 - `"D"`: For only computing the lower bound.
  
+#### PyTorch support:
+The above-mentioned Python solver takes input in CPU memory and then copies to GPU memory. In cases where this takes too much time we offer additional (optional) functionality in Python bindings which allow to directly use the
+GPU tensors and return the result in GPU memory. To use this functionality ensure that PyTorch is built with the same CUDA version as the one used in this code and the ABI's match (see https://discuss.pytorch.org/t/undefined-symbol-when-import-lltm-cpp-extension/32627/7 for more info). Support for PyTorch can be enabled by:
+```
+WITH_TORCH=ON pip install setup.py
+```
+After this you should be able to run `test/test_pytorch.py` without any errors. To suppress solver command line output set `opts.verbose=False`.
+
 ### Parameters:
 The default set of parameters are defined [here](include/multicut_solver_options.h) which correspond to algorithm `PD` from the paper. This algorithm offers best compute time versus solution quality trade-off.  Parameters for other variants are:
 
