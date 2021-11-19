@@ -59,13 +59,15 @@ multicut_message_passing::multicut_message_passing(
         const dCOO& A,
         thrust::device_vector<int>&& _t1,
         thrust::device_vector<int>&& _t2,
-        thrust::device_vector<int>&& _t3)
+        thrust::device_vector<int>&& _t3,
+        const bool verbose)
     : t1(std::move(_t1)),
     t2(std::move(_t2)),
     t3(std::move(_t3))
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
-    std::cout << "triangle size = " << t1.size() << ", orig edges size = " << A.nnz() << "\n";
+    if(verbose)
+        std::cout << "triangle size = " << t1.size() << ", orig edges size = " << A.nnz() << "\n";
     assert(t1.size() == t2.size() && t1.size() == t3.size()); 
     normalize_triangles(t1, t2, t3);
     

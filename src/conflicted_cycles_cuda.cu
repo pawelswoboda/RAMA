@@ -216,11 +216,13 @@ std::tuple<dCOO, thrust::device_vector<int>, thrust::device_vector<int>>
 }
 
 // A should be directed thus containing same number of elements as in original problem.
-std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<int>> conflicted_cycles_cuda(const dCOO& A, const int max_cycle_length, const float tri_memory_factor, const float tol_ratio)
+std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<int>> conflicted_cycles_cuda(const dCOO& A, const int max_cycle_length, const float tri_memory_factor, const float tol_ratio, const bool verbose)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
     if (max_cycle_length > 5)
-        throw std::runtime_error("max_cycle_length should be <= 5.");
+    {
+        throw std::runtime_error("max_cycle_length should be <= 5. Received: " + std::to_string(max_cycle_length));
+    }
     if (max_cycle_length < 3)
         return {thrust::device_vector<int>(0), thrust::device_vector<int>(0), thrust::device_vector<int>(0)};
 
@@ -257,7 +259,8 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
         thrust::raw_pointer_cast(empty_tri_index.data()),
         triangles_v1.size());
     
-    std::cout<<"3-cycles: found # of triangles: "<<empty_tri_index[0]<<", budget: "<<triangles_v1.size()<<std::endl;
+    if (verbose)
+        std::cout<<"3-cycles: found # of triangles: "<<empty_tri_index[0]<<", budget: "<<triangles_v1.size()<<std::endl;
 
     if (max_cycle_length >= 4 && empty_tri_index[0] < triangles_v1.size())
     {
@@ -273,7 +276,8 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
         }
         const long num_expansions = rep_row_offsets.back();
         blockCount = ceil(num_expansions / (float) threadCount);
-        std::cout<<"4-cycles: number of expansions: "<<num_expansions<<"\n";
+        if (verbose)
+            std::cout<<"4-cycles: number of expansions: "<<num_expansions<<"\n";
 
         find_quadrangles_parallel<<<blockCount, threadCount>>>(num_expansions, num_rep_edges,
             thrust::raw_pointer_cast(row_ids_rep.data()),
@@ -288,7 +292,8 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
             thrust::raw_pointer_cast(empty_tri_index.data()),
             triangles_v1.size());
         
-        std::cout<<"4-cycles: found # of triangles: "<<empty_tri_index[0]<<", budget: "<<triangles_v1.size()<<std::endl;
+        if (verbose)
+            std::cout<<"4-cycles: found # of triangles: "<<empty_tri_index[0]<<", budget: "<<triangles_v1.size()<<std::endl;
     }
 
     if (max_cycle_length >= 5 && empty_tri_index[0] < triangles_v1.size())
@@ -308,7 +313,8 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
         }
         const long num_expansions = rep_edge_offsets.back();
         blockCount = ceil(num_expansions / (float) threadCount);
-        std::cout<<"5-cycles: number of expansions: "<<num_expansions<<"\n";
+        if (verbose)
+            std::cout<<"5-cycles: number of expansions: "<<num_expansions<<"\n";
         find_pentagons_parallel<<<blockCount, threadCount>>>(num_expansions, num_rep_edges,
             thrust::raw_pointer_cast(row_ids_rep.data()),
             thrust::raw_pointer_cast(col_ids_rep.data()),
@@ -322,7 +328,8 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
             thrust::raw_pointer_cast(empty_tri_index.data()),
             triangles_v1.size());
         
-        std::cout<<"5-cycles: found # of triangles: "<<empty_tri_index[0]<<", budget: "<<triangles_v1.size()<<std::endl;
+        if (verbose)
+            std::cout<<"5-cycles: found # of triangles: "<<empty_tri_index[0]<<", budget: "<<triangles_v1.size()<<std::endl;
     }
 
     int nr_triangles = empty_tri_index[0];

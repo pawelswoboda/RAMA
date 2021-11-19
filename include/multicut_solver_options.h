@@ -15,8 +15,9 @@ struct multicut_solver_options {
     bool only_compute_lb = false;
     int max_time_sec = -1;
     bool dump_timeline = false;
+    bool verbose = true;
 
-    multicut_solver_options() {}
+    multicut_solver_options() { }
     multicut_solver_options(const std::string& solver_type) {
         if(solver_type == "PD")
         {
@@ -97,5 +98,26 @@ struct multicut_solver_options {
         } catch (const CLI::ParseError &e) {
             return app.exit(e);
         }
+    }
+
+    std::string get_string() const
+    {
+        return std::string("<multicut_solver_options>:") +
+            "max_cycle_length_lb: " + std::to_string(max_cycle_length_lb) +
+            ", num_dual_itr_lb: " + std::to_string(num_dual_itr_lb) +
+            ", num_dual_itr_primal: " + std::to_string(num_dual_itr_primal) +
+            ", max_cycle_length_primal: " + std::to_string(max_cycle_length_primal) +
+            ", num_outer_itr_dual: " + std::to_string(num_outer_itr_dual) +
+            ", mean_multiplier_mm: " + std::to_string(mean_multiplier_mm) +
+            ", matching_thresh_crossover_ratio: " + std::to_string(matching_thresh_crossover_ratio) +
+            ", tri_memory_factor: " + std::to_string(tri_memory_factor) +
+            ", only_compute_lb: " + std::to_string(only_compute_lb) +
+            ", max_time_sec: " + std::to_string(max_time_sec) +
+            ", verbose: " + std::to_string(verbose) + "\n";
+    }
+
+    void print() const
+    {
+        std::cout<<this->get_string();
     }
 };

@@ -23,6 +23,17 @@ if(OpenMP_CXX_FOUND)
     target_link_libraries(RAMA INTERFACE OpenMP::OpenMP_CXX)
 endif()
 
+option(WITH_TORCH "Compile with PyTorch support" OFF)
+
+if(WITH_TORCH)
+    message(STATUS "Compiling with PyTorch support")
+    find_package(Torch REQUIRED)
+    add_definitions(-DWITH_TORCH)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
+else()
+    message("Compiling without PyTorch support")
+endif()
+
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 set(PYBIND11_CPP_STANDARD -std=c++17)

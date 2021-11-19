@@ -336,7 +336,7 @@ bool edge_contractions_woc::remove_mst_by_mask(thrust::device_vector<bool>& edge
     return true;
 }
 
-edge_contractions_woc::edge_contractions_woc(const dCOO& A) : num_nodes(A.max_dim())
+edge_contractions_woc::edge_contractions_woc(const dCOO& A, const bool _verbose) : num_nodes(A.max_dim()), verbose(_verbose)
 {
     cc_labels = thrust::device_vector<int>(num_nodes);
 
@@ -389,7 +389,8 @@ std::tuple<thrust::device_vector<int>, int> edge_contractions_woc::find_contract
     if (mst_row_ids.size() == 0)
         return {thrust::device_vector<int>(0), 0};
 
-    std::cout<<"# MST edges "<<mst_row_ids.size()<<", # Repulsive edges "<<rep_row_ids.size()<<"\n";
+    if (verbose)
+        std::cout<<"# MST edges "<<mst_row_ids.size()<<", # Repulsive edges "<<rep_row_ids.size()<<"\n";
     
     filter_by_cc();
 
@@ -397,13 +398,15 @@ std::tuple<thrust::device_vector<int>, int> edge_contractions_woc::find_contract
     if (any_removed)
         filter_by_cc();
 
-    std::cout<<"Conflicted 3-cycle removal, # MST edges "<<mst_row_ids.size()<<", # Repulsive edges  "<<rep_row_ids.size()<<"\n";
+    if (verbose)
+        std::cout<<"Conflicted 3-cycle removal, # MST edges "<<mst_row_ids.size()<<", # Repulsive edges  "<<rep_row_ids.size()<<"\n";
 
     any_removed = check_quadrangles();
     // if (any_removed)
     //     filter_by_cc();
 
-    std::cout<<"Conflicted 4-cycle removal, # MST edges "<<mst_row_ids.size()<<", # Repulsive edges  "<<rep_row_ids.size()<<"\n";
+    if (verbose)
+        std::cout<<"Conflicted 4-cycle removal, # MST edges "<<mst_row_ids.size()<<", # Repulsive edges  "<<rep_row_ids.size()<<"\n";
 
     // 5-cycle finding by custom kernel can be slow for high average degree graph. So offloading this task to thrust impl.
     // any_removed = check_pentagons(); 
@@ -413,6 +416,6 @@ std::tuple<thrust::device_vector<int>, int> edge_contractions_woc::find_contract
     // std::cout<<"Conflicted 5-cycle removal, # MST edges "<<mst_row_ids.size()<<", # Repulsive edges  "<<rep_row_ids.size()<<"\n";
 
     edge_contractions_woc_thrust c_mapper_full(num_nodes, std::move(mst_row_ids), std::move(mst_col_ids), std::move(mst_data), 
-                                                std::move(rep_row_ids), std::move(rep_col_ids), std::move(cc_labels));
+                                                std::move(rep_row_ids), std::move(rep_col_ids), std::move(cc_labels), verbose);
     return c_mapper_full.find_contraction_mapping();
 }
