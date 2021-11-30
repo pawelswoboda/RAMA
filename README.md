@@ -52,8 +52,14 @@ The solver supports different modes which can be chosen by initializing multicut
 - `"D"`: For only computing the lower bound.
  
 #### PyTorch support:
-The above-mentioned Python solver takes input in CPU memory and then copies to GPU memory. In cases where this takes too much time we offer additional (optional) functionality in Python bindings which allow to directly use the
-GPU tensors and return the result in GPU memory. To use this functionality ensure that PyTorch is built with the same CUDA version as the one used in this code and the ABI's match (see https://discuss.pytorch.org/t/undefined-symbol-when-import-lltm-cpp-extension/32627/7 for more info). Support for PyTorch can be enabled by:
+The above-mentioned Python solver takes input in CPU memory and then copies to GPU memory. In cases where this takes too much time we offer additional (optional) functionality in Python bindings which allow to directly use the GPU tensors and return the result in GPU memory. For this there are two options:
+
+- ** Binding via pointers to GPU memory: **
+Does not require compiling RAMA with PyTorch support (as done below). This option passes the GPU memory pointers to RAMA (the data is not modified). See 
+'test\test_pytorch_pointers.py` for usage.
+
+- ** Direct binding of Torch Tensors: **
+To use this functionality ensure that PyTorch is built with the same CUDA version as the one used in this code and the ABI's match (see https://discuss.pytorch.org/t/undefined-symbol-when-import-lltm-cpp-extension/32627/7 for more info). Support for PyTorch can be enabled by:
 ```
 WITH_TORCH=ON pip install setup.py
 ```
