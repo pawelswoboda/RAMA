@@ -50,7 +50,8 @@ The solver supports different modes which can be chosen by initializing multicut
 - `"PD"`: This one offers good runtime vs quality tradeoff and is the default solver.
 - `"PD+"`: For better quality primal algorithm (worse runtime). 
 - `"D"`: For only computing the lower bound.
- 
+### Input format:
+RAMA expects that node indices always start from 0 and there are no missing node indices. For example on a graph with 1000 nodes, the node indices should be in [0, 999]. See [this issue](https://github.com/pawelswoboda/RAMA/issues/26#issuecomment-1029949689) for a pre-processing Python script.
 #### PyTorch support:
 The above-mentioned Python solver takes input in CPU memory and then copies to GPU memory. In cases where this takes too much time we offer additional (optional) functionality in Python bindings which allow to directly use the GPU tensors and return the result in GPU memory. For this there are two options:
 
