@@ -52,20 +52,6 @@ The solver supports different modes which can be chosen by initializing multicut
 - `"D"`: For only computing the lower bound.
 ### Input format:
 RAMA expects that node indices always start from 0 and there are no missing node indices. For example on a graph with 1000 nodes, the node indices should be in [0, 999]. See [this issue](https://github.com/pawelswoboda/RAMA/issues/26#issuecomment-1029949689) for a pre-processing Python script.
-#### PyTorch support:
-The above-mentioned Python solver takes input in CPU memory and then copies to GPU memory. In cases where this takes too much time we offer additional (optional) functionality in Python bindings which allow to directly use the GPU tensors and return the result in GPU memory. For this there are two options:
-
-- ** Binding via pointers to GPU memory: **
-Does not require compiling RAMA with PyTorch support (as done below). This option passes the GPU memory pointers to RAMA (the data is not modified). See 
-'test\test_pytorch_pointers.py` for usage.
-
-- ** Direct binding of Torch Tensors: **
-To use this functionality ensure that PyTorch is built with the same CUDA version as the one used in this code and the ABI's match (see https://discuss.pytorch.org/t/undefined-symbol-when-import-lltm-cpp-extension/32627/7 for more info). Support for PyTorch can be enabled by:
-```
-WITH_TORCH=ON pip install setup.py
-```
-After this you should be able to run `test/test_pytorch.py` without any errors. To suppress solver command line output set `opts.verbose=False`.
-
 ### Parameters:
 The default set of parameters are defined [here](include/multicut_solver_options.h) which correspond to algorithm `PD` from the paper. This algorithm offers best compute time versus solution quality trade-off.  Parameters for other variants are:
 
@@ -85,3 +71,18 @@ Use this algorithm for only computing the lower bound. Our lower bounds are slig
 	./rama_text_input -f <PATH_TO_MULTICUT_INSTANCE> 5 10 0 0 5
 	```
 Run  `./rama_text_input --help` for details about the parameters. 
+
+
+## PyTorch support (Optional):
+The above-mentioned Python solver takes input in CPU memory and then copies to GPU memory. In cases where this takes too much time we offer additional (optional) functionality in Python bindings which allow to directly use the GPU tensors and return the result in GPU memory. For this there are two options:
+
+- **Binding via pointers to GPU memory:**
+Does not require compiling RAMA with PyTorch support (as done below). This option passes the GPU memory pointers to RAMA (the data is not modified). See 
+`test\test_pytorch_pointers.py` for usage.
+
+- **Direct binding of Torch Tensors:**
+To use this functionality ensure that PyTorch is built with the same CUDA version as the one used in this code and the ABI's match (see https://discuss.pytorch.org/t/undefined-symbol-when-import-lltm-cpp-extension/32627/7 for more info). Support for PyTorch can be enabled by:
+```
+WITH_TORCH=ON pip install setup.py
+```
+After this you should be able to run `test/test_pytorch.py` without any errors. To suppress solver command line output set `opts.verbose=False`.
