@@ -1,4 +1,4 @@
-# RAMA: Rapid algorithm for multicut problem[arxiv(https://arxiv.org/abs/2109.01838)]
+# RAMA: Rapid algorithm for multicut problem [(arxiv)](https://arxiv.org/abs/2109.01838)
 Solves multicut (correlation clustering) problems orders of magnitude faster than CPU based solvers without compromising solution quality on NVIDIA GPU. It also gives lower bound guarantees.
 
 ![animation](./misc/contraction_animation.gif)
