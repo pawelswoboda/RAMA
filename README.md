@@ -68,7 +68,7 @@ This algorithm can even be better than CPU solvers in terms of solution quality 
 - **Dual algorithm (D)**:
 Use this algorithm for only computing the lower bound. Our lower bounds are slightly better than [ICP](http://proceedings.mlr.press/v80/lange18a.html) and are computed up to 100 times faster.
 	```bash
-	./rama_text_input -f <PATH_TO_MULTICUT_INSTANCE> 5 10 0 0 5
+	./rama_text_input -f <PATH_TO_MULTICUT_INSTANCE> 5 10 0 0 5 --only_lb
 	```
 Run  `./rama_text_input --help` for details about the parameters. 
 
