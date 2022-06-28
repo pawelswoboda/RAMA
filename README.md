@@ -88,5 +88,12 @@ WITH_TORCH=ON pip install setup.py
 After this you should be able to run `test/test_pytorch.py` without any errors. To suppress solver command line output set `opts.verbose=False`.
 
 ## References
-If you use this work please cite
-* [`A. Abbas and P. Swoboda. RAMA: A Rapid Multicut Algorithm on GPU. In CVPR 2022.`](https://arxiv.org/abs/2109.01838)
+If you use this work please cite as
+```
+@inproceedings{abbas2022rama,
+  title={RAMA: A Rapid Multicut Algorithm on GPU},
+  author={Abbas, Ahmed and Swoboda, Paul},
+  booktitle={Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition},
+  pages={8193--8202},
+  year={2022}
+}
