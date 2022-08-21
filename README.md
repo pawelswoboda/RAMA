@@ -43,7 +43,8 @@ which corresponds to a graph with `N` edges. Where `i` and `j` should be vertex 
 An example to compute multicut on a triangle graph:
 ```python
 import rama_py
-rama_py.rama_cuda([0, 1, 2], [1, 2, 0], [1.1, -2, 3], rama_py.multicut_solver_options("PD")) 
+opts = rama_py.multicut_solver_options("PD")
+rama_py.rama_cuda([0, 1, 2], [1, 2, 0], [1.1, -2, 3], opts) 
 ```
 The solver supports different modes which can be chosen by initializing multicut_solver_options by following:
 - `"P"`: For running purely primal algorithm (best runtime).
@@ -51,8 +52,9 @@ The solver supports different modes which can be chosen by initializing multicut
 - `"PD+"`: For better quality primal algorithm (worse runtime). 
 - `"D"`: For only computing the lower bound.
 ### Input format:
-RAMA expects that node indices always start from 0 and there are no missing node indices. For example on a graph with 1000 nodes, the node indices should be in [0, 999]. If this is not the case with the input graph then use the option `sanitize_graph=True`. Note that if this argument is set then the output node labels would be computed for all nodes in the 
-input graph (including nodes without edges whose labels would be -1). Also see [this issue](https://github.com/pawelswoboda/RAMA/issues/26#issuecomment-1029949689) for more discussion.
+RAMA expects that node indices always start from 0 and there are no missing node indices. For example on a graph with 1000 nodes, the node indices should be in [0, 999]. If this is not the case with the input graph then use the option `--sanitize_graph` (for C++ CLI) and `opts.sanitize_graph = True` for python interface. 
+
+Note that the output node labels would be computed for all nodes in the input graph (where nodes without edges will have label -1). Also see [this issue](https://github.com/pawelswoboda/RAMA/issues/26#issuecomment-1029949689) for more discussion.
 ### Parameters:
 The default set of parameters are defined [here](include/multicut_solver_options.h) which correspond to algorithm `PD` from the paper. This algorithm offers best compute time versus solution quality trade-off.  Parameters for other variants are:
 
