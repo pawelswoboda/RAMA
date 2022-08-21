@@ -119,7 +119,7 @@ class CMakeBuild(build_ext):
 
 setup(
     name='RAMA',
-    version='0.0.5',
+    version='0.0.6',
     description='Bindings for RAMA: Rapid algorithm for multicut.',
     packages=find_packages('.'),
     ext_modules=[CMakeExtension(name='rama_py')],
