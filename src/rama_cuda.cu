@@ -140,36 +140,49 @@ std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>> > r
 
 std::tuple<std::vector<int>, double, int, std::vector<std::vector<int>> > rama_cuda(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs, const multicut_solver_options& opts)
 {
-    const int cuda_device = get_cuda_device();
-    cudaSetDevice(cuda_device);
-    cudaDeviceProp prop;
-    cudaGetDeviceProperties(&prop, cuda_device);
-    if (opts.verbose)
-        std::cout << "Going to use " << prop.name << " " << prop.major << "." << prop.minor << ", device number " << cuda_device << "\n";
+    initialize_gpu(opts.verbose);
+    thrust::device_vector<int> i_gpu(i.begin(), i.end());
+    thrust::device_vector<int> j_gpu(j.begin(), j.end());
+    thrust::device_vector<float> costs_gpu(costs.begin(), costs.end());
 
-    dCOO A(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end(), true);
-    
+    thrust::device_vector<int> sanitized_node_ids;
+    if (opts.sanitize_graph)
+        sanitized_node_ids = compute_sanitized_graph(i_gpu, j_gpu, costs_gpu);
+
+    dCOO A(std::move(i_gpu), std::move(j_gpu), std::move(costs_gpu), true);
+    A.print();
+
     thrust::device_vector<int> node_mapping;
     double lb;
     std::vector<std::vector<int>> timeline;
     
     std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
     std::tie(node_mapping, lb, timeline) = rama_cuda(A, opts);
-    std::vector<int> h_node_mapping(node_mapping.size());
-    thrust::copy(node_mapping.begin(), node_mapping.end(), h_node_mapping.begin());
     std::chrono::steady_clock::time_point end_time = std::chrono::steady_clock::now();
     int time_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+
+    if (opts.sanitize_graph)
+        node_mapping = desanitize_node_labels(node_mapping, sanitized_node_ids);
+    std::vector<int> h_node_mapping(node_mapping.size());
+    thrust::copy(node_mapping.begin(), node_mapping.end(), h_node_mapping.begin());
     return {h_node_mapping, lb, time_duration, timeline};
 }
 
 std::tuple<thrust::device_vector<int>, double> rama_cuda(thrust::device_vector<int>&& i, thrust::device_vector<int>&& j, thrust::device_vector<float>&& costs, const multicut_solver_options& opts, const int device)
 {
     cudaSetDevice(device);
+    thrust::device_vector<int> sanitized_node_ids;
+    if (opts.sanitize_graph)
+        sanitized_node_ids = compute_sanitized_graph(i, j, costs);
+
     dCOO A(std::move(j), std::move(i), std::move(costs), true);
     thrust::device_vector<int> node_mapping;
     double lb;
     std::vector<std::vector<int>> timeline;
     
     std::tie(node_mapping, lb, timeline) = rama_cuda(A, opts);
+    if (opts.sanitize_graph)
+        node_mapping = desanitize_node_labels(node_mapping, sanitized_node_ids);
+
     return {node_mapping, lb};
 }

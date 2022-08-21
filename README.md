@@ -29,10 +29,10 @@ python -m pip install git+https://github.com/pawelswoboda/RAMA.git
 We require multicut instance stored in a (.txt) file in the following format:
 ```
 MULTICUT
-i_1, j_1, cost_1
-i_2, j_2, cost_2
+i_1 j_1 cost_1
+i_2 j_2 cost_2
 ...
-i_n, j_n, cost_n
+i_n j_n cost_n
 ```
 which corresponds to a graph with `N` edges. Where `i` and `j` should be vertex indices and `cost` is a floating point number. Positive costs implies that the nodes are similar and thus would prefer to be in same component and viceversa. Afterwards run:
 ```bash

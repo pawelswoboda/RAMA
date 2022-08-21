@@ -16,6 +16,7 @@ struct multicut_solver_options {
     int max_time_sec = -1;
     bool dump_timeline = false;
     bool verbose = true;
+    bool sanitize_graph = false; 
 
     multicut_solver_options() { }
     multicut_solver_options(const std::string& solver_type) {
@@ -62,7 +63,8 @@ struct multicut_solver_options {
         const float _tri_memory_factor,
         const bool _only_compute_lb,
         const int _max_time_sec, 
-        const bool _dump_timeline) :
+        const bool _dump_timeline = false,
+        const bool _sanitize_graph = false) :
         max_cycle_length_lb(_max_cycle_length_lb), 
         num_dual_itr_lb(_num_dual_itr_lb), 
         max_cycle_length_primal(_max_cycle_length_primal), 
@@ -73,7 +75,8 @@ struct multicut_solver_options {
         tri_memory_factor(_tri_memory_factor),
         only_compute_lb(_only_compute_lb),
         max_time_sec(_max_time_sec),
-        dump_timeline(_dump_timeline)
+        dump_timeline(_dump_timeline),
+        sanitize_graph(_sanitize_graph)
     {}
 
     int from_cl(int argc, char** argv) {
@@ -92,6 +95,7 @@ struct multicut_solver_options {
             "Average number of triangles per repulsive edge. (Used for memory allocation. Use lesser value in-case of out of memory errors during dual solve). (Default: 2.0).")->check(CLI::PositiveNumber);
         app.add_flag("--only_lb", only_compute_lb, "Only compute the lower bound. (Default: false).");
         app.add_flag("--dump_timeline", dump_timeline, "Return the output of each contraction step. Only use for debugging/visualization purposes. (slow). (Default: false).");
+        app.add_flag("--sanitize_graph", sanitize_graph, "If the input graph contains nodes without any edges and thus needs sanitizing. Cluster labels in this case will be -1 for these nodes. (Default: false).");
         try {
             app.parse(argc, argv);
             return -1;
@@ -113,6 +117,7 @@ struct multicut_solver_options {
             ", tri_memory_factor: " + std::to_string(tri_memory_factor) +
             ", only_compute_lb: " + std::to_string(only_compute_lb) +
             ", max_time_sec: " + std::to_string(max_time_sec) +
+            ", sanitize_graph: " + std::to_string(sanitize_graph) +
             ", verbose: " + std::to_string(verbose) + "\n";
     }
 

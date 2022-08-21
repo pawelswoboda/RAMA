@@ -26,6 +26,18 @@ inline void checkCudaError(cudaError_t status, std::string errorMsg)
     }
 }
 
+inline void initialize_gpu(bool verbose = false)
+{
+    const int cuda_device = get_cuda_device();
+    cudaSetDevice(cuda_device);
+    if (verbose)
+    {
+        cudaDeviceProp prop;
+        cudaGetDeviceProperties(&prop, cuda_device);
+        std::cout << "Going to use " << prop.name << " " << prop.major << "." << prop.minor << ", device number " << cuda_device << "\n";
+    }
+}
+
 // float atomicMax
 __device__ __forceinline__ float atomicMax(float *address, float val)
 {
@@ -235,6 +247,69 @@ inline void sort_edge_nodes(thrust::device_vector<int>& i, thrust::device_vector
     thrust::for_each(first, last, sort_edge_nodes_func());
 }
 
+struct map_values_func
+{
+    const int* mapping;
+    size_t mapping_size;
+    __host__ __device__ int operator()(const int& v)
+    {
+        assert(v >= 0);
+        assert(v < mapping_size);
+        return mapping[v];
+    }
+};
+
+inline thrust::device_vector<int> compute_sanitized_graph(thrust::device_vector<int>& i, thrust::device_vector<int>& j, thrust::device_vector<float>& data)
+{
+    thrust::device_vector<int> unique_node_ids(2 * i.size());
+    thrust::copy(i.begin(), i.end(), unique_node_ids.begin());
+    thrust::copy(j.begin(), j.end(), unique_node_ids.begin() + i.size());
+
+    thrust::sort(unique_node_ids.begin(), unique_node_ids.end());
+    auto unique_end = thrust::unique(unique_node_ids.begin(), unique_node_ids.end());
+    unique_node_ids.resize(std::distance(unique_node_ids.begin(), unique_end));
+
+    const int max_node_id = unique_node_ids.back();
+    thrust::device_vector<int> ids_mapping(max_node_id + 1, 0);
+    thrust::scatter(thrust::constant_iterator<int>(1), thrust::constant_iterator<int>(1) + unique_node_ids.size(), 
+                    unique_node_ids.begin(), ids_mapping.begin());
+
+    thrust::exclusive_scan(ids_mapping.begin(), ids_mapping.end(), ids_mapping.begin());
+
+    map_values_func mapper({thrust::raw_pointer_cast(ids_mapping.data()), ids_mapping.size()}); 
+    thrust::transform(i.begin(), i.end(), i.begin(), mapper);
+    thrust::transform(j.begin(), j.end(), j.begin(), mapper);
+     
+    return ids_mapping;
+}
+
+struct desanitize_node_labels_func
+{
+    const int* ids_mapping;
+    const int* node_labels_on_sanitized;
+    const unsigned long ids_mapping_size;
+    __host__ __device__ int operator()(const int input_graph_node_index)
+    {
+        const int current_node_mapping = ids_mapping[input_graph_node_index];
+        if (input_graph_node_index == ids_mapping_size - 1 || current_node_mapping != ids_mapping[input_graph_node_index + 1]) 
+            return node_labels_on_sanitized[current_node_mapping];
+        return -1;
+    }
+};
+
+inline thrust::device_vector<int> desanitize_node_labels(const thrust::device_vector<int>& node_labels, const thrust::device_vector<int>& ids_mapping)
+{
+    desanitize_node_labels_func desanitizer({thrust::raw_pointer_cast(ids_mapping.data()), 
+                                            thrust::raw_pointer_cast(node_labels.data()), 
+                                            ids_mapping.size()}); 
+
+    thrust::device_vector<int> all_nodes_labels(ids_mapping.size(), -1); // -1 label is for nodes which did not have any incident edges!
+    thrust::transform(thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(0) + all_nodes_labels.size(), 
+                    all_nodes_labels.begin(), desanitizer);
+
+    return all_nodes_labels;
+}
+
 inline void coo_sorting(thrust::device_vector<int>& i, thrust::device_vector<int>& j, thrust::device_vector<int>& k)
 {
     assert(i.size() == j.size());
@@ -380,18 +455,6 @@ inline thrust::device_vector<int> compute_offsets(const thrust::device_vector<in
     thrust::inclusive_scan(offsets.begin(), offsets.end(), offsets.begin());
     return offsets;
 }
-
-struct map_values_func
-{
-    const int* mapping;
-    size_t mapping_size;
-    __host__ __device__ int operator()(const int& v)
-    {
-        assert(v >= 0);
-        assert(v < mapping_size);
-        return mapping[v];
-    }
-};
 
 // Map old_values to 0:size(old_values) - 1 and replace all old values which are in src by this map.
 // Values which are not in old_values are mapped to -1. 
