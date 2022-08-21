@@ -1,4 +1,4 @@
-# RAMA: Rapid algorithm for multicut problem
+# RAMA: Rapid algorithm for multicut problem [(arxiv)](https://arxiv.org/abs/2109.01838)
 Solves multicut (correlation clustering) problems orders of magnitude faster than CPU based solvers without compromising solution quality on NVIDIA GPU. It also gives lower bound guarantees.
 
 ![animation](./misc/contraction_animation.gif)
@@ -50,21 +50,8 @@ The solver supports different modes which can be chosen by initializing multicut
 - `"PD"`: This one offers good runtime vs quality tradeoff and is the default solver.
 - `"PD+"`: For better quality primal algorithm (worse runtime). 
 - `"D"`: For only computing the lower bound.
- 
-#### PyTorch support:
-The above-mentioned Python solver takes input in CPU memory and then copies to GPU memory. In cases where this takes too much time we offer additional (optional) functionality in Python bindings which allow to directly use the GPU tensors and return the result in GPU memory. For this there are two options:
-
-- ** Binding via pointers to GPU memory: **
-Does not require compiling RAMA with PyTorch support (as done below). This option passes the GPU memory pointers to RAMA (the data is not modified). See 
-'test\test_pytorch_pointers.py` for usage.
-
-- ** Direct binding of Torch Tensors: **
-To use this functionality ensure that PyTorch is built with the same CUDA version as the one used in this code and the ABI's match (see https://discuss.pytorch.org/t/undefined-symbol-when-import-lltm-cpp-extension/32627/7 for more info). Support for PyTorch can be enabled by:
-```
-WITH_TORCH=ON pip install setup.py
-```
-After this you should be able to run `test/test_pytorch.py` without any errors. To suppress solver command line output set `opts.verbose=False`.
-
+### Input format:
+RAMA expects that node indices always start from 0 and there are no missing node indices. For example on a graph with 1000 nodes, the node indices should be in [0, 999]. See [this issue](https://github.com/pawelswoboda/RAMA/issues/26#issuecomment-1029949689) for a pre-processing Python script.
 ### Parameters:
 The default set of parameters are defined [here](include/multicut_solver_options.h) which correspond to algorithm `PD` from the paper. This algorithm offers best compute time versus solution quality trade-off.  Parameters for other variants are:
 
@@ -81,6 +68,32 @@ This algorithm can even be better than CPU solvers in terms of solution quality 
 - **Dual algorithm (D)**:
 Use this algorithm for only computing the lower bound. Our lower bounds are slightly better than [ICP](http://proceedings.mlr.press/v80/lange18a.html) and are computed up to 100 times faster.
 	```bash
-	./rama_text_input -f <PATH_TO_MULTICUT_INSTANCE> 5 10 0 0 5
+	./rama_text_input -f <PATH_TO_MULTICUT_INSTANCE> 5 10 0 0 5 --only_lb
 	```
 Run  `./rama_text_input --help` for details about the parameters. 
+
+
+## PyTorch support (Optional):
+The above-mentioned Python solver takes input in CPU memory and then copies to GPU memory. In cases where this takes too much time we offer additional (optional) functionality in Python bindings which allow to directly use the GPU tensors and return the result in GPU memory. For this there are two options:
+
+- **Binding via pointers to GPU memory:**
+Does not require compiling RAMA with PyTorch support (as done below). This option passes the GPU memory pointers to RAMA (the data is not modified). See 
+`test\test_pytorch_pointers.py` for usage.
+
+- **Direct binding of Torch Tensors:**
+To use this functionality ensure that PyTorch is built with the same CUDA version as the one used in this code and the ABI's match (see https://discuss.pytorch.org/t/undefined-symbol-when-import-lltm-cpp-extension/32627/7 for more info). Support for PyTorch can be enabled by:
+```
+WITH_TORCH=ON pip install setup.py
+```
+After this you should be able to run `test/test_pytorch.py` without any errors. To suppress solver command line output set `opts.verbose=False`.
+
+## References
+If you use this work please cite as
+```
+@inproceedings{abbas2022rama,
+  title={RAMA: A Rapid Multicut Algorithm on GPU},
+  author={Abbas, Ahmed and Swoboda, Paul},
+  booktitle={Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition},
+  pages={8193--8202},
+  year={2022}
+}
