@@ -150,7 +150,6 @@ std::tuple<std::vector<int>, double, int, std::vector<std::vector<int>> > rama_c
         sanitized_node_ids = compute_sanitized_graph(i_gpu, j_gpu, costs_gpu);
 
     dCOO A(std::move(i_gpu), std::move(j_gpu), std::move(costs_gpu), true);
-    A.print();
 
     thrust::device_vector<int> node_mapping;
     double lb;
