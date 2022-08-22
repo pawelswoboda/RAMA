@@ -259,56 +259,6 @@ struct map_values_func
     }
 };
 
-inline thrust::device_vector<int> compute_sanitized_graph(thrust::device_vector<int>& i, thrust::device_vector<int>& j, thrust::device_vector<float>& data)
-{
-    thrust::device_vector<int> unique_node_ids(2 * i.size());
-    thrust::copy(i.begin(), i.end(), unique_node_ids.begin());
-    thrust::copy(j.begin(), j.end(), unique_node_ids.begin() + i.size());
-
-    thrust::sort(unique_node_ids.begin(), unique_node_ids.end());
-    auto unique_end = thrust::unique(unique_node_ids.begin(), unique_node_ids.end());
-    unique_node_ids.resize(std::distance(unique_node_ids.begin(), unique_end));
-
-    const int max_node_id = unique_node_ids.back();
-    thrust::device_vector<int> ids_mapping(max_node_id + 1, 0);
-    thrust::scatter(thrust::constant_iterator<int>(1), thrust::constant_iterator<int>(1) + unique_node_ids.size(), 
-                    unique_node_ids.begin(), ids_mapping.begin());
-
-    thrust::exclusive_scan(ids_mapping.begin(), ids_mapping.end(), ids_mapping.begin());
-
-    map_values_func mapper({thrust::raw_pointer_cast(ids_mapping.data()), ids_mapping.size()}); 
-    thrust::transform(i.begin(), i.end(), i.begin(), mapper);
-    thrust::transform(j.begin(), j.end(), j.begin(), mapper);
-     
-    return ids_mapping;
-}
-
-struct desanitize_node_labels_func
-{
-    const int* ids_mapping;
-    const int* node_labels_on_sanitized;
-    const unsigned long ids_mapping_size;
-    __host__ __device__ int operator()(const int input_graph_node_index)
-    {
-        const int current_node_mapping = ids_mapping[input_graph_node_index];
-        if (input_graph_node_index == ids_mapping_size - 1 || current_node_mapping != ids_mapping[input_graph_node_index + 1]) 
-            return node_labels_on_sanitized[current_node_mapping];
-        return -1;
-    }
-};
-
-inline thrust::device_vector<int> desanitize_node_labels(const thrust::device_vector<int>& node_labels, const thrust::device_vector<int>& ids_mapping)
-{
-    desanitize_node_labels_func desanitizer({thrust::raw_pointer_cast(ids_mapping.data()), 
-                                            thrust::raw_pointer_cast(node_labels.data()), 
-                                            ids_mapping.size()}); 
-
-    thrust::device_vector<int> all_nodes_labels(ids_mapping.size(), -1); // -1 label is for nodes which did not have any incident edges!
-    thrust::transform(thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(0) + all_nodes_labels.size(), 
-                    all_nodes_labels.begin(), desanitizer);
-
-    return all_nodes_labels;
-}
 
 inline void coo_sorting(thrust::device_vector<int>& i, thrust::device_vector<int>& j, thrust::device_vector<int>& k)
 {
@@ -468,6 +418,72 @@ inline void map_old_values_consec(thrust::device_vector<int>& src,
 
     map_values_func mapper({thrust::raw_pointer_cast(mapping.data()), mapping.size()}); 
     thrust::transform(src.begin(), src.end(), src.begin(), mapper);
+}
+
+inline thrust::device_vector<int> compute_sanitized_graph(thrust::device_vector<int>& i, thrust::device_vector<int>& j, thrust::device_vector<float>& data)
+{
+    // First find and remove duplicate edges. The corresponding costs are also discarded!
+    sort_edge_nodes(i, j);
+
+    coo_sorting(i, j, data);
+    auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
+    auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end()));
+    auto new_last = thrust::unique_by_key(first, last, data.begin());
+    auto num_unique_edges = thrust::distance(first, new_last.first);
+    i.resize(num_unique_edges);
+    j.resize(num_unique_edges);
+    data.resize(num_unique_edges);
+
+    // Find unique node IDs in graph.
+
+    thrust::device_vector<int> unique_node_ids(2 * i.size());
+    thrust::copy(i.begin(), i.end(), unique_node_ids.begin());
+    thrust::copy(j.begin(), j.end(), unique_node_ids.begin() + i.size());
+
+    thrust::sort(unique_node_ids.begin(), unique_node_ids.end());
+    auto unique_end = thrust::unique(unique_node_ids.begin(), unique_node_ids.end());
+    unique_node_ids.resize(std::distance(unique_node_ids.begin(), unique_end));
+
+    const int max_node_id = unique_node_ids.back();
+    thrust::device_vector<int> ids_mapping(max_node_id + 1, 0);
+    thrust::scatter(thrust::constant_iterator<int>(1), thrust::constant_iterator<int>(1) + unique_node_ids.size(), 
+                    unique_node_ids.begin(), ids_mapping.begin());
+
+    thrust::exclusive_scan(ids_mapping.begin(), ids_mapping.end(), ids_mapping.begin());
+    
+    // Assign original node IDs to new IDs such that all nodes have incident edges in the new graph.
+    map_values_func mapper({thrust::raw_pointer_cast(ids_mapping.data()), ids_mapping.size()}); 
+    thrust::transform(i.begin(), i.end(), i.begin(), mapper);
+    thrust::transform(j.begin(), j.end(), j.begin(), mapper);
+     
+    return ids_mapping;
+}
+
+struct desanitize_node_labels_func
+{
+    const int* ids_mapping;
+    const int* node_labels_on_sanitized;
+    const unsigned long ids_mapping_size;
+    __host__ __device__ int operator()(const int input_graph_node_index)
+    {
+        const int current_node_mapping = ids_mapping[input_graph_node_index];
+        if (input_graph_node_index == ids_mapping_size - 1 || current_node_mapping != ids_mapping[input_graph_node_index + 1]) 
+            return node_labels_on_sanitized[current_node_mapping];
+        return -1;
+    }
+};
+
+inline thrust::device_vector<int> desanitize_node_labels(const thrust::device_vector<int>& node_labels, const thrust::device_vector<int>& ids_mapping)
+{
+    desanitize_node_labels_func desanitizer({thrust::raw_pointer_cast(ids_mapping.data()), 
+                                            thrust::raw_pointer_cast(node_labels.data()), 
+                                            ids_mapping.size()}); 
+
+    thrust::device_vector<int> all_nodes_labels(ids_mapping.size(), -1); // -1 label is for nodes which did not have any incident edges!
+    thrust::transform(thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(0) + all_nodes_labels.size(), 
+                    all_nodes_labels.begin(), desanitizer);
+
+    return all_nodes_labels;
 }
 
 template<typename T>
