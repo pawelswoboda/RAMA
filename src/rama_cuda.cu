@@ -27,6 +27,28 @@ bool has_bad_contractions(const dCOO& A)
     return thrust::count_if(d.begin(), d.end(), is_negative()) > 0;
 }
 
+struct map_nodes_to_new_clusters_func
+{
+    const int* node_mapping_cont_graph;
+    int* node_mapping_orig_graph;
+    const unsigned long num_nodes_cont;
+    __host__ __device__ void operator()(const int n)
+    {
+        const int n_map = node_mapping_orig_graph[n];
+        if (n_map < num_nodes_cont)
+            node_mapping_orig_graph[n] = node_mapping_cont_graph[n_map];
+    }
+};
+
+void map_node_labels(const thrust::device_vector<int>& cur_node_mapping, thrust::device_vector<int>& orig_node_mapping)
+{   
+    map_nodes_to_new_clusters_func node_mapper({thrust::raw_pointer_cast(cur_node_mapping.data()), 
+                                                thrust::raw_pointer_cast(orig_node_mapping.data()),
+                                                cur_node_mapping.size()});
+
+    thrust::for_each(thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(0) + orig_node_mapping.size(), node_mapper);
+}
+
 std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_maximum_matching(dCOO& A, const float mean_multiplier_mm, const bool verbose = true)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
@@ -60,7 +82,7 @@ std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>> > r
     bool try_edges_to_contract_by_maximum_matching = true;
     if (opts.matching_thresh_crossover_ratio > 1.0)
         try_edges_to_contract_by_maximum_matching = false;
-    
+
     for(size_t iter=0; A.nnz() > 0; ++iter)
     {
         if (iter > 0)
@@ -116,7 +138,8 @@ std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>> > r
         A.remove_diagonal();
         if (opts.verbose)
             std::cout << "energy after iteration " << iter << ": " << A.sum() << ", #components = " << A.cols() << "\n";
-        thrust::gather(node_mapping.begin(), node_mapping.end(), cur_node_mapping.begin(), node_mapping.begin());
+
+        map_node_labels(cur_node_mapping, node_mapping);
         if (opts.dump_timeline)
         {
             std::vector<int> current_timeline(node_mapping.size());

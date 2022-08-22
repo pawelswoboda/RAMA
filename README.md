@@ -10,6 +10,9 @@ We use `CUDA 11.2` and `GCC 10`. Other combinations might also work but not test
 
 ### C++ solver:
 ```bash
+git clone git@github.com:pawelswoboda/RAMA.git
+cd RAMA
+git submodule update --init --recursive
 mkdir build
 cd build
 cmake ..
