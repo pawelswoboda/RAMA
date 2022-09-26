@@ -93,6 +93,7 @@ PYBIND11_MODULE(rama_py, m) {
         .def_readwrite("max_time_sec", &multicut_solver_options::max_time_sec)
         .def_readwrite("verbose", &multicut_solver_options::verbose)
         .def_readwrite("sanitize_graph", &multicut_solver_options::sanitize_graph)
+	.def_readwrite("dump_timeline, &multicut_solver_options::dump_timeline)
         .def("__repr__", [](const multicut_solver_options &a) {
             return a.get_string();
         });
