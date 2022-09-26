@@ -26,11 +26,14 @@ target_link_libraries(edge_contractions_woc edge_contractions_woc_thrust dCOO EC
 add_library(rama_cuda rama_cuda.cu)
 target_link_libraries(rama_cuda dCOO dual_solver maximum_matching_vertex_based edge_contractions_woc)
 
+add_library(iterative_rama_cuda iterative_rama_cuda.cu)
+target_link_libraries(iterative_rama_cuda rama_cuda dCOO)
+
 add_executable(rama_text_input rama_text_input.cu)
 target_link_libraries(rama_text_input multicut_text_parser rama_cuda)
 
 pybind11_add_module(rama_py rama_py.cpp)
-target_link_libraries(rama_py PRIVATE multicut_text_parser rama_cuda) 
+target_link_libraries(rama_py PRIVATE multicut_text_parser rama_cuda dual_solver iterative_rama_cuda) 
 
 if(WITH_TORCH)
     find_library(TORCH_PYTHON_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib")

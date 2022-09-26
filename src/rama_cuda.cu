@@ -59,6 +59,60 @@ std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_maximum_match
     return {compress_label_sequence(node_mapping, node_mapping.size() - 1), nr_matched_edges};
 }
 
+std::tuple<bool, thrust::device_vector<int>> 
+    single_primal_iteration(thrust::device_vector<int>& node_mapping, dCOO& A, bool& try_edges_to_contract_by_maximum_matching, 
+                            const multicut_solver_options& opts, const int num_dual_itr)
+{
+    if (num_dual_itr > 0)
+        dual_solver(A, opts.max_cycle_length_primal, opts.num_dual_itr_primal, 1.0, num_dual_itr, 1e-4, opts.verbose);
+    thrust::device_vector<int> cur_node_mapping;
+    int nr_edges_to_contract;
+    if(try_edges_to_contract_by_maximum_matching)
+    {
+        std::tie(cur_node_mapping, nr_edges_to_contract) = contraction_mapping_by_maximum_matching(A, opts.mean_multiplier_mm, opts.verbose);
+        if(nr_edges_to_contract < A.rows() * opts.matching_thresh_crossover_ratio)
+        {
+            if (opts.verbose)
+            {
+                std::cout << "# edges to contract = " << nr_edges_to_contract << ", # vertices = " << A.rows() << "\n";
+                std::cout << "switching to MST based contraction edge selection\n";
+            }
+            try_edges_to_contract_by_maximum_matching = false;    
+        }
+    }
+    else
+    {
+        edge_contractions_woc c_mapper(A, opts.verbose);
+        std::tie(cur_node_mapping, nr_edges_to_contract) = c_mapper.find_contraction_mapping();
+    }
+
+    if(nr_edges_to_contract == 0)
+        return {false, cur_node_mapping};
+
+    dCOO new_A = A.contract_cuda(cur_node_mapping);
+    if (opts.verbose)
+    {
+        std::cout << "original A size " << A.cols() << "x" << A.rows() << "\n";
+        std::cout << "contracted A size " << new_A.cols() << "x" << new_A.rows() << "\n";
+    }
+    assert(new_A.cols() < A.cols());
+
+    if (opts.verbose)
+    {
+        const thrust::device_vector<float> diagonal = new_A.diagonal();
+        const float energy_reduction = thrust::reduce(diagonal.begin(), diagonal.end());
+        std::cout << "energy reduction " << energy_reduction << "\n";
+    }
+    if(has_bad_contractions(new_A))
+        throw std::runtime_error("Found bad contractions");
+
+    thrust::swap(A, new_A);
+    A.remove_diagonal();
+
+    map_node_labels(cur_node_mapping, node_mapping);
+    return {true, cur_node_mapping};
+}
+
 std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>> > rama_cuda(dCOO& A, const multicut_solver_options& opts)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
@@ -83,69 +137,27 @@ std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>> > r
     if (opts.matching_thresh_crossover_ratio > 1.0)
         try_edges_to_contract_by_maximum_matching = false;
 
+    int max_num_dual_itr = 0;
+    bool performed_contraction;
     for(size_t iter=0; A.nnz() > 0; ++iter)
     {
-        if (iter > 0)
+        const auto out = single_primal_iteration(node_mapping, A, try_edges_to_contract_by_maximum_matching, opts, max_num_dual_itr);
+        performed_contraction = std::get<0>(out);
+        if (opts.verbose)
+            std::cout << "energy after iteration " << iter << ": " << A.sum() << ", #components = " << A.cols() << "\n";
+        if (!performed_contraction)
         {
-            dual_solver(A, opts.max_cycle_length_primal, opts.num_dual_itr_primal, 1.0, 1, 1e-4, opts.verbose);
-        }
-        thrust::device_vector<int> cur_node_mapping;
-        int nr_edges_to_contract;
-        if(try_edges_to_contract_by_maximum_matching)
-        {
-            std::tie(cur_node_mapping, nr_edges_to_contract) = contraction_mapping_by_maximum_matching(A, opts.mean_multiplier_mm, opts.verbose);
-            if(nr_edges_to_contract < A.rows() * opts.matching_thresh_crossover_ratio)
-            {
-                if (opts.verbose)
-                {
-                    std::cout << "# edges to contract = " << nr_edges_to_contract << ", # vertices = " << A.rows() << "\n";
-                    std::cout << "switching to MST based contraction edge selection\n";
-                }
-                try_edges_to_contract_by_maximum_matching = false;    
-            }
-        }
-        else
-        {
-            edge_contractions_woc c_mapper(A, opts.verbose);
-            std::tie(cur_node_mapping, nr_edges_to_contract) = c_mapper.find_contraction_mapping();
-        }
-
-        if(nr_edges_to_contract == 0)
-        {
-            if (opts.verbose)
-                std::cout << "# iterations = " << iter << "\n";
+            if (opts.verbose) std::cout << "# iterations = " << iter << "\n";
             break;
         }
 
-        dCOO new_A = A.contract_cuda(cur_node_mapping);
-        if (opts.verbose)
-        {
-            std::cout << "original A size " << A.cols() << "x" << A.rows() << "\n";
-            std::cout << "contracted A size " << new_A.cols() << "x" << new_A.rows() << "\n";
-        }
-        assert(new_A.cols() < A.cols());
-
-        if (opts.verbose)
-        {
-            const thrust::device_vector<float> diagonal = new_A.diagonal();
-            const float energy_reduction = thrust::reduce(diagonal.begin(), diagonal.end());
-            std::cout << "energy reduction " << energy_reduction << "\n";
-        }
-        if(has_bad_contractions(new_A))
-            throw std::runtime_error("Found bad contractions");
-
-        thrust::swap(A, new_A);
-        A.remove_diagonal();
-        if (opts.verbose)
-            std::cout << "energy after iteration " << iter << ": " << A.sum() << ", #components = " << A.cols() << "\n";
-
-        map_node_labels(cur_node_mapping, node_mapping);
         if (opts.dump_timeline)
         {
             std::vector<int> current_timeline(node_mapping.size());
             thrust::copy(node_mapping.begin(), node_mapping.end(), current_timeline.begin());
             timeline.push_back(current_timeline);
         }
+    
         if (opts.max_time_sec >= 0)
         {
             std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
@@ -153,6 +165,7 @@ std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>> > r
             if (time > opts.max_time_sec)
                 break;
         }
+        max_num_dual_itr = 1;
     }
 
     if (opts.verbose)

@@ -231,20 +231,22 @@ struct sort_edge_nodes_func
             int& y = thrust::get<1>(t);
             const int smallest = min(x, y);
             const int largest = max(x, y);
-            assert(smallest < largest);
             x = smallest;
             y = largest;
         }
 };
 
+inline void sort_edge_nodes(thrust::device_ptr<int> i, thrust::device_ptr<int> j, const size_t size)
+{
+    auto first = thrust::make_zip_iterator(thrust::make_tuple(i, j));
+    auto last = thrust::make_zip_iterator(thrust::make_tuple(i + size, j + size));
+    thrust::for_each(first, last, sort_edge_nodes_func());
+}
+
 inline void sort_edge_nodes(thrust::device_vector<int>& i, thrust::device_vector<int>& j)
 {
     assert(i.size() == j.size());
-
-    auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
-    auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end()));
-
-    thrust::for_each(first, last, sort_edge_nodes_func());
+    sort_edge_nodes(i.data(), j.data(), i.size());
 }
 
 struct map_values_func
@@ -271,11 +273,17 @@ inline void coo_sorting(thrust::device_vector<int>& i, thrust::device_vector<int
     thrust::sort(first, last);
 }
 
+inline void coo_sorting(thrust::device_ptr<int> i, thrust::device_ptr<int> j, const size_t size)
+{
+    auto first = thrust::make_zip_iterator(thrust::make_tuple(i, j));
+    auto last = thrust::make_zip_iterator(thrust::make_tuple(i + size, j + size));
+    thrust::sort(first, last);
+}
+
 inline void coo_sorting(thrust::device_vector<int>& i, thrust::device_vector<int>& j)
 {
-    auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
-    auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end()));
-    thrust::sort(first, last);
+    assert(i.size() == j.size());
+    coo_sorting(i.data(), j.data(), i.size());
 }
 
 inline void coo_sorting(thrust::device_vector<int>& i, thrust::device_vector<int>& j, thrust::device_vector<float>& data)
@@ -423,7 +431,7 @@ inline void map_old_values_consec(thrust::device_vector<int>& src,
 inline thrust::device_vector<int> compute_sanitized_graph(thrust::device_vector<int>& i, thrust::device_vector<int>& j, thrust::device_vector<float>& data)
 {
     // First find and remove duplicate edges. The corresponding costs are also discarded!
-    sort_edge_nodes(i, j);
+    sort_edge_nodes(i, j); // makes all j > i 
 
     coo_sorting(i, j, data);
     auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
@@ -434,20 +442,10 @@ inline thrust::device_vector<int> compute_sanitized_graph(thrust::device_vector<
     j.resize(num_unique_edges);
     data.resize(num_unique_edges);
 
-    // Find unique node IDs in graph.
-
-    thrust::device_vector<int> unique_node_ids(2 * i.size());
-    thrust::copy(i.begin(), i.end(), unique_node_ids.begin());
-    thrust::copy(j.begin(), j.end(), unique_node_ids.begin() + i.size());
-
-    thrust::sort(unique_node_ids.begin(), unique_node_ids.end());
-    auto unique_end = thrust::unique(unique_node_ids.begin(), unique_node_ids.end());
-    unique_node_ids.resize(std::distance(unique_node_ids.begin(), unique_end));
-
-    const int max_node_id = unique_node_ids.back();
+    const int max_node_id = *thrust::max_element(j.begin(), j.end());
     thrust::device_vector<int> ids_mapping(max_node_id + 1, 0);
-    thrust::scatter(thrust::constant_iterator<int>(1), thrust::constant_iterator<int>(1) + unique_node_ids.size(), 
-                    unique_node_ids.begin(), ids_mapping.begin());
+    thrust::scatter(thrust::constant_iterator<int>(1), thrust::constant_iterator<int>(1) + i.size(), i.begin(), ids_mapping.begin());
+    thrust::scatter(thrust::constant_iterator<int>(1), thrust::constant_iterator<int>(1) + j.size(), j.begin(), ids_mapping.begin());
 
     thrust::exclusive_scan(ids_mapping.begin(), ids_mapping.end(), ids_mapping.begin());
     
@@ -467,22 +465,28 @@ struct desanitize_node_labels_func
     __host__ __device__ int operator()(const int input_graph_node_index)
     {
         const int current_node_mapping = ids_mapping[input_graph_node_index];
-        if (input_graph_node_index == ids_mapping_size - 1 || current_node_mapping != ids_mapping[input_graph_node_index + 1]) 
+        if (input_graph_node_index == ids_mapping_size - 1)
+            return node_labels_on_sanitized[current_node_mapping];
+        if (current_node_mapping != ids_mapping[input_graph_node_index + 1]) 
             return node_labels_on_sanitized[current_node_mapping];
         return -1;
     }
 };
 
-inline thrust::device_vector<int> desanitize_node_labels(const thrust::device_vector<int>& node_labels, const thrust::device_vector<int>& ids_mapping)
+inline void desanitize_node_labels(const thrust::device_vector<int>& node_labels, const thrust::device_vector<int>& ids_mapping, thrust::device_ptr<int> out_ptr)
 {
     desanitize_node_labels_func desanitizer({thrust::raw_pointer_cast(ids_mapping.data()), 
                                             thrust::raw_pointer_cast(node_labels.data()), 
                                             ids_mapping.size()}); 
 
-    thrust::device_vector<int> all_nodes_labels(ids_mapping.size(), -1); // -1 label is for nodes which did not have any incident edges!
-    thrust::transform(thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(0) + all_nodes_labels.size(), 
-                    all_nodes_labels.begin(), desanitizer);
+    thrust::transform(thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(0) + ids_mapping.size(), 
+                    out_ptr, desanitizer);
+}
 
+inline thrust::device_vector<int> desanitize_node_labels(const thrust::device_vector<int>& node_labels, const thrust::device_vector<int>& ids_mapping)
+{
+    thrust::device_vector<int> all_nodes_labels(ids_mapping.size(), -1); // -1 label is for nodes which did not have any incident edges!
+    desanitize_node_labels(node_labels, ids_mapping, all_nodes_labels.data());
     return all_nodes_labels;
 }
 

@@ -3,6 +3,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include "rama_cuda.h"
+#include "iterative_rama_cuda.h"
 #include "multicut_solver_options.h"
 #include "multicut_text_parser.h"
 
@@ -96,7 +97,6 @@ PYBIND11_MODULE(rama_py, m) {
         .def("__repr__", [](const multicut_solver_options &a) {
             return a.get_string();
         });
-
     m.def("rama_cuda", [](const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& edge_costs, const multicut_solver_options& opts) {
             return rama_cuda(i, j, edge_costs, opts);
             });
@@ -114,8 +114,67 @@ PYBIND11_MODULE(rama_py, m) {
             return read_file(filename);
             });
 
+    m.def("sort_dCOO", [](const long i_ptr, const long j_ptr, const int num_edges, const int gpuDeviceID) {
+            cudaSetDevice(gpuDeviceID);
+            thrust::device_ptr<int> i = thrust::device_ptr<int>(reinterpret_cast<int*>(i_ptr));
+            thrust::device_ptr<int> j = thrust::device_ptr<int>(reinterpret_cast<int*>(j_ptr));
+            sort_edge_list_dCOO(i, j, num_edges);
+            });
+
 	#ifdef WITH_TORCH
 		m.def("rama_torch", &rama_torch, "RAMA CUDA solver with torch interface.");
 	#endif
-}
 
+    py::class_<iterative_rama_cuda>(m, "iterative_rama_cuda")
+        .def(py::init<>())
+        .def(py::init([](const long i_ptr, const long j_ptr, const long edge_costs_ptr,
+                        const int num_edges, const int gpuDeviceID, const multicut_solver_options& opts) 
+        {
+            const int* const i = reinterpret_cast<const int* const>(i_ptr);
+            const int* const j = reinterpret_cast<const int* const>(j_ptr);
+            const float* const edge_costs = reinterpret_cast<const float* const>(edge_costs_ptr);
+
+            thrust::device_vector<int> i_thrust(i, i + num_edges);
+            thrust::device_vector<int> j_thrust(j, j + num_edges);
+            thrust::device_vector<float> costs_thrust(edge_costs, edge_costs + num_edges);
+            return new iterative_rama_cuda(std::move(i_thrust), std::move(j_thrust), std::move(costs_thrust), opts, gpuDeviceID);
+        }))
+        .def("try_do_primal_step", [](iterative_rama_cuda& obj, const long n_ptr)
+        {
+            int* ptr = reinterpret_cast<int*>(n_ptr);
+            return obj.try_do_primal_step(ptr);
+        })
+        .def("get_node_mapping_orig_graph", [](const iterative_rama_cuda& obj, const long n_ptr)
+        {
+            // Assumes n_ptr already allocates memory equal to number of (unsanitized) nodes in input graph and is also initialized by -1.
+            int* ptr = reinterpret_cast<int*>(n_ptr);
+            obj.get_node_mapping(ptr); // returns node mapping w.r.t unsanitized graph if input was unsanitized.
+        })
+        .def("current_num_edges", [](const iterative_rama_cuda& obj)
+        {
+            return obj.A_.nnz();
+        })
+        .def("get_current_graph", [](const iterative_rama_cuda& obj, const long i_ptr, const long j_ptr, const long edge_costs_ptr)
+        {
+            // Assumes all arguments already allocate memory equal to number of edges (can be queried by calling obj.current_num_edges()).
+            int* i_out = reinterpret_cast<int*>(i_ptr);
+            int* j_out = reinterpret_cast<int*>(j_ptr);
+            float* edge_costs_out = reinterpret_cast<float*>(edge_costs_ptr);
+
+            thrust::device_ptr<const int> i_cur = thrust::device_ptr<const int>(obj.A_.get_row_ids_ptr());
+            thrust::device_ptr<const int> j_cur = thrust::device_ptr<const int>(obj.A_.get_col_ids_ptr());
+            thrust::device_ptr<const float> costs_cur = thrust::device_ptr<const float>(obj.A_.get_data_ptr());
+            const size_t num_edges = obj.A_.nnz();
+
+            thrust::copy(i_cur, i_cur + num_edges, i_out);
+            thrust::copy(j_cur, j_cur + num_edges, j_out);
+            thrust::copy(costs_cur, costs_cur + num_edges, edge_costs_out);
+            // Use node mapping to map these edges back to original graph, if required.
+        })
+        .def("set_edge_costs", [](iterative_rama_cuda& obj, const long edge_costs_ptr)
+        {
+            const float* const raw_ptr = reinterpret_cast<const float* const>(edge_costs_ptr);
+            obj.set_edge_costs(raw_ptr);
+        })
+        .def_readwrite("try_edges_to_contract_by_maximum_matching_", &iterative_rama_cuda::try_edges_to_contract_by_maximum_matching_);
+}
