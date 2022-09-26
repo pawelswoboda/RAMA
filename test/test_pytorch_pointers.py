@@ -11,7 +11,9 @@ j = torch.Tensor([1, 2, 0]).to('cuda').to(torch.int32) # Can only be of dtype in
 costs = torch.Tensor([1.1, -2, 3]).to('cuda').to(torch.float32) # Can only be of dtype float32!
 
 node_labels = torch.ones((3), device = i.device).to(torch.int32)
-num_nodes = torch.maximum(i.max(), j.max()) + 1
+num_nodes = max(i.max(), j.max()) + 1
 num_edges = i.numel()
-rama_py.rama_cuda_gpu_pointers(i.data_ptr(), j.data_ptr(), costs.data_ptr(), node_labels.data_ptr(), num_nodes, num_edges, i.device.index, opts)
+opts.dump_timeline = True # Set to true to get intermediate results.
+timeline = rama_py.rama_cuda_gpu_pointers(i.data_ptr(), j.data_ptr(), costs.data_ptr(), node_labels.data_ptr(), num_nodes, num_edges, i.device.index, opts)
 assert(torch.all(node_labels.cpu() == torch.Tensor(expected)))
+breakpoint()

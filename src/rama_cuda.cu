@@ -190,7 +190,7 @@ std::tuple<std::vector<int>, double, int, std::vector<std::vector<int>> > rama_c
     return {h_node_mapping, lb, time_duration, timeline};
 }
 
-std::tuple<thrust::device_vector<int>, double> rama_cuda(thrust::device_vector<int>&& i, thrust::device_vector<int>&& j, thrust::device_vector<float>&& costs, const multicut_solver_options& opts, const int device)
+std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>>> rama_cuda(thrust::device_vector<int>&& i, thrust::device_vector<int>&& j, thrust::device_vector<float>&& costs, const multicut_solver_options& opts, const int device)
 {
     cudaSetDevice(device);
     thrust::device_vector<int> sanitized_node_ids;
@@ -206,5 +206,5 @@ std::tuple<thrust::device_vector<int>, double> rama_cuda(thrust::device_vector<i
     if (opts.sanitize_graph)
         node_mapping = desanitize_node_labels(node_mapping, sanitized_node_ids);
 
-    return {node_mapping, lb};
+    return {node_mapping, lb, timeline};
 }

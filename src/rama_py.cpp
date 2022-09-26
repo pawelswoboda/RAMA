@@ -57,17 +57,19 @@ std::vector<torch::Tensor> rama_torch(
 }
 #endif
 
-void rama_cuda_gpu_pointers(const int* const i, const int* const j, const float* const edge_costs, 
+std::vector<std::vector<int>> rama_cuda_gpu_pointers(const int* const i, const int* const j, const float* const edge_costs, 
                         int* const node_labels, const int num_nodes, const int num_edges, const int gpuDeviceID, const multicut_solver_options& opts)
 {
     thrust::device_vector<int> i_thrust(i, i + num_edges);
     thrust::device_vector<int> j_thrust(j, j + num_edges);
     thrust::device_vector<float> costs_thrust(edge_costs, edge_costs + num_edges);
     thrust::device_vector<int> node_mapping;
+    std::vector<std::vector<int>> timeline;
     double lb;
 
-    std::tie(node_mapping, lb) = rama_cuda(std::move(i_thrust), std::move(j_thrust), std::move(costs_thrust), opts, gpuDeviceID);
+    std::tie(node_mapping, lb, timeline) = rama_cuda(std::move(i_thrust), std::move(j_thrust), std::move(costs_thrust), opts, gpuDeviceID);
     thrust::copy(node_mapping.begin(), node_mapping.end(), node_labels);
+    return timeline;
 }
 
 PYBIND11_MODULE(rama_py, m) {
@@ -92,6 +94,7 @@ PYBIND11_MODULE(rama_py, m) {
         .def_readwrite("only_compute_lb", &multicut_solver_options::only_compute_lb)
         .def_readwrite("max_time_sec", &multicut_solver_options::max_time_sec)
         .def_readwrite("verbose", &multicut_solver_options::verbose)
+        .def_readwrite("dump_timeline", &multicut_solver_options::dump_timeline)
         .def_readwrite("sanitize_graph", &multicut_solver_options::sanitize_graph)
         .def("__repr__", [](const multicut_solver_options &a) {
             return a.get_string();
