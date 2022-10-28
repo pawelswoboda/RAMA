@@ -1,4 +1,5 @@
 add_library(multicut_text_parser multicut_text_parser.cpp)
+add_library(multiwaycut_text_parser multiwaycut_text_parser.cpp)
 
 add_library(dCOO dCOO.cu)
 target_link_libraries(dCOO ECL-CC_11)

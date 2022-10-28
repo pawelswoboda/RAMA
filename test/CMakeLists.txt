@@ -22,3 +22,6 @@ add_executable(compute_unique_test compute_unique_test.cu)
 
 add_executable(conflicted_cycles_test conflicted_cycles_test.cu)
 target_link_libraries(conflicted_cycles_test conflicted_cycles_cuda)
+
+add_executable(multiwaycut_text_parser_test multiwaycut_text_parser_test.cpp)
+target_link_libraries(multiwaycut_text_parser_test multiwaycut_text_parser)
