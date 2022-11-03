@@ -2,6 +2,7 @@
 #include "test.h"
 #include <tuple>
 #include <numeric>
+#include <string>
 
 
 void test_parser() {
@@ -19,7 +20,7 @@ void test_parser() {
 
 
 void test_mwc_to_coo() {
-    size_t n = 5;
+    size_t n = 4;
     size_t k = 2;
     std::vector<int> src = {0,0,0,1,2};
     std::vector<int> dest = {1,2,3,3,3};
@@ -28,7 +29,6 @@ void test_mwc_to_coo() {
         1.0, 0.0,
         1.0, 0.0,
         0.0, 1.0,
-        1.0, 0.0,
         1.0, 0.0
     };
 
@@ -41,6 +41,13 @@ void test_mwc_to_coo() {
     for (size_t const size: result_sizes) {
         test(size == (src.size() + n * k), "Invalid number of edges returned");
     }
+
+    // Test all class nodes are assigned an index larger than any node index
+    // We start at src.size() because res_... contains the old edges in the same order
+    for (size_t i = src.size(); i < res_dest.size(); ++i ) {
+        test(res_dest[i] > 3, std::to_string(res_dest[i]) + " is not bigger than the largest node");
+    }
+
 }
 
 

@@ -61,11 +61,12 @@ std::tuple<std::vector<int>, std::vector<int>, std::vector<float>> mwc_to_coo(si
                 std::vector<float> edge_costs)
 {
     assert(class_costs.size() == n*k);
+    assert(n <= std::numeric_limits<int>::max() && k <= std::numeric_limits<int>::max() && "n or k are too large");
     for (int node = 0; node < n; ++node) {
         for (int cls = 0; cls < k; ++cls) {
             src.push_back(node);
-            dest.push_back(cls);
-            edge_costs.push_back(class_costs[node + cls]);
+            dest.push_back(static_cast<int>(n) + cls);
+            edge_costs.push_back(class_costs[node * static_cast<int>(k) + cls]);
         }
     }
     return {src, dest, edge_costs};
