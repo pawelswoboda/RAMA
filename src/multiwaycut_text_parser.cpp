@@ -4,6 +4,7 @@
 #include <vector>
 #include <tuple>
 #include <sstream>
+#include <cassert>
 
 
 std::tuple<size_t, size_t, std::vector<float>, std::vector<int>, std::vector<int>, std::vector<float>> read_file(const std::string& filename)
@@ -51,4 +52,21 @@ std::tuple<size_t, size_t, std::vector<float>, std::vector<int>, std::vector<int
     }
 
     return {n, k, node_class_cost_vec, i_vec, j_vec, cost_vec};
+}
+std::tuple<std::vector<int>, std::vector<int>, std::vector<float>> mwc_to_coo(size_t n,
+                size_t k,
+                std::vector<float> class_costs,
+                std::vector<int> src,
+                std::vector<int> dest,
+                std::vector<float> edge_costs)
+{
+    assert(class_costs.size() == n*k);
+    for (int node = 0; node < n; ++node) {
+        for (int cls = 0; cls < k; ++cls) {
+            src.push_back(node);
+            dest.push_back(cls);
+            edge_costs.push_back(class_costs[node + cls]);
+        }
+    }
+    return {src, dest, edge_costs};
 }
