@@ -1,6 +1,9 @@
 add_executable(multicut_message_passing_test multicut_message_passing_test.cu)
 target_link_libraries(multicut_message_passing_test dCOO multicut_message_passing)
 
+add_executable(multiwaycut_message_passing_test multiwaycut_message_passing_test.cu)
+target_link_libraries(multiwaycut_message_passing_test dCOO multiwaycut_message_passing multiwaycut_text_parser)
+
 add_executable(cc_gpu_test cc_gpu_test.cu)
 target_link_libraries(cc_gpu_test ECL-CC_11)
 
