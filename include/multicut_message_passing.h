@@ -15,7 +15,7 @@ class multicut_message_passing {
         void send_messages_to_triplets();
         void send_messages_to_edges();
 
-        double lower_bound();
+        virtual double lower_bound();
 
         void iteration();
 
