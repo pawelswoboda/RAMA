@@ -5,7 +5,6 @@ multiwaycut_message_passing::multiwaycut_message_passing(
         const dCOO &A,
         const size_t _n_nodes,
         const size_t _n_classes,
-        thrust::device_vector<float> _class_costs,
         thrust::device_vector<int> &&_t1,
         thrust::device_vector<int> &&_t2,
         thrust::device_vector<int> &&_t3,
@@ -14,7 +13,7 @@ multiwaycut_message_passing::multiwaycut_message_passing(
         : multicut_message_passing(A, std::move(_t1), std::move(_t2), std::move(_t3), verbose),
         n_classes(_n_classes),
         n_nodes(_n_nodes),
-        class_costs(std::move(_class_costs))
+        class_costs(thrust::device_vector<float>(_n_nodes * _n_classes))  // Zero initialize summation constraints
         {
 }
 

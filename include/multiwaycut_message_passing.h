@@ -20,7 +20,7 @@ public:
 private:
     size_t n_nodes;
     size_t n_classes;
-    thrust::device_vector<float> class_costs;
+    thrust::device_vector<float> class_costs;  // Lagrange multipliers of the sum constraint
 protected:
     double class_lower_bound();
 
