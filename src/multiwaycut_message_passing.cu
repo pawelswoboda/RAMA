@@ -3,8 +3,8 @@
 
 multiwaycut_message_passing::multiwaycut_message_passing(
         const dCOO &A,
-        const size_t _n_nodes,
-        const size_t _n_classes,
+        const int _n_nodes,
+        const int _n_classes,
         thrust::device_vector<int> &&_t1,
         thrust::device_vector<int> &&_t2,
         thrust::device_vector<int> &&_t3,
@@ -31,8 +31,8 @@ bool multiwaycut_message_passing::is_class_edge(int idx)
 }
 
 struct class_lower_bound_parallel {
-    size_t k;  // number of classes
-    size_t N;  // number of elements in class_costs
+    int k;  // number of classes
+    int N;  // number of elements in class_costs
     float* class_costs;
     float* result;
     __host__ __device__ void operator() (int node) {

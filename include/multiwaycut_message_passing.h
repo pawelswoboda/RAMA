@@ -6,9 +6,8 @@ class multiwaycut_message_passing: public multicut_message_passing {
 public:
     multiwaycut_message_passing(
                 const dCOO& A,
-                const size_t _n_nodes,
-                const size_t _n_classes,
-                thrust::device_vector<float> _class_costs,
+                const int _n_nodes,
+                const int _n_classes,
                 thrust::device_vector<int>&& _t1,
                 thrust::device_vector<int>&& _t2,
                 thrust::device_vector<int>&& _t3,
@@ -18,8 +17,8 @@ public:
     double lower_bound() override;
 
 private:
-    size_t n_nodes;
-    size_t n_classes;
+    int n_nodes;
+    int n_classes;
     thrust::device_vector<float> class_costs;  // Lagrange multipliers of the sum constraint
 protected:
     double class_lower_bound();
