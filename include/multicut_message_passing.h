@@ -12,12 +12,12 @@ class multicut_message_passing {
                 const bool verbose = true
                 );
 
-        void send_messages_to_triplets();
+        virtual void send_messages_to_triplets();
         void send_messages_to_edges();
 
         virtual double lower_bound();
 
-        void iteration();
+        virtual void iteration();
 
         std::tuple<const thrust::device_vector<int>&, const thrust::device_vector<int>&, const thrust::device_vector<float>&>
             reparametrized_edge_costs() const;
