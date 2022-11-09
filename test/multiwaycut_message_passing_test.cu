@@ -37,10 +37,10 @@ void test_multiway_cut() {
     int classes = 2;
     std::vector<int> src = {0};
     std::vector<int> dest = {1};
-    std::vector<float> edge_costs = {1.0};
+    std::vector<float> edge_costs = {-2.0};
     std::vector<float> class_costs = {
-        1.0, -1.0,
-        1.0, -1.0,
+        1.0, 1.0,
+        1.0, 1.0,
     };
     thrust::device_vector<int> i;
     thrust::device_vector<int> j;
