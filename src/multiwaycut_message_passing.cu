@@ -188,8 +188,72 @@ void multiwaycut_message_passing::send_messages_to_triplets()
 
 }
 
+
+struct sum_to_edges_func {
+    // Basically the number of nodes, edge_costs should first contain the
+    // costs for the normal node-node edges and then the costs for the
+    // node-class edges
+    int class_cost_start;
+    int classes;
+    float *edge_costs;
+    float *class_costs;
+
+    __host__ __device__
+    float get_class_cost(int node, int klass) {
+        int offset = node * classes + klass;
+        return edge_costs[class_cost_start + offset];
+    }
+
+    __device__ void operator() (int node) {
+
+        float update = 0.0f;
+
+        switch (classes) {
+            case 1: // Only one class
+                update = 0.5f * get_class_cost(node, 0);
+                break;
+            case 2:
+                update = 0.5f * (get_class_cost(node, 0) + get_class_cost(node, 1));
+                break;
+            default:
+                // Find the two largest class costs
+                float first = get_class_cost(node, 0);
+                float second = get_class_cost(node, 1);
+                for (int klass = 2; klass < classes; ++klass) {
+                    float val = get_class_cost(node, klass);
+                    if (val > first) {
+                        second  = first;
+                        first = val;
+                    } else if (second < val && val <= first) {
+                        second = val;
+                    }
+                }
+                update = 0.5f * (first + second);
+                break;
+        }
+
+        // Update all class edges of this node
+        for (int k = 0; k < classes; ++k) {
+            int offset = node * classes + k;
+            class_costs[offset] -= get_class_cost(node, k) + update;
+            //Update the re-parameterized costs
+            atomicAdd(&edge_costs[class_cost_start + offset], get_class_cost(node, k) + update);
+        }
+    }
+};
+
+
 void multiwaycut_message_passing::send_messages_from_sum_to_edges()
 {
+        thrust::counting_iterator<int> iter(0);  // Iterates over the node indices
+        sum_to_edges_func func({
+            // The node-class edges are the last n_nodes*n_classes edges
+            static_cast<int>(edge_costs.size()) - (n_nodes * n_classes),
+            n_classes,
+            thrust::raw_pointer_cast(edge_costs.data()),
+            thrust::raw_pointer_cast(class_costs.data())
+        });
+        thrust::for_each(iter, iter + n_classes, func);
 }
 
 
