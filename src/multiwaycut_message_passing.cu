@@ -108,7 +108,7 @@ struct increase_triangle_costs_func_mwc {
             // The ith class is encoded as n_nodes + i
             int class_idx = (klass - static_cast<int>(n_nodes));
             assert((node * n_classes + class_idx) < (n_nodes * n_classes));
-            atomicAdd(&class_costs[node * n_classes + class_idx], update);
+            atomicAdd(&class_costs[node * n_classes + class_idx], -update);
         } else {
             assert(edge_counter[edge_idx] > 0);
             triangle_cost += edge_costs[edge_idx] / float(edge_counter[edge_idx]);
