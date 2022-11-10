@@ -23,14 +23,14 @@ struct class_lower_bound_parallel {
     float* class_costs;
     float* result;
     __host__ __device__ void operator() (int node) {
-        size_t offset_start = node * k;
-        size_t offset_end = offset_start + k - 1;
+        int offset_start = node * k;
+        int offset_end = offset_start + k - 1;
         assert(offset_end < N);
 
         // k should be quite small compared to N/k so summing using the for loop
         // should not be an issue
         float largest = class_costs[0];
-        for (size_t i = offset_start; i <= offset_end; ++i) {
+        for (int i = offset_start; i <= offset_end; ++i) {
             *result += class_costs[i];
             if (class_costs[i] > largest)
                 largest = class_costs[i];
@@ -106,7 +106,7 @@ struct increase_triangle_costs_func_mwc {
             int node = edge_sources[edge_idx];
             int klass = edge_dests[edge_idx];
             // The ith class is encoded as n_nodes + i
-            int class_idx = (klass - static_cast<int>(n_nodes));
+            int class_idx = (klass - n_nodes);
             assert((node * n_classes + class_idx) < (n_nodes * n_classes));
             atomicAdd(&class_costs[node * n_classes + class_idx], -update);
         } else {
