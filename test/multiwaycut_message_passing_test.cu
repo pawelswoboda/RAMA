@@ -63,7 +63,21 @@ void test_multiway_cut() {
     if(std::abs(initial_lb - (-2.0)) > 1e-6)
         throw std::runtime_error("initial lb before reparametrization must be -2");
 
+    mwcp.send_messages_to_triplets();
+
     mwcp.iteration();
+    std::cout << mwcp.lower_bound() << std::endl;
+    mwcp.iteration();
+    std::cout << mwcp.lower_bound() << std::endl;
+    mwcp.iteration();
+    std::cout << mwcp.lower_bound() << std::endl;
+    mwcp.iteration();
+    std::cout << mwcp.lower_bound() << std::endl;
+    mwcp.iteration();
+    std::cout << mwcp.lower_bound() << std::endl;
+    mwcp.iteration();
+    std::cout << mwcp.lower_bound() << std::endl;
+
 }
 
 
