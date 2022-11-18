@@ -31,11 +31,10 @@ struct class_lower_bound_parallel {
         // should not be an issue
         float largest = class_costs[0];
         for (int i = offset_start; i <= offset_end; ++i) {
-            *result += class_costs[i];
-            if (class_costs[i] > largest)
-                largest = class_costs[i];
+            result[node] += class_costs[i];
+            largest = max(largest, class_costs[i]);
         }
-        *result -= largest;
+        result[node] -= largest;
     }
 };
 double multiwaycut_message_passing::class_lower_bound()
@@ -49,15 +48,14 @@ double multiwaycut_message_passing::class_lower_bound()
     // then simply use a for loop (with only K iterations) to calculate the dot
     // product
     thrust::counting_iterator<int> iter(0);  // Iterates over the node indices
-    thrust::device_vector<float> res(1);
+    thrust::device_vector<float> res(n_nodes);
     class_lower_bound_parallel f({
         n_classes, n_nodes * n_classes,
         thrust::raw_pointer_cast(class_costs.data()),
         thrust::raw_pointer_cast(res.data())
     });
     thrust::for_each(iter, iter + n_nodes, f);
-
-    return res[0];
+    return thrust::reduce(res.begin(), res.end(), 0.0);
 }
 
 double multiwaycut_message_passing::lower_bound()
