@@ -26,10 +26,24 @@ void test_multiway_cut_repulsive_triangle() {
     std::cout << "initial lb = " << initial_lb << "\n";
     test(std::abs(initial_lb + 3.0) <= 1e-6, "Initial lb before reparametrization must be -3");
 
-    mwcp.send_messages_to_triplets();
+    int iterations = 1;
+    double last_lb = initial_lb;
+    for (int k = 0; k < iterations; ++k) {
+        mwcp.send_messages_to_triplets();
+        double new_lb = mwcp.lower_bound();
+        test(new_lb > last_lb || std::abs(new_lb - last_lb) < 1e-6, "Lower bound did not increase after message to triplets");
+        last_lb = new_lb;
 
-    mwcp.iteration();
-    std::cout << mwcp.lower_bound() << std::endl;
+        mwcp.send_messages_to_edges();
+        new_lb = mwcp.lower_bound();
+        test(new_lb > last_lb || std::abs(new_lb - last_lb) < 1e-6, "Lower bound did not increase after message to edges");
+        last_lb = new_lb;
+
+        mwcp.send_messages_from_sum_to_edges();
+        new_lb = mwcp.lower_bound();
+        test(new_lb > last_lb || std::abs(new_lb - last_lb) < 1e-6, "Lower bound did not increase after messages from class constraints");
+        last_lb = new_lb;
+    }
 
     const double final_lb = mwcp.lower_bound();
     std::cout << "final lb = " << final_lb << "\n";
@@ -61,10 +75,24 @@ void test_multiway_cut_2_nodes_2_classes() {
     std::cout << "initial lb = " << initial_lb << "\n";
     test(std::abs(initial_lb) <= 1e-6, "Initial lb before reparametrization must be 0");
 
-    mwcp.send_messages_to_triplets();
+    int iterations = 1;
+    double last_lb = initial_lb;
+    for (int k = 0; k < iterations; ++k) {
+        mwcp.send_messages_to_triplets();
+        double new_lb = mwcp.lower_bound();
+        test(new_lb > last_lb || std::abs(new_lb - last_lb) < 1e-6, "Lower bound did not increase after message to triplets");
+        last_lb = new_lb;
 
-    mwcp.iteration();
-    std::cout << mwcp.lower_bound() << std::endl;
+        mwcp.send_messages_to_edges();
+        new_lb = mwcp.lower_bound();
+        test(new_lb > last_lb || std::abs(new_lb - last_lb) < 1e-6, "Lower bound did not increase after message to edges");
+        last_lb = new_lb;
+
+        mwcp.send_messages_from_sum_to_edges();
+        new_lb = mwcp.lower_bound();
+        test(new_lb > last_lb || std::abs(new_lb - last_lb) < 1e-6, "Lower bound did not increase after messages from class constraints");
+        last_lb = new_lb;
+    }
 
     const double final_lb = mwcp.lower_bound();
     std::cout << "final lb = " << final_lb << "\n";
@@ -74,8 +102,8 @@ void test_multiway_cut_2_nodes_2_classes() {
 
 int main(int argc, char** argv)
 {
-    std::cout << "Testing multiwaycut repulsive triangle\n";
+    std::cout << "Testing repulsive triangle\n";
     test_multiway_cut_repulsive_triangle();
-    std::cout << "Testing multiwaycut 2 nodes 2 classes";
+    std::cout << "Testing 2 nodes 2 classes\n";
     test_multiway_cut_2_nodes_2_classes();
 }
