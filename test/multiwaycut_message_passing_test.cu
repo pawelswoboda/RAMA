@@ -75,7 +75,7 @@ void test_multiway_cut_2_nodes_2_classes() {
     std::cout << "initial lb = " << initial_lb << "\n";
     test(std::abs(initial_lb) <= 1e-6, "Initial lb before reparametrization must be 0");
 
-    int iterations = 1;
+    int iterations = 22;  // Need 21 iterations to reach sufficiently close approximation
     double last_lb = initial_lb;
     for (int k = 0; k < iterations; ++k) {
         mwcp.send_messages_to_triplets();
