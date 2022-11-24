@@ -131,11 +131,32 @@ struct increase_triangle_costs_func_mwc {
             // The ith class is encoded as n_nodes + i
             int class_idx = (klass - n_nodes);
             assert((node * n_classes + class_idx) < (n_nodes * n_classes));
-            atomicAdd(&class_costs[node * n_classes + class_idx], update);
         } else {
             assert(edge_counter[edge_idx] > 0);
             triangle_cost += edge_costs[edge_idx] / float(edge_counter[edge_idx]);
         }
+    }
+};
+
+struct increase_class_costs_func {
+    int n_nodes;
+    int n_classes;
+    float *class_costs;
+
+
+    __device__ void operator()(const thrust::tuple<int, int, int, float> t) {
+        int source = thrust::get<0>(t);
+        int dest = thrust::get<1>(t);
+        int edge_count = thrust::get<2>(t);
+        float edge_cost = thrust::get<3>(t);
+
+        // Check if it is class edge
+        if (dest < n_nodes) return;
+
+        // the ith class is encoded as n_nodes + i
+        int class_idx = source * n_classes + (dest - n_nodes);
+        assert(class_idx < n_nodes * n_classes);
+        class_costs[class_idx] += edge_cost / (1.0f + float(edge_count));
     }
 };
 
@@ -199,6 +220,19 @@ void multiwaycut_message_passing::send_messages_to_triplets()
         });
         thrust::for_each(first, last, func);
     }
+
+    // Send messages to summation constraints
+    {
+        increase_class_costs_func func({n_nodes, n_classes, thrust::raw_pointer_cast(class_costs.data())});
+        auto first = thrust::make_zip_iterator(thrust::make_tuple(
+            i.begin(), j.begin(), edge_counter.begin(), edge_costs.begin()
+        ));
+        auto last = thrust::make_zip_iterator(thrust::make_tuple(
+            i.end(), j.end(), edge_counter.end(), edge_costs.end()
+        ));
+        thrust::for_each(first, last, func);
+    }
+
 
     // Direct copy from multicut_message_passing
     // set costs of edges to zero (if edge participates in a triangle)
