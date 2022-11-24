@@ -26,9 +26,10 @@ void test_multiway_cut_repulsive_triangle() {
     std::cout << "initial lb = " << initial_lb << "\n";
     test(std::abs(initial_lb + 3.0) <= 1e-6, "Initial lb before reparametrization must be -3");
 
-    int iterations = 1;
+    int iterations = 10;
     double last_lb = initial_lb;
     for (int k = 0; k < iterations; ++k) {
+        std::cout << "---------------" << "iteration = " << k << "---------------\n";
         mwcp.send_messages_to_triplets();
         double new_lb = mwcp.lower_bound();
         test(new_lb > last_lb || std::abs(new_lb - last_lb) < 1e-6, "Lower bound did not increase after message to triplets");
@@ -78,6 +79,7 @@ void test_multiway_cut_2_nodes_2_classes() {
     int iterations = 22;  // Need 21 iterations to reach sufficiently close approximation
     double last_lb = initial_lb;
     for (int k = 0; k < iterations; ++k) {
+        std::cout << "---------------" << "iteration=" << k << "---------------\n";
         mwcp.send_messages_to_triplets();
         double new_lb = mwcp.lower_bound();
         test(new_lb > last_lb || std::abs(new_lb - last_lb) < 1e-6, "Lower bound did not increase after message to triplets");
