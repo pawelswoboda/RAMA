@@ -1,4 +1,5 @@
 #include "multiwaycut_message_passing.h"
+#include "rama_utils.h"
 
 
 multiwaycut_message_passing::multiwaycut_message_passing(
@@ -82,7 +83,10 @@ double multiwaycut_message_passing::class_lower_bound()
 double multiwaycut_message_passing::lower_bound()
 {
     if (n_classes > 0) {
-        return multicut_message_passing::lower_bound() + class_lower_bound();
+        double clb = class_lower_bound();
+        double res = edge_lower_bound() + triangle_lower_bound() + clb;
+        printf("%f+%f+%f = %f\n", edge_lower_bound(), triangle_lower_bound(), clb, res);
+        return res;
     } else {
         std::cout << "No classes provided. Defaulting to multicut\n";
         return multicut_message_passing::lower_bound();
@@ -127,7 +131,7 @@ struct increase_triangle_costs_func_mwc {
             // The ith class is encoded as n_nodes + i
             int class_idx = (klass - n_nodes);
             assert((node * n_classes + class_idx) < (n_nodes * n_classes));
-            atomicAdd(&class_costs[node * n_classes + class_idx], -update);
+            atomicAdd(&class_costs[node * n_classes + class_idx], update);
         } else {
             assert(edge_counter[edge_idx] > 0);
             triangle_cost += edge_costs[edge_idx] / float(edge_counter[edge_idx]);
@@ -204,15 +208,15 @@ void multiwaycut_message_passing::send_messages_to_triplets()
         thrust::for_each(first, last, decrease_edge_costs_func());
     }
 
-
+    print_vector(edge_costs, "edge_costs after msg to triplets");
+    print_vector(class_costs, "class_costs after msg to triplets");
+    print_vector(t12_costs, "t12 after msg to triplets");
+    print_vector(t13_costs, "t13 after msg to triplets");
+    print_vector(t23_costs, "t23 after msg to triplets");
 }
 
 
 struct sum_to_edges_func {
-    // Basically the number of nodes, edge_costs should first contain the
-    // costs for the normal node-node edges and then the costs for the
-    // node-class edges
-    int class_cost_start;
     int classes;
     float *edge_costs;
     float *class_costs;
@@ -224,23 +228,21 @@ struct sum_to_edges_func {
 
         float update = 0.0f;
 
-        // The classes the last n_classes elements
-        int class_start = start + size - classes;
-        int end = start + size;
+        int cstart = node * classes;
 
         switch (classes) {
             case 1: // Only one class
-                update = 0.5f * edge_costs[class_start];
+                update = 0.5f * class_costs[cstart];
                 break;
             case 2:
-                update = 0.5f * (edge_costs[class_start] + edge_costs[class_start + 1]);
+                update = 0.5f * (class_costs[cstart] + class_costs[cstart + 1]);
                 break;
             default:
                 // Find the two largest class costs
-                float first = edge_costs[class_start];
-                float second = edge_costs[class_start + 1];
-                for (int k = class_start + 2; k < end; ++k) {
-                    float cost = edge_costs[k];
+                float first = class_costs[cstart];
+                float second = class_costs[cstart + 1];
+                for (int k = 2; k < classes; ++k) {
+                    float cost = class_costs[cstart + k];
                     if (cost > first) {
                         second  = first;
                         first = cost;
@@ -255,9 +257,10 @@ struct sum_to_edges_func {
         // Update all class edges of this node
         for (int k = 0; k < classes; ++k) {
             int offset = node * classes + k;
-            class_costs[offset] -= edge_costs[class_start + k] + update;
-            //Update the re-parameterized costs
-            atomicAdd(&edge_costs[class_start + k], edge_costs[class_start + k] + update);
+
+            //Update the re-parameterized costs for node-class edges
+            atomicAdd(&edge_costs[start + size - classes + k], -update+class_costs[offset]);
+            class_costs[offset] -= class_costs[offset] - update;
         }
     }
 };
@@ -279,6 +282,11 @@ void multiwaycut_message_passing::send_messages_from_sum_to_edges()
         thrust::make_zip_iterator(thrust::make_tuple(node.end(), start.end(), size.end())),
         func
     );
+    print_vector(edge_costs, "edge_costs after msg to edges 2");
+    print_vector(class_costs, "class_costs after msg to edges 2");
+    print_vector(t12_costs, "t12 after msg to edges 2");
+    print_vector(t13_costs, "t13 after msg to edges 2");
+    print_vector(t23_costs, "t23 after msg to edges 2");
 }
 
 
@@ -287,5 +295,14 @@ void multiwaycut_message_passing::iteration()
     send_messages_to_triplets();
     send_messages_to_edges();
     send_messages_from_sum_to_edges();
+}
+void multiwaycut_message_passing::send_messages_to_edges()
+{
+    multicut_message_passing::send_messages_to_edges();
+    print_vector(edge_costs, "edge_costs after msg to edges");
+    print_vector(class_costs, "class_costs after msg to edges");
+    print_vector(t12_costs, "t12 after msg to edges ");
+    print_vector(t13_costs, "t13 after msg to edges ");
+    print_vector(t23_costs, "t23 after msg to edges ");
 }
 
