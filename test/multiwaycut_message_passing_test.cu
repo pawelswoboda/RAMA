@@ -70,6 +70,10 @@ void test_multiway_cut_repulsive_triangle(
         new_lb = mwcp.lower_bound();
         test(new_lb > last_lb || std::abs(new_lb - last_lb) < 1e-6, "Lower bound did not increase after messages from class constraints");
         last_lb = new_lb;
+
+        // short circuit if we encounter the optimal lower bound earlier
+        if (std::abs(last_lb - expected_final_lb) <= 1e-6)
+            break;
     }
 
     const double final_lb = mwcp.lower_bound();
@@ -136,7 +140,14 @@ void test_multiway_cut_2_nodes_2_classes(
         + std::min(c1[0], 0.0f)  + std::min(c1[1], 0.0f)  + std::min(c2[0], 0.0f)  + std::min(c2[1], 0.0f);
     test(std::abs(initial_lb - expected_initial_lb) <= 1e-6, "Initial lb before reparametrization must be " + std::to_string(expected_initial_lb));
 
-    int iterations = 22;  // Need 21 iterations to reach sufficiently close approximation
+    // Lower bound is edge costs + the two smallest class costs
+    const double expected_final_lb =
+        // Edge lower bound, for this test case the class edges should be zero in the end
+        std::min(edge_cost, 0.0f)
+        // Class lower bound
+        + std::min(c1[0], c2[0])
+        + std::min(c1[1], c2[1]);
+
     double last_lb = initial_lb;
     for (int k = 0; k < iterations; ++k) {
         std::cout << "---------------" << "iteration=" << k << "---------------\n";
@@ -154,17 +165,14 @@ void test_multiway_cut_2_nodes_2_classes(
         new_lb = mwcp.lower_bound();
         test(new_lb > last_lb || std::abs(new_lb - last_lb) < 1e-6, "Lower bound did not increase after messages from class constraints");
         last_lb = new_lb;
+
+        // short circuit if we encounter the optimal lower bound earlier
+        if (std::abs(last_lb - expected_final_lb) <= 1e-6)
+            break;
     }
 
     const double final_lb = mwcp.lower_bound();
     std::cout << "final lb = " << final_lb << "\n";
-    // Lower bound is edge costs + the two smallest class costs
-    const double expected_final_lb =
-        // Edge lower bound, for this test case the class edges should be set to zero in the end
-        std::min(edge_cost, 0.0f)
-        // Class lower bound
-        + std::min(c1[0], c2[0])
-        + std::min(c1[1], c2[1]);
     test(std::abs(final_lb - expected_final_lb) <= 1e-6, "Final lb after reparametrization must be " + std::to_string(expected_final_lb));
 }
 
