@@ -2,6 +2,9 @@
 #include "multiwaycut_text_parser.h"
 #include "test.h"
 
+#define TEST_MAX_ITER 20
+#define TEST_RAND_ITER 10   // How many test with random value
+
 void test_multiway_cut_repulsive_triangle(
     const float edge_cost,
     const std::array<float, 3> c1,  // Class costs for class 1 for all nodes
@@ -54,7 +57,7 @@ void test_multiway_cut_repulsive_triangle(
         + std::min(c1[2], c2[2]);
 
     double last_lb = initial_lb;
-    for (int k = 0; k < iterations; ++k) {
+    for (int k = 0; k < TEST_MAX_ITER; ++k) {
         std::cout << "---------------" << "iteration = " << k << "---------------\n";
         mwcp.send_messages_to_triplets();
         double new_lb = mwcp.lower_bound();
@@ -149,7 +152,7 @@ void test_multiway_cut_2_nodes_2_classes(
         + std::min(c1[1], c2[1]);
 
     double last_lb = initial_lb;
-    for (int k = 0; k < iterations; ++k) {
+    for (int k = 0; k < TEST_MAX_ITER; ++k) {
         std::cout << "---------------" << "iteration=" << k << "---------------\n";
         mwcp.send_messages_to_triplets();
         double new_lb = mwcp.lower_bound();
@@ -197,6 +200,7 @@ int main(int argc, char** argv)
     test_multiway_cut_repulsive_triangle(-1.0, 0.0, false);
     test_multiway_cut_repulsive_triangle(-1.0, 0.0, true);
     test_multiway_cut_repulsive_triangle(-1.0, -1.0, false);
+    // Currently fails due to rounding errors probably?
     test_multiway_cut_repulsive_triangle(-1.0, -1.0, true);
     test_multiway_cut_repulsive_triangle(-1.0, 1.0, false);
     test_multiway_cut_repulsive_triangle(-1.0, 1.0, true);
@@ -207,4 +211,21 @@ int main(int argc, char** argv)
     test_multiway_cut_2_nodes_2_classes(1.0, -1.0, true);
     test_multiway_cut_2_nodes_2_classes(1.0, 1.0, false);
     test_multiway_cut_2_nodes_2_classes(1.0, 1.0, true);
+
+
+    // Random number tests:
+    std::srand(17410);
+    for (int i = 0; i < TEST_RAND_ITER; ++i) {
+        float c = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
+        std::cout << "Testing with class_cost = " << c << "\n";
+        test_multiway_cut_repulsive_triangle(-1.0, c, false);
+        test_multiway_cut_repulsive_triangle(-1.0, c, true);
+        test_multiway_cut_repulsive_triangle(-1.0, -c, false);
+        test_multiway_cut_repulsive_triangle(-1.0, -c, true);
+
+        test_multiway_cut_2_nodes_2_classes(1.0, c, false);
+        test_multiway_cut_2_nodes_2_classes(1.0, c, true);
+        test_multiway_cut_2_nodes_2_classes(1.0, -c, false);
+        test_multiway_cut_2_nodes_2_classes(1.0, -c, true);
+    }
 }
