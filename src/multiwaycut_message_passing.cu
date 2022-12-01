@@ -51,7 +51,7 @@ struct class_lower_bound_parallel {
 
         // k should be quite small compared to N/k so summing using the for loop
         // should not be an issue
-        float largest = class_costs[0];
+        float largest = class_costs[offset_start];
         for (int i = offset_start; i <= offset_end; ++i) {
             result[node] += class_costs[i];
             largest = max(largest, class_costs[i]);
