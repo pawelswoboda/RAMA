@@ -2,7 +2,7 @@
 #include "multiwaycut_text_parser.h"
 #include "test.h"
 
-void test_multiway_cut_repulsive_triangle(const float edge_cost, const float class_cost, const bool add_triangles = true) {
+void test_multiway_cut_repulsive_triangle(const float edge_cost, const float class_cost, const bool add_triangles) {
     int nodes = 3;
     int classes = 2;
     std::vector<int> src = {0, 0, 1};
@@ -121,9 +121,12 @@ void test_multiway_cut_2_nodes_2_classes(const float edge_cost, const float clas
 int main(int argc, char** argv)
 {
     std::cout << "Testing repulsive triangle\n";
-//    test_multiway_cut_repulsive_triangle(-1.0, 0.0);
-//    test_multiway_cut_repulsive_triangle(-1.0, -1.0);
-//    test_multiway_cut_repulsive_triangle(-1.0, 1.0);
+    test_multiway_cut_repulsive_triangle(-1.0, 0.0, false);
+    test_multiway_cut_repulsive_triangle(-1.0, 0.0, true);
+    test_multiway_cut_repulsive_triangle(-1.0, -1.0, false);
+    test_multiway_cut_repulsive_triangle(-1.0, -1.0, true);
+    test_multiway_cut_repulsive_triangle(-1.0, 1.0, false);
+    test_multiway_cut_repulsive_triangle(-1.0, 1.0, true);
     std::cout << "Testing 2 nodes 2 classes\n";
     test_multiway_cut_2_nodes_2_classes(1.0, 0.0, false);
     test_multiway_cut_2_nodes_2_classes(1.0, 0.0, true);
