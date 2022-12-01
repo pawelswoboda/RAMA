@@ -1,6 +1,7 @@
 #include "multiwaycut_message_passing.h"
 #include "multiwaycut_text_parser.h"
 #include "test.h"
+#include <random>
 
 #define TEST_MAX_ITER 20
 #define TEST_RAND_ITER 10   // How many test with random value
@@ -214,9 +215,10 @@ int main(int argc, char** argv)
 
 
     // Random number tests:
-    std::srand(17410);
+    std::mt19937 gen(17410);
+    std::uniform_real_distribution<> dist(-5, 5);
     for (int i = 0; i < TEST_RAND_ITER; ++i) {
-        float c = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
+        float c = dist(gen);
         std::cout << "Testing with class_cost = " << c << "\n";
         test_multiway_cut_repulsive_triangle(-1.0, c, false);
         test_multiway_cut_repulsive_triangle(-1.0, c, true);
