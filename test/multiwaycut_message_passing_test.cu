@@ -2,14 +2,19 @@
 #include "multiwaycut_text_parser.h"
 #include "test.h"
 
-void test_multiway_cut_repulsive_triangle(const float edge_cost, const float class_cost, const bool add_triangles) {
+void test_multiway_cut_repulsive_triangle(
+    const float edge_cost,
+    const std::array<float, 3> c1,  // Class costs for class 1 for all nodes
+    const std::array<float, 3> c2,
+    const bool add_triangles
+) {
     int nodes = 3;
     int classes = 2;
     std::vector<int> src = {0, 0, 1};
     std::vector<int> dest = {1, 2, 2};
     std::vector<float> edge_costs = {edge_cost, edge_cost, edge_cost};
     std::vector<float> class_costs = {
-        class_cost,class_cost, class_cost,class_cost, class_cost,class_cost
+        c1[0], c2[0], c1[1], c2[1], c1[2], c2[2]
     };
     thrust::device_vector<int> i;
     thrust::device_vector<int> j;
@@ -31,7 +36,14 @@ void test_multiway_cut_repulsive_triangle(const float edge_cost, const float cla
 
     const double initial_lb = mwcp.lower_bound();
     std::cout << "initial lb = " << initial_lb << "\n";
-    test(std::abs(initial_lb - (3* std::min(edge_cost, float(0.0)) + 6*std::min(class_cost, float(0.0)))) <= 1e-6, "Initial lb before reparametrization must be -3");
+
+    const double expected_initial_lb =
+        // Initial lower bound only considers the edge costs
+        3 * std::min(edge_cost, 0.0f)  // We have three base edges
+        // node-class edges are added to the edges, hence those need to be taken into account as well
+        + std::min(c1[0], 0.0f) + std::min(c1[1], 0.0f) + std::min(c1[2], 0.0f)
+        + std::min(c2[0], 0.0f) + std::min(c2[1], 0.0f) + std::min(c2[2], 0.0f) ;
+    test(std::abs(initial_lb - expected_initial_lb) <= 1e-6, "Initial lb before reparametrization must be " + std::to_string(expected_initial_lb));
 
     int iterations = 10;
     double last_lb = initial_lb;
@@ -59,14 +71,33 @@ void test_multiway_cut_repulsive_triangle(const float edge_cost, const float cla
 }
 
 
-void test_multiway_cut_2_nodes_2_classes(const float edge_cost, const float class_cost, const bool add_triangles) {
+void test_multiway_cut_repulsive_triangle(
+    const float edge_cost,
+    const float class_cost,
+    const bool add_triangles
+) {
+    test_multiway_cut_repulsive_triangle(
+        edge_cost,
+        std::array<float, 3>{{class_cost, class_cost, class_cost}},
+        std::array<float, 3>{{class_cost, class_cost, class_cost}},
+        add_triangles
+    );
+}
+
+
+void test_multiway_cut_2_nodes_2_classes(
+    const float edge_cost,
+    const std::array<float, 2> c1,  // Costs for class 1, one entry for each node
+    const std::array<float, 2> c2,  // Costs for class 2
+    const bool add_triangles
+) {
     int nodes = 2;
     int classes = 2;
     std::vector<int> src = {0};
     std::vector<int> dest = {1};
     std::vector<float> edge_costs = {edge_cost};
     std::vector<float> class_costs = {
-        class_cost,class_cost, class_cost,class_cost
+        c1[0], c2[0], c1[1], c2[1]
     };
     thrust::device_vector<int> i;
     thrust::device_vector<int> j;
@@ -90,7 +121,12 @@ void test_multiway_cut_2_nodes_2_classes(const float edge_cost, const float clas
 
     const double initial_lb = mwcp.lower_bound();
     std::cout << "initial lb = " << initial_lb << "\n";
-    test(std::abs(initial_lb - (std::min(edge_cost, float(0.0)) + 4*std::min(class_cost, float(0.0)))) <= 1e-6, "Initial lb before reparametrization must be 0");
+    const double expected_initial_lb =
+        // Initial lower bound only considers the edge costs
+        std::min(edge_cost, 0.0f)
+        // node-class edges are added to the edges, hence those need to be taken into account as well
+        + std::min(c1[0], 0.0f)  + std::min(c1[1], 0.0f)  + std::min(c2[0], 0.0f)  + std::min(c2[1], 0.0f);
+    test(std::abs(initial_lb - expected_initial_lb) <= 1e-6, "Initial lb before reparametrization must be " + std::to_string(expected_initial_lb));
 
     int iterations = 22;  // Need 21 iterations to reach sufficiently close approximation
     double last_lb = initial_lb;
@@ -114,7 +150,28 @@ void test_multiway_cut_2_nodes_2_classes(const float edge_cost, const float clas
 
     const double final_lb = mwcp.lower_bound();
     std::cout << "final lb = " << final_lb << "\n";
-    test(std::abs(final_lb - (std::min(edge_cost, float(0.0)) + 2*std::min(class_cost, float(0.0)))) <= 1e-6, "Final lb after reparametrization must be 2");
+    // Lower bound is edge costs + the two smallest class costs
+    const double expected_final_lb =
+        // Edge lower bound, for this test case the class edges should be set to zero in the end
+        std::min(edge_cost, 0.0f)
+        // Class lower bound
+        + std::min(c1[0], c2[0])
+        + std::min(c1[1], c2[1]);
+    test(std::abs(final_lb - expected_final_lb) <= 1e-6, "Final lb after reparametrization must be " + std::to_string(expected_final_lb));
+}
+
+
+void test_multiway_cut_2_nodes_2_classes(
+    const float edge_cost,
+    const float class_cost,
+    const bool add_triangles
+) {
+    test_multiway_cut_2_nodes_2_classes(
+        edge_cost,
+        std::array<float, 2>{{class_cost, class_cost}},
+        std::array<float, 2>{{class_cost, class_cost}},
+        add_triangles
+    );
 }
 
 
