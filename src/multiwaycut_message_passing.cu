@@ -163,13 +163,18 @@ struct increase_class_costs_func {
 
 // Direct copy from multicut_message_passing
 struct decrease_edge_costs_func {
-      __host__ __device__ void operator()(const thrust::tuple<float&,int> x) const
-      {
-          float& cost = thrust::get<0>(x);
-          int counter = thrust::get<1>(x);
-          if(counter > 0)
-              cost = 0.0;
-      }
+    int n_nodes;
+    __host__ __device__ void operator()(const thrust::tuple<float&,int, int> x) const
+    {
+        float& cost = thrust::get<0>(x);
+        int counter = thrust::get<1>(x);
+        int dest = thrust::get<2>(x);
+        if(counter > 0)
+            cost = 0.0;  // Participates in a triangle
+        else if (dest >= n_nodes) {
+            cost = 0.0; // Is a node-class edge
+        }
+    }
 };
 
 
@@ -233,13 +238,11 @@ void multiwaycut_message_passing::send_messages_to_triplets()
         thrust::for_each(first, last, func);
     }
 
-
-    // Direct copy from multicut_message_passing
-    // set costs of edges to zero (if edge participates in a triangle)
+    // set costs of edges to zero (if edge participates in a triangle or is a class edge)
     {
-        auto first = thrust::make_zip_iterator(thrust::make_tuple(edge_costs.begin(), edge_counter.begin()));
-        auto last = thrust::make_zip_iterator(thrust::make_tuple(edge_costs.end(), edge_counter.end()));
-        thrust::for_each(first, last, decrease_edge_costs_func());
+        auto first = thrust::make_zip_iterator(thrust::make_tuple(edge_costs.begin(), edge_counter.begin(), j.begin()));
+        auto last = thrust::make_zip_iterator(thrust::make_tuple(edge_costs.end(), edge_counter.end(), j.end()));
+        thrust::for_each(first, last, decrease_edge_costs_func({n_nodes}));
     }
 
     print_vector(edge_costs, "edge_costs after msg to triplets");
