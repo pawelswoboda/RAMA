@@ -45,7 +45,14 @@ void test_multiway_cut_repulsive_triangle(
         + std::min(c2[0], 0.0f) + std::min(c2[1], 0.0f) + std::min(c2[2], 0.0f) ;
     test(std::abs(initial_lb - expected_initial_lb) <= 1e-6, "Initial lb before reparametrization must be " + std::to_string(expected_initial_lb));
 
-    int iterations = 10;
+    const double expected_final_lb =
+        // Edge lower bound, for this test case the class edges should be zero in the end
+        3 * std::min(edge_cost, 0.0f)
+        // Class lower bound
+        + std::min(c1[0], c2[0])
+        + std::min(c1[1], c2[1])
+        + std::min(c1[2], c2[2]);
+
     double last_lb = initial_lb;
     for (int k = 0; k < iterations; ++k) {
         std::cout << "---------------" << "iteration = " << k << "---------------\n";
@@ -67,7 +74,8 @@ void test_multiway_cut_repulsive_triangle(
 
     const double final_lb = mwcp.lower_bound();
     std::cout << "final lb = " << final_lb << "\n";
-//    test(std::abs(final_lb - 1.0) <= 1e-6, "Final lb after reparametrization must be -2");
+
+    test(std::abs(final_lb - expected_final_lb) <= 1e-6, "Final lb after reparametrization must be " + std::to_string(expected_final_lb));
 }
 
 
