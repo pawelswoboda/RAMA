@@ -2,14 +2,14 @@
 #include "multiwaycut_text_parser.h"
 #include "test.h"
 
-void test_multiway_cut_repulsive_triangle() {
+void test_multiway_cut_repulsive_triangle(const float edge_cost, const float class_cost) {
     int nodes = 3;
     int classes = 2;
     std::vector<int> src = {0, 0, 1};
     std::vector<int> dest = {1, 2, 2};
-    std::vector<float> edge_costs = {-1.0, -1.0, -1.0};
+    std::vector<float> edge_costs = {edge_cost, edge_cost, edge_cost};
     std::vector<float> class_costs = {
-        1,1, 1,1, 1,1
+        class_cost,class_cost, class_cost,class_cost, class_cost,class_cost
     };
     thrust::device_vector<int> i;
     thrust::device_vector<int> j;
@@ -24,7 +24,7 @@ void test_multiway_cut_repulsive_triangle() {
 
     const double initial_lb = mwcp.lower_bound();
     std::cout << "initial lb = " << initial_lb << "\n";
-    test(std::abs(initial_lb + 3.0) <= 1e-6, "Initial lb before reparametrization must be -3");
+    test(std::abs(initial_lb - (3* std::min(edge_cost, float(0.0)) + 6*std::min(class_cost, float(0.0)))) <= 1e-6, "Initial lb before reparametrization must be -3");
 
     int iterations = 10;
     double last_lb = initial_lb;
@@ -52,14 +52,14 @@ void test_multiway_cut_repulsive_triangle() {
 }
 
 
-void test_multiway_cut_2_nodes_2_classes() {
+void test_multiway_cut_2_nodes_2_classes(const float edge_cost, const float class_cost) {
     int nodes = 2;
     int classes = 2;
     std::vector<int> src = {0};
     std::vector<int> dest = {1};
-    std::vector<float> edge_costs = {1.0};
+    std::vector<float> edge_costs = {edge_cost};
     std::vector<float> class_costs = {
-        1,1, 1,1
+        class_cost,class_cost, class_cost,class_cost
     };
     thrust::device_vector<int> i;
     thrust::device_vector<int> j;
@@ -74,7 +74,7 @@ void test_multiway_cut_2_nodes_2_classes() {
 
     const double initial_lb = mwcp.lower_bound();
     std::cout << "initial lb = " << initial_lb << "\n";
-    test(std::abs(initial_lb) <= 1e-6, "Initial lb before reparametrization must be 0");
+    test(std::abs(initial_lb - (std::min(edge_cost, float(0.0)) + 4*std::min(class_cost, float(0.0)))) <= 1e-6, "Initial lb before reparametrization must be 0");
 
     int iterations = 22;  // Need 21 iterations to reach sufficiently close approximation
     double last_lb = initial_lb;
@@ -98,14 +98,18 @@ void test_multiway_cut_2_nodes_2_classes() {
 
     const double final_lb = mwcp.lower_bound();
     std::cout << "final lb = " << final_lb << "\n";
-    test(std::abs(final_lb - 2) <= 1e-6, "Final lb after reparametrization must be 2");
+    test(std::abs(final_lb - (std::min(edge_cost, float(0.0)) + 2*std::min(class_cost, float(0.0)))) <= 1e-6, "Final lb after reparametrization must be 2");
 }
 
 
 int main(int argc, char** argv)
 {
     std::cout << "Testing repulsive triangle\n";
-    test_multiway_cut_repulsive_triangle();
+    test_multiway_cut_repulsive_triangle(-1.0, 0.0);
+    test_multiway_cut_repulsive_triangle(-1.0, -1.0);
+    test_multiway_cut_repulsive_triangle(-1.0, 1.0);
     std::cout << "Testing 2 nodes 2 classes\n";
-    test_multiway_cut_2_nodes_2_classes();
+    test_multiway_cut_2_nodes_2_classes(1.0, 0.0);
+    test_multiway_cut_2_nodes_2_classes(1.0, -1.0);
+    test_multiway_cut_2_nodes_2_classes(1.0, 1.0);
 }
