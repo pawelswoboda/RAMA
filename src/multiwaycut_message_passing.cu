@@ -169,8 +169,9 @@ struct decrease_edge_costs_func {
         float& cost = thrust::get<0>(x);
         int counter = thrust::get<1>(x);
         int dest = thrust::get<2>(x);
-        if(counter > 0)
+        if(counter > 0) {
             cost = 0.0;  // Participates in a triangle
+        }
         else if (dest >= n_nodes) {
             cost = 0.0; // Is a node-class edge
         }
