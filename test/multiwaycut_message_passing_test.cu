@@ -3,7 +3,7 @@
 #include "test.h"
 #include <random>
 
-#define TEST_MAX_ITER 20
+#define TEST_MAX_ITER 25
 #define TEST_RAND_ITER 10   // How many test with random value
 
 void test_multiway_cut_repulsive_triangle(
