@@ -231,4 +231,29 @@ int main(int argc, char** argv)
         test_multiway_cut_2_nodes_2_classes(1.0, -c, false);
         test_multiway_cut_2_nodes_2_classes(1.0, -c, true);
     }
+
+    // Completely random class costs
+    for (int i = 0; i < TEST_RAND_ITER; ++i) {
+        std::array<float, 2> c1 = {{static_cast<float>(dist(gen)), static_cast<float>(dist(gen))}};
+        std::array<float, 2> c2 = {{static_cast<float>(dist(gen)), static_cast<float>(dist(gen))}};
+        std::cout << "Testing with class_cost = " << c1[0] << "," << c1[1] << " " << c2[0] << "," << c2[1] <<  "\n";
+
+        test_multiway_cut_2_nodes_2_classes(1.0, c1, c2, false);
+        test_multiway_cut_2_nodes_2_classes(1.0, c1, c2, true);
+        test_multiway_cut_2_nodes_2_classes(1.0, {{-c1[0], -c1[1]}}, {{-c2[0], -c2[1]}}, false);
+        test_multiway_cut_2_nodes_2_classes(1.0, {{-c1[0], -c1[1]}}, {{-c2[0], -c2[1]}}, true);
+    }
+    for (int i = 0; i < TEST_RAND_ITER; ++i) {
+        std::array<float, 3> c1 = {{static_cast<float>(dist(gen)), static_cast<float>(dist(gen)), static_cast<float>(dist(gen))}};
+        std::array<float, 3> c2 = {{static_cast<float>(dist(gen)), static_cast<float>(dist(gen)), static_cast<float>(dist(gen))}};
+        std::cout << "Testing with class_cost = "
+                  << c1[0] << "," << c1[1] << "," << c1[2]
+                  << " "
+                  << c2[0] << "," << c2[1] << "," << c2[2] << "\n";
+
+        test_multiway_cut_repulsive_triangle(-1.0, c1, c2, false);
+        test_multiway_cut_repulsive_triangle(-1.0, c1, c2, true);
+        test_multiway_cut_repulsive_triangle(-1.0, {{-c1[0], -c1[1], -c1[2]}}, {{-c2[0], -c2[1], -c2[2]}}, false);
+        test_multiway_cut_repulsive_triangle(-1.0, {{-c1[0], -c1[1], -c1[2]}}, {{-c2[0], -c2[1], -c2[2]}}, true);
+    }
 }
