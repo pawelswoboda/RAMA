@@ -1,6 +1,9 @@
 #include "multiwaycut_message_passing.h"
 #include "rama_utils.h"
 
+// An edge is a node class-edge iff the destination node value is larger than the largest base node
+// which are assigned values from [0...n_nodes]
+#define IS_CLASS_EDGE(dest) (dest >= n_nodes)
 
 multiwaycut_message_passing::multiwaycut_message_passing(
         const dCOO &A,
@@ -96,41 +99,19 @@ double multiwaycut_message_passing::lower_bound()
 // Adapted from multicut_message_passing to check if an edge is a class-node edge
 struct increase_triangle_costs_func_mwc {
     int n_nodes;     // Needed to check if an edge is a class-node edge
-    int n_classes;   // For calculating the index in the class_costs_matrix
-    int *edge_sources;  // For calculating the index in the class_costs matrix
     int *edge_dests;    // The destination tells us if the edge is a class nod edge
 
-    float* class_costs;
     float* edge_costs;
     int* edge_counter;
-
-    /**
-     * Checks if the given destination node is a class node
-     * @param dest End node of the edge
-     * @return True if the index of the destination node is bigger than any "regular" node, this is the way
-     *  a class node is encoded by the `mwc_to_coo` function
-     */
-    __host__ __device__ bool is_class_edge(int dest) const
-    {
-        return dest >= n_nodes;
-    }
 
     __device__ void operator()(const thrust::tuple<int,float&> t) const
     {
         const int edge_idx = thrust::get<0>(t);
         float& triangle_cost = thrust::get<1>(t);
 
-        if (is_class_edge(edge_dests[edge_idx])) {
-            // edge_counter may be zero but that indicates not part of a triangle?
-
+        if (IS_CLASS_EDGE(edge_dests[edge_idx])) {
             float update = edge_costs[edge_idx]/(1.0f + float(edge_counter[edge_idx]));
             triangle_cost += update;
-            // update class costs for this edge
-            int node = edge_sources[edge_idx];
-            int klass = edge_dests[edge_idx];
-            // The ith class is encoded as n_nodes + i
-            int class_idx = (klass - n_nodes);
-            assert((node * n_classes + class_idx) < (n_nodes * n_classes));
         } else {
             assert(edge_counter[edge_idx] > 0);
             triangle_cost += edge_costs[edge_idx] / float(edge_counter[edge_idx]);
@@ -151,7 +132,7 @@ struct increase_class_costs_func {
         float edge_cost = thrust::get<3>(t);
 
         // Check if it is class edge
-        if (dest < n_nodes) return;
+        if (!IS_CLASS_EDGE(dest)) return;
 
         // the ith class is encoded as n_nodes + i
         int class_idx = source * n_classes + (dest - n_nodes);
@@ -169,11 +150,8 @@ struct decrease_edge_costs_func {
         float& cost = thrust::get<0>(x);
         int counter = thrust::get<1>(x);
         int dest = thrust::get<2>(x);
-        if(counter > 0) {
-            cost = 0.0;  // Participates in a triangle
-        }
-        else if (dest >= n_nodes) {
-            cost = 0.0; // Is a node-class edge
+        if(counter > 0 || IS_CLASS_EDGE(dest)) {
+            cost = 0.0;  // Participates in a triangle or is a class edge
         }
     }
 };
@@ -189,10 +167,7 @@ void multiwaycut_message_passing::send_messages_to_triplets()
         auto last = thrust::make_zip_iterator(thrust::make_tuple(triangle_correspondence_12.end(), t12_costs.end()));
         increase_triangle_costs_func_mwc func({
             n_nodes,
-            n_classes,
-            thrust::raw_pointer_cast(i.data()),
             thrust::raw_pointer_cast(j.data()),
-            thrust::raw_pointer_cast(class_costs.data()),
             thrust::raw_pointer_cast(edge_costs.data()),
             thrust::raw_pointer_cast(edge_counter.data())
         });
@@ -203,10 +178,7 @@ void multiwaycut_message_passing::send_messages_to_triplets()
         auto last = thrust::make_zip_iterator(thrust::make_tuple(triangle_correspondence_13.end(), t13_costs.end()));
         increase_triangle_costs_func_mwc func({
             n_nodes,
-            n_classes,
-            thrust::raw_pointer_cast(i.data()),
             thrust::raw_pointer_cast(j.data()),
-            thrust::raw_pointer_cast(class_costs.data()),
             thrust::raw_pointer_cast(edge_costs.data()),
             thrust::raw_pointer_cast(edge_counter.data())
         });
@@ -217,10 +189,7 @@ void multiwaycut_message_passing::send_messages_to_triplets()
         auto last = thrust::make_zip_iterator(thrust::make_tuple(triangle_correspondence_23.end(), t23_costs.end()));
         increase_triangle_costs_func_mwc func({
             n_nodes,
-            n_classes,
-            thrust::raw_pointer_cast(i.data()),
             thrust::raw_pointer_cast(j.data()),
-            thrust::raw_pointer_cast(class_costs.data()),
             thrust::raw_pointer_cast(edge_costs.data()),
             thrust::raw_pointer_cast(edge_counter.data())
         });
