@@ -5,6 +5,7 @@
 
 #define TEST_MAX_ITER 25
 #define TEST_RAND_ITER 10   // How many test with random value
+#define PRECISION 1e-5
 
 void test_multiway_cut_repulsive_triangle(
     const float edge_cost,
@@ -47,7 +48,7 @@ void test_multiway_cut_repulsive_triangle(
         // node-class edges are added to the edges, hence those need to be taken into account as well
         + std::min(c1[0], 0.0f) + std::min(c1[1], 0.0f) + std::min(c1[2], 0.0f)
         + std::min(c2[0], 0.0f) + std::min(c2[1], 0.0f) + std::min(c2[2], 0.0f) ;
-    test(std::abs(initial_lb - expected_initial_lb) <= 1e-6, "Initial lb before reparametrization must be " + std::to_string(expected_initial_lb));
+    test(std::abs(initial_lb - expected_initial_lb) <= PRECISION, "Initial lb before reparametrization must be " + std::to_string(expected_initial_lb));
 
     const double expected_final_lb =
         // Edge lower bound, for this test case the class edges should be zero in the end
@@ -62,28 +63,28 @@ void test_multiway_cut_repulsive_triangle(
         std::cout << "---------------" << "iteration = " << k << "---------------\n";
         mwcp.send_messages_to_triplets();
         double new_lb = mwcp.lower_bound();
-        test(new_lb > last_lb || std::abs(new_lb - last_lb) < 1e-6, "Lower bound did not increase after message to triplets");
+        test(new_lb > last_lb || std::abs(new_lb - last_lb) < PRECISION, "Lower bound did not increase after message to triplets");
         last_lb = new_lb;
 
         mwcp.send_messages_to_edges();
         new_lb = mwcp.lower_bound();
-        test(new_lb > last_lb || std::abs(new_lb - last_lb) < 1e-6, "Lower bound did not increase after message to edges");
+        test(new_lb > last_lb || std::abs(new_lb - last_lb) < PRECISION, "Lower bound did not increase after message to edges");
         last_lb = new_lb;
 
         mwcp.send_messages_from_sum_to_edges();
         new_lb = mwcp.lower_bound();
-        test(new_lb > last_lb || std::abs(new_lb - last_lb) < 1e-6, "Lower bound did not increase after messages from class constraints");
+        test(new_lb > last_lb || std::abs(new_lb - last_lb) < PRECISION, "Lower bound did not increase after messages from class constraints");
         last_lb = new_lb;
 
         // short circuit if we encounter the optimal lower bound earlier
-        if (std::abs(last_lb - expected_final_lb) <= 1e-6)
+        if (std::abs(last_lb - expected_final_lb) <= PRECISION)
             break;
     }
 
     const double final_lb = mwcp.lower_bound();
     std::cout << "final lb = " << final_lb << "\n";
 
-    test(std::abs(final_lb - expected_final_lb) <= 1e-6, "Final lb after reparametrization must be " + std::to_string(expected_final_lb));
+    test(std::abs(final_lb - expected_final_lb) <= PRECISION, "Final lb after reparametrization must be " + std::to_string(expected_final_lb));
 }
 
 
@@ -142,7 +143,7 @@ void test_multiway_cut_2_nodes_2_classes(
         std::min(edge_cost, 0.0f)
         // node-class edges are added to the edges, hence those need to be taken into account as well
         + std::min(c1[0], 0.0f)  + std::min(c1[1], 0.0f)  + std::min(c2[0], 0.0f)  + std::min(c2[1], 0.0f);
-    test(std::abs(initial_lb - expected_initial_lb) <= 1e-6, "Initial lb before reparametrization must be " + std::to_string(expected_initial_lb));
+    test(std::abs(initial_lb - expected_initial_lb) <= PRECISION, "Initial lb before reparametrization must be " + std::to_string(expected_initial_lb));
 
     // Lower bound is edge costs + the two smallest class costs
     const double expected_final_lb =
@@ -157,27 +158,27 @@ void test_multiway_cut_2_nodes_2_classes(
         std::cout << "---------------" << "iteration=" << k << "---------------\n";
         mwcp.send_messages_to_triplets();
         double new_lb = mwcp.lower_bound();
-        test(new_lb > last_lb || std::abs(new_lb - last_lb) < 1e-6, "Lower bound did not increase after message to triplets");
+        test(new_lb > last_lb || std::abs(new_lb - last_lb) < PRECISION, "Lower bound did not increase after message to triplets");
         last_lb = new_lb;
 
         mwcp.send_messages_to_edges();
         new_lb = mwcp.lower_bound();
-        test(new_lb > last_lb || std::abs(new_lb - last_lb) < 1e-6, "Lower bound did not increase after message to edges");
+        test(new_lb > last_lb || std::abs(new_lb - last_lb) < PRECISION, "Lower bound did not increase after message to edges");
         last_lb = new_lb;
 
         mwcp.send_messages_from_sum_to_edges();
         new_lb = mwcp.lower_bound();
-        test(new_lb > last_lb || std::abs(new_lb - last_lb) < 1e-6, "Lower bound did not increase after messages from class constraints");
+        test(new_lb > last_lb || std::abs(new_lb - last_lb) < PRECISION, "Lower bound did not increase after messages from class constraints");
         last_lb = new_lb;
 
         // short circuit if we encounter the optimal lower bound earlier
-        if (std::abs(last_lb - expected_final_lb) <= 1e-6)
+        if (std::abs(last_lb - expected_final_lb) <= PRECISION)
             break;
     }
 
     const double final_lb = mwcp.lower_bound();
     std::cout << "final lb = " << final_lb << "\n";
-    test(std::abs(final_lb - expected_final_lb) <= 1e-6, "Final lb after reparametrization must be " + std::to_string(expected_final_lb));
+    test(std::abs(final_lb - expected_final_lb) <= PRECISION, "Final lb after reparametrization must be " + std::to_string(expected_final_lb));
 }
 
 
