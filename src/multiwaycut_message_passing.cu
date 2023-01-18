@@ -32,14 +32,15 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
     thrust::reduce_by_key(
         i.begin(), i.end(),
         thrust::make_constant_iterator(1),
-        nodes.begin(), sizes.begin());
+        nodes.begin(), sizes.begin()
+    );
 
 
     // Sum up the sizes to find the starting index
     thrust::device_vector<int> starts(n_nodes);
     thrust::exclusive_scan(sizes.begin(), sizes.end(), starts.begin());
 
-    return std::tuple(nodes, starts, sizes);
+    return {nodes, starts, sizes};
 }
 
 struct class_lower_bound_parallel {
