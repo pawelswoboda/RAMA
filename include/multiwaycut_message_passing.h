@@ -36,6 +36,7 @@ private:
     thrust::device_vector<float> class_costs;
 protected:
     double class_lower_bound();
+    thrust::device_vector<bool> is_class_edge;
 
 };
 
