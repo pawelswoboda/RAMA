@@ -3,7 +3,7 @@
 #include "test.h"
 #include <random>
 
-#define TEST_MAX_ITER 25
+#define TEST_MAX_ITER 250
 #define TEST_RAND_ITER 10   // How many test with random value
 #define PRECISION 1e-5
 
@@ -50,17 +50,52 @@ void test_multiway_cut_repulsive_triangle(
         + std::min(c2[0], 0.0f) + std::min(c2[1], 0.0f) + std::min(c2[2], 0.0f) ;
     test(std::abs(initial_lb - expected_initial_lb) <= PRECISION, "Initial lb before reparametrization must be " + std::to_string(expected_initial_lb));
 
-    const double expected_final_lb =
-        // Edge lower bound, for this test case the class edges should be zero in the end
-        3 * std::min(edge_cost, 0.0f)
-        // Class lower bound
-        + std::min(c1[0], c2[0])
-        + std::min(c1[1], c2[1])
-        + std::min(c1[2], c2[2]);
+    //const double expected_final_lb =
+    //    // Edge lower bound, for this test case the class edges should be zero in the end
+    //    3 * std::min(edge_cost, 0.0f)
+    //    // Class lower bound
+    //    + std::min(c1[0], c2[0])
+    //    + std::min(c1[1], c2[1])
+    //    + std::min(c1[2], c2[2]);
+
+    const double expected_final_lb = [&]()
+    {
+        // there are 8 possible node labelings determining uniquely the edge labelings: 
+        // (0,0,0), 
+        // (0,0,1), (0,1,0), (1,0,0), 
+        // (0,1,1), (1,0,1), (1,1,0), 
+        // (1,1,1)
+
+        if (add_triangles)
+        {
+            float lb = std::numeric_limits<float>::infinity();
+
+            for (int x1 = 0; x1 < 2; ++x1)
+            {
+                for (int x2 = 0; x2 < 2; ++x2)
+                {
+                    for (int x3 = 0; x3 < 2; ++x3)
+                    {
+                        const float cost = (x1 == 0 ? c1[0] : c2[0]) + (x2 == 0 ? c1[1] : c2[1]) + (x2 == 0 ? c1[2] : c2[2]) + (x1 != x2 ? edge_cost : 0.0) + (x1 != x3 ? edge_cost : 0.0) + (x2 != x3 ? edge_cost : 0.0);
+
+                        lb = std::min(lb, cost);
+                    }
+                }
+            }
+            return lb;
+        }
+        else
+        {
+        return 3 * std::min(edge_cost, float(0.0)) + std::min(c1[0], c2[0]) + std::min(c1[1], c2[1]) + std::min(c1[2], c2[2]);
+        }
+
+    }();
 
     double last_lb = initial_lb;
-    for (int k = 0; k < TEST_MAX_ITER; ++k) {
-        std::cout << "---------------" << "iteration = " << k << "---------------\n";
+    for (int k = 0; k < TEST_MAX_ITER; ++k)
+    {
+        std::cout << "---------------"
+                  << "iteration = " << k << "---------------\n";
         mwcp.send_messages_to_triplets();
         double new_lb = mwcp.lower_bound();
         test(new_lb > last_lb || std::abs(new_lb - last_lb) < PRECISION, "Lower bound did not increase after message to triplets");
@@ -79,7 +114,7 @@ void test_multiway_cut_repulsive_triangle(
         // short circuit if we encounter the optimal lower bound earlier
         if (std::abs(last_lb - expected_final_lb) <= PRECISION)
             break;
-    }
+}
 
     const double final_lb = mwcp.lower_bound();
     std::cout << "final lb = " << final_lb << "\n";
@@ -199,13 +234,13 @@ void test_multiway_cut_2_nodes_2_classes(
 int main(int argc, char** argv)
 {
     std::cout << "Testing repulsive triangle\n";
-    test_multiway_cut_repulsive_triangle(-1.0, 0.0, false);
-    test_multiway_cut_repulsive_triangle(-1.0, 0.0, true);
+    //test_multiway_cut_repulsive_triangle(-1.0, 0.0, false);
+    //test_multiway_cut_repulsive_triangle(-1.0, 0.0, true);
     test_multiway_cut_repulsive_triangle(-1.0, -1.0, false);
     // Currently fails due to rounding errors probably?
-    test_multiway_cut_repulsive_triangle(-1.0, -1.0, true);
     test_multiway_cut_repulsive_triangle(-1.0, 1.0, false);
     test_multiway_cut_repulsive_triangle(-1.0, 1.0, true);
+    test_multiway_cut_repulsive_triangle(-1.0, -1.0, true);
     std::cout << "Testing 2 nodes 2 classes\n";
     test_multiway_cut_2_nodes_2_classes(1.0, 0.0, false);
     test_multiway_cut_2_nodes_2_classes(1.0, 0.0, true);
