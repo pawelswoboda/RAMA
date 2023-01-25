@@ -1,9 +1,33 @@
 #include "multiwaycut_message_passing.h"
 #include "rama_utils.h"
+#include <unordered_set>
 
 // An edge is a node class-edge iff the destination node value is larger than the largest base node
 // which are assigned values from [0...n_nodes]
 #define IS_CLASS_EDGE(dest) (dest >= n_nodes)
+
+
+/**
+ * Calculates binomial coefficient
+ *
+ * Uses dynamic programming approach by exploiting (n k) = n/k (n-1 k-1)
+ * Hence the fraction at the ith step is given by (n-k+1+i)/(i+1) and (n-k+1)/1 is the
+ * first binomial coefficient
+ */
+int binom(const int n, const int k) {
+
+    if (k < 0 || k > n) return 0;
+    if (k==0 || n == k) return 1;
+    if (k==1) return n;
+
+    int start_offset = n - k + 1;
+    int last = start_offset;
+    for (int i = 1; i < k; ++i) {
+        last = (start_offset + i) / (i + 1) * last;
+    }
+    return last;
+}
+
 
 multiwaycut_message_passing::multiwaycut_message_passing(
         const dCOO &A,
@@ -18,12 +42,45 @@ multiwaycut_message_passing::multiwaycut_message_passing(
         n_classes(_n_classes),
         n_nodes(_n_nodes),
         class_costs(thrust::device_vector<float>(_n_nodes * _n_classes)),  // Zero initialize summation constraints
-        is_class_edge(i.size(), false)
+        is_class_edge(i.size(), false),
+        base_edge_counter(edge_counter.size(), 0),  // In how many triangles in the base graph an edge is present
+        node_counter(n_nodes, 0),  // In how many triangles in the base graph a node is present
+        _k_choose_2(binom(n_classes, 2))
         {
     // Populate is_class_edge lookup table
     for (int idx = 0; idx < i.size(); ++idx) {
         is_class_edge[idx]= IS_CLASS_EDGE(j[idx]);
     }
+
+    // Calculate how often each edge is part of a base graph triangle
+    int base_triangles = 0;
+    thrust::copy(edge_counter.begin(), edge_counter.end(), base_edge_counter.begin());
+    // Should probably be parallelized
+    for (int idx = 0; idx < triangle_correspondence_12.size(); ++idx) {
+        int e12 = triangle_correspondence_12[idx];
+        int e13 = triangle_correspondence_13[idx];
+        int e23 = triangle_correspondence_23[idx];
+        // If any edge is a class edge this is not a base graph triangle
+        if (is_class_edge[e12]
+        || is_class_edge[e13]
+        || is_class_edge[e23]
+        ) {
+            base_edge_counter[e12] -= 1;
+            base_edge_counter[e13] -= 1;
+            base_edge_counter[e23] -= 1;
+        } else {
+            base_triangles += 1;
+            // get the nodes of this triangle
+            std::unordered_set<int> nodes = {i[e12], j[e12], i[e13], j[e13], i[e23], j[e23]};
+
+            for (int node: nodes) {
+                assert(node < n_nodes);  // There should be no class node in this triangle
+                node_counter[node] += 1;
+            }
+        }
+    }
+    print_vector(base_edge_counter, "Edge counter base graph");
+    print_vector(node_counter, "Node counter");
 }
 
 

@@ -37,7 +37,11 @@ private:
 protected:
     double class_lower_bound();
     thrust::device_vector<bool> is_class_edge;
+    thrust::device_vector<int> base_edge_counter;  // In how many triangles in the base graph an edge is present
+    thrust::device_vector<int> node_counter;  // In how many triangles in the base graph a node is present
 
+    // How many combinations of two classes exist, needed for the class dependent triangle factors
+    int _k_choose_2;
 };
 
 #endif //RAMA_MULTIWAYCUT_MESSAGE_PASSING_H
