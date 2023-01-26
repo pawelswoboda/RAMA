@@ -34,6 +34,7 @@ private:
     int n_nodes;
     int n_classes;
     thrust::device_vector<float> class_costs;
+    thrust::device_vector<float> cdtf_costs;  // class-dependent triangle factor costs
 protected:
     double class_lower_bound();
     thrust::device_vector<bool> is_class_edge;

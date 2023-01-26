@@ -1,32 +1,12 @@
 #include "multiwaycut_message_passing.h"
 #include "rama_utils.h"
 #include <unordered_set>
+#include <algorithm>
 
 // An edge is a node class-edge iff the destination node value is larger than the largest base node
 // which are assigned values from [0...n_nodes]
 #define IS_CLASS_EDGE(dest) (dest >= n_nodes)
-
-
-/**
- * Calculates binomial coefficient
- *
- * Uses dynamic programming approach by exploiting (n k) = n/k (n-1 k-1)
- * Hence the fraction at the ith step is given by (n-k+1+i)/(i+1) and (n-k+1)/1 is the
- * first binomial coefficient
- */
-int binom(const int n, const int k) {
-
-    if (k < 0 || k > n) return 0;
-    if (k==0 || n == k) return 1;
-    if (k==1) return n;
-
-    int start_offset = n - k + 1;
-    int last = start_offset;
-    for (int i = 1; i < k; ++i) {
-        last = (start_offset + i) / (i + 1) * last;
-    }
-    return last;
-}
+#define CHOOSE2(N) (N*(N-1) / 2)
 
 
 multiwaycut_message_passing::multiwaycut_message_passing(
@@ -45,7 +25,11 @@ multiwaycut_message_passing::multiwaycut_message_passing(
         is_class_edge(i.size(), false),
         base_edge_counter(edge_counter.size(), 0),  // In how many triangles in the base graph an edge is present
         node_counter(n_nodes, 0),  // In how many triangles in the base graph a node is present
-        _k_choose_2(binom(n_classes, 2))
+        _k_choose_2(CHOOSE2(n_classes)),
+        // We have cdtf costs for each 2 class combinations all the edges of all base graph triangles
+        // triangle correspondence includes not only base graph triangles, but we will ignore
+        // those when updating the costs
+        cdtf_costs(CHOOSE2(n_classes) * triangle_correspondence_12.size() * 9, 0.0)
         {
     // Populate is_class_edge lookup table
     for (int idx = 0; idx < i.size(); ++idx) {
@@ -165,6 +149,11 @@ struct increase_triangle_costs_func_mwc {
     int* edge_counter;
 
     bool* is_class_edge;
+    int* node_counter;
+    int* base_edge_counter;
+    int* sources;
+    int k_choose_2;
+    int n_classes;
 
     __device__ void operator()(const thrust::tuple<int,float&> t) const
     {
@@ -172,11 +161,22 @@ struct increase_triangle_costs_func_mwc {
         float& triangle_cost = thrust::get<1>(t);
 
         if (is_class_edge[edge_idx]) {
-            float update = edge_costs[edge_idx]/(1.0f + float(edge_counter[edge_idx]));
+            float update = edge_costs[edge_idx]/(
+                1.0f + float(edge_counter[edge_idx])
+                // This edge is part of all class dependent triangle factors that include this class and
+                // this node, we have k-1 possible other classes
+                + float(node_counter[sources[edge_idx]]) * float(n_classes - 1)
+
+            );
             triangle_cost += update;
         } else {
             assert(edge_counter[edge_idx] > 0);
-            triangle_cost += edge_costs[edge_idx] / float(edge_counter[edge_idx]);
+            triangle_cost += edge_costs[edge_idx] / (
+                float(edge_counter[edge_idx])
+                // This edge is part of all class dependent triangle factors that include this edge
+                // There are k choose 2 combinations for the classes
+                + float(base_edge_counter[edge_idx]) * float(k_choose_2)
+            );
         }
     }
 };
@@ -185,6 +185,7 @@ struct increase_class_costs_func {
     int n_nodes;
     int n_classes;
     float *class_costs;
+    int *node_counter;
 
 
     __device__ void operator()(const thrust::tuple<int, int, int, float> t) {
@@ -199,10 +200,135 @@ struct increase_class_costs_func {
         // the ith class is encoded as n_nodes + i
         int class_idx = source * n_classes + (dest - n_nodes);
         assert(class_idx < n_nodes * n_classes);
-        class_costs[class_idx] += edge_cost / (1.0f + float(edge_count));
+        class_costs[class_idx] += edge_cost / (
+            1.0f + float(edge_count)
+            + float(node_counter[source]) * float(n_classes - 1)
+        );
     }
 };
 
+struct increase_cdtf_costs_func{
+    // --- For offset calculation
+    int n_classes;
+    int n_triangles;
+    int *start;
+    int *sizes;
+    // --- To check if the triangle include class edges
+    bool *is_class_edge;
+    // --- For the calculation of the messages/weights
+    float *edge_costs;
+    int *edge_counter;
+    int *node_counter;
+    // --- To get the starts and ends of the edges, which in turn index the counters above
+    int *sources;
+    int *dests;
+    // ---
+    float *cdtf_costs;
+
+    // For each class dependent triangle factor we consider 9 edges - the base graph edges + the node class edges
+    const int VALS_PER_TRIANGLE = 9;
+
+
+
+    // The layout of cdtf_costs is as follows:
+    // We have K classes, hence for each triangle we have (K, 2) possible combinations
+    // We first index by the classes, i.e. given combination c_i c_j, i<j
+    //  +----+----+----+----+-------+
+    //  | K-1| K-2| K-3| ...|K-(K-1)|
+    //  +----+----+----+----+-------+
+    //  |    |    |         |
+    //  |    |    |         +>c(K-1)cK
+    //  |    |    +>c3c4  ... c3cK
+    //  |    +>c2c3 c2c4  ... c2cK
+    //  +>c1c2 c1c3 c1c4  ... c1cK
+    //
+    //  The start of the cic(i+1) combination can be calculated as (i choose 2) = i*(i-1)/2
+    //  Now each cicj block looks as follows, where u<v<w and these are part of some triangle T
+    // +--+--+--+---+--+
+    // |T1|T2|T3|...|Tn|
+    // +--+--+--+-+-+--+
+    //            |
+    //            | +---+---+---+---+---+---+---+---+---+
+    //            +>|uv |uw |vw |uc1|uc2|vc1|vc2|wc1|wc2|
+    //              +---+---+---+---+---+---+---+---+---+
+    //
+    //  Thus we need to take these elements into account when calculating the index:
+    //  index(cicj) = 9n*[(1/2)*i*(i-1) + j]
+    //
+    //  The index for a triangle Tm is given as:
+    //  index(Tm) = index(cicj) + m * 9n
+    __host__ __device__ void operator()(const thrust::tuple<int, int, int, int> t) const {
+        int t12 = thrust::get<0>(t);
+        int t13 = thrust::get<1>(t);
+        int t23 = thrust::get<2>(t);
+        // The index of this triangle in the triangle_correspondence_xy vector
+        int triangle_idx = thrust::get<3>(t);
+
+        // We only consider base graph triangles
+        if (is_class_edge[t12]
+        || is_class_edge[t13]
+        || is_class_edge[t23]
+        ) return;
+
+        // Update the costs of the edges in this triangle for all class combinations
+        for (int c_i = 0; c_i < n_classes; ++c_i) {
+            for (int c_j = c_i+1; c_j < n_classes; ++c_j) {
+                const int offset = CHOOSE2(c_i) * n_triangles * VALS_PER_TRIANGLE;  // Start of the c_i block in the cost array
+                const int c_j_start = offset + c_j * n_triangles * VALS_PER_TRIANGLE;  // Start of the c_j block in the c_i block
+                const int triangle_start = c_j_start + triangle_idx * VALS_PER_TRIANGLE;
+
+                // t12
+                cdtf_costs[triangle_start] = edge_costs[t12]/(
+                    1.0f + float(edge_counter[t12])
+                    + float(node_counter[sources[t12]]) * float(n_classes - 1)
+                );
+                // t13
+                cdtf_costs[triangle_start + 1] = edge_costs[t13]/(
+                    1.0f + float(edge_counter[t13])
+                    + float(node_counter[sources[t13]]) * float(n_classes - 1)
+                );
+                // t23
+                cdtf_costs[triangle_start + 2] = edge_costs[t23]/(
+                    1.0f + float(edge_counter[t23])
+                    + float(node_counter[sources[t23]]) * float(n_classes - 1)
+                );
+                // We consider the nodes of the edges in ascending order
+                const int size = 6;
+                int nodes[size] = { sources[t12], dests[t12], sources[t13], dests[t13], sources[t23], dests[t23] };
+                int unique_nodes[3] = {};
+                // FIX: Thrust algorithms normally are intended to work on the host not the device
+                // but using sequential execution policy works
+                thrust::sort(thrust::seq, nodes, nodes + size);
+                thrust::unique_copy(thrust::seq, nodes, nodes + size, unique_nodes);
+
+                 // node-class costs start after the base graph edges
+                const int class_edges_start = triangle_start + 3;
+                for (int i = 0; i < 3; ++i) {
+                    int source = unique_nodes[i];
+
+                    // Start contains the index of the first edge with `source` as the beginning
+                    // Size is the number of edges that contain this node (including class edges)
+                    // The last `n_classes` elements in the range [start[source], start[source]+size[source])
+                    // include the node-class edges in ascending order by, hence the following returns the index
+                    // of the node-class edge.
+                    int ic_i_idx = start[source] + sizes[source] - n_classes + c_i;
+                    int ic_j_idx = start[source] + sizes[source] - n_classes + c_j;
+
+                    // from unique_nodes[i] to c_i
+                    cdtf_costs[class_edges_start + 2*i] += edge_costs[ic_i_idx] / (
+                        1.0f + float(edge_counter[ic_i_idx])
+                        + float(node_counter[source]) * float(n_classes - 1)
+                    );
+                    // from unique_nodes[i] to c_j
+                    cdtf_costs[class_edges_start + 1 + 2*i] += edge_costs[ic_j_idx] / (
+                        1.0f + float(edge_counter[ic_j_idx])
+                        + float(node_counter[source]) * float(n_classes - 1)
+                    );
+                }
+            }
+        }
+    }
+};
 
 struct decrease_edge_costs_func {
     int n_nodes;
@@ -229,7 +355,12 @@ void multiwaycut_message_passing::send_messages_to_triplets()
         increase_triangle_costs_func_mwc func({
             thrust::raw_pointer_cast(edge_costs.data()),
             thrust::raw_pointer_cast(edge_counter.data()),
-            thrust::raw_pointer_cast(is_class_edge.data())
+            thrust::raw_pointer_cast(is_class_edge.data()),
+            thrust::raw_pointer_cast(node_counter.data()),
+            thrust::raw_pointer_cast(base_edge_counter.data()),
+            thrust::raw_pointer_cast(i.data()),
+            _k_choose_2,
+            n_classes
         });
         thrust::for_each(first, last, func);
     }
@@ -239,7 +370,12 @@ void multiwaycut_message_passing::send_messages_to_triplets()
         increase_triangle_costs_func_mwc func({
             thrust::raw_pointer_cast(edge_costs.data()),
             thrust::raw_pointer_cast(edge_counter.data()),
-            thrust::raw_pointer_cast(is_class_edge.data())
+            thrust::raw_pointer_cast(is_class_edge.data()),
+            thrust::raw_pointer_cast(node_counter.data()),
+            thrust::raw_pointer_cast(base_edge_counter.data()),
+            thrust::raw_pointer_cast(i.data()),
+            _k_choose_2,
+            n_classes
         });
         thrust::for_each(first, last, func);
     }
@@ -249,14 +385,24 @@ void multiwaycut_message_passing::send_messages_to_triplets()
         increase_triangle_costs_func_mwc func({
             thrust::raw_pointer_cast(edge_costs.data()),
             thrust::raw_pointer_cast(edge_counter.data()),
-            thrust::raw_pointer_cast(is_class_edge.data())
+            thrust::raw_pointer_cast(is_class_edge.data()),
+            thrust::raw_pointer_cast(node_counter.data()),
+            thrust::raw_pointer_cast(base_edge_counter.data()),
+            thrust::raw_pointer_cast(i.data()),
+            _k_choose_2,
+            n_classes
         });
         thrust::for_each(first, last, func);
     }
 
     // Send messages to summation constraints
     {
-        increase_class_costs_func func({n_nodes, n_classes, thrust::raw_pointer_cast(class_costs.data())});
+        increase_class_costs_func func({
+            n_nodes,
+            n_classes,
+            thrust::raw_pointer_cast(class_costs.data()),
+            thrust::raw_pointer_cast(node_counter.data())
+        });
         auto first = thrust::make_zip_iterator(thrust::make_tuple(
             i.begin(), j.begin(), edge_counter.begin(), edge_costs.begin()
         ));
@@ -266,7 +412,36 @@ void multiwaycut_message_passing::send_messages_to_triplets()
         thrust::for_each(first, last, func);
     }
 
+    // Send messaged to class dependent triangle factors
+    {
+        thrust::counting_iterator<int> triangle_idx(0);
+        auto first = thrust::make_zip_iterator(thrust::make_tuple(
+            triangle_correspondence_12.begin(), triangle_correspondence_13.begin(), triangle_correspondence_23.begin(),
+            triangle_idx
+        ));
+        auto last = thrust::make_zip_iterator(thrust::make_tuple(
+            triangle_correspondence_12.end(), triangle_correspondence_13.end(), triangle_correspondence_23.end(),
+            triangle_idx + triangle_correspondence_12.size()
+        ));
+        thrust::device_vector<int> _node;
+        thrust::device_vector<int> start;
+        thrust::device_vector<int> size;
+        std::tie(_node, start, size) = get_node_partition();
+        increase_cdtf_costs_func func({
+            n_classes, n_nodes,
+            thrust::raw_pointer_cast(start.data()), thrust::raw_pointer_cast(size.data()),
+            thrust::raw_pointer_cast(is_class_edge.data()),
+            thrust::raw_pointer_cast(edge_costs.data()),
+            thrust::raw_pointer_cast(edge_counter.data()), thrust::raw_pointer_cast(node_counter.data()),
+            thrust::raw_pointer_cast(i.data()), thrust::raw_pointer_cast(j.data()),
+            thrust::raw_pointer_cast(cdtf_costs.data())
+        });
+        thrust::for_each(first, last, func);
+    }
+
     // set costs of edges to zero (if edge participates in a triangle or is a class edge)
+    // No need to check if part of class dependent triangle factor because this implied by being part of a triangle
+    // or being a class edge
     {
         auto first = thrust::make_zip_iterator(thrust::make_tuple(edge_costs.begin(), edge_counter.begin(), j.begin()));
         auto last = thrust::make_zip_iterator(thrust::make_tuple(edge_costs.end(), edge_counter.end(), j.end()));
