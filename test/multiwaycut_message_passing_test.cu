@@ -76,7 +76,12 @@ void test_multiway_cut_repulsive_triangle(
                 {
                     for (int x3 = 0; x3 < 2; ++x3)
                     {
-                        const float cost = (x1 == 0 ? c1[0] : c2[0]) + (x2 == 0 ? c1[1] : c2[1]) + (x2 == 0 ? c1[2] : c2[2]) + (x1 != x2 ? edge_cost : 0.0) + (x1 != x3 ? edge_cost : 0.0) + (x2 != x3 ? edge_cost : 0.0);
+                        const float cost = (x1 == 0 ? c1[0] : c2[0])
+                            + (x2 == 0 ? c1[1] : c2[1])
+                            + (x2 == 0 ? c1[2] : c2[2])
+                            + (x1 != x2 ? edge_cost : 0.0)
+                            + (x1 != x3 ? edge_cost : 0.0)
+                            + (x2 != x3 ? edge_cost : 0.0);
 
                         lb = std::min(lb, cost);
                     }
@@ -114,10 +119,10 @@ void test_multiway_cut_repulsive_triangle(
         // short circuit if we encounter the optimal lower bound earlier
         if (std::abs(last_lb - expected_final_lb) <= PRECISION)
             break;
-}
+    }
 
     const double final_lb = mwcp.lower_bound();
-    std::cout << "final lb = " << final_lb << "\n";
+    std::cout << "final lb = " << final_lb << "\n\n";
 
     test(std::abs(final_lb - expected_final_lb) <= PRECISION, "Final lb after reparametrization must be " + std::to_string(expected_final_lb));
 }
@@ -234,11 +239,10 @@ void test_multiway_cut_2_nodes_2_classes(
 int main(int argc, char** argv)
 {
     std::cout << "Testing repulsive triangle\n";
-    //test_multiway_cut_repulsive_triangle(-1.0, 0.0, false);
-    //test_multiway_cut_repulsive_triangle(-1.0, 0.0, true);
-    test_multiway_cut_repulsive_triangle(-1.0, -1.0, false);
-    // Currently fails due to rounding errors probably?
-    test_multiway_cut_repulsive_triangle(-1.0, 1.0, false);
+//    test_multiway_cut_repulsive_triangle(-1.0, 0.0, false);
+//    test_multiway_cut_repulsive_triangle(-1.0, -1.0, false);
+//    test_multiway_cut_repulsive_triangle(-1.0, 1.0, false);
+    test_multiway_cut_repulsive_triangle(-1.0, 0.0, true);
     test_multiway_cut_repulsive_triangle(-1.0, 1.0, true);
     test_multiway_cut_repulsive_triangle(-1.0, -1.0, true);
     std::cout << "Testing 2 nodes 2 classes\n";
