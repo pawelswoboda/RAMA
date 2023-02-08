@@ -38,6 +38,7 @@ protected:
     double class_lower_bound();
     thrust::device_vector<bool> is_class_edge;
 
+    double triangle_lower_bound_2_classes();
 };
 
 #endif //RAMA_MULTIWAYCUT_MESSAGE_PASSING_H
