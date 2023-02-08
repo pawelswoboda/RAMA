@@ -37,6 +37,7 @@ private:
     thrust::device_vector<float> cdtf_costs;  // class-dependent triangle factor costs
 protected:
     double class_lower_bound();
+    double cdtf_lower_bound();
     thrust::device_vector<bool> is_class_edge;
     thrust::device_vector<int> base_edge_counter;  // In how many triangles in the base graph an edge is present
     thrust::device_vector<int> node_counter;  // In how many triangles in the base graph a node is present

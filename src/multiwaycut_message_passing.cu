@@ -2,6 +2,7 @@
 #include "rama_utils.h"
 #include <unordered_set>
 #include <algorithm>
+#include <thrust/inner_product.h>
 
 // An edge is a node class-edge iff the destination node value is larger than the largest base node
 // which are assigned values from [0...n_nodes]
@@ -130,12 +131,90 @@ double multiwaycut_message_passing::class_lower_bound()
     return thrust::reduce(res.begin(), res.end(), 0.0);
 }
 
+struct cdtf_lower_bound_func{
+    float* results;
+    float* costs;
+    const float ys[37][9] = {
+         {0, 0, 0, 1, 0, 1, 0, 1, 0},
+         {0, 0, 0, 0, 1, 0, 1, 0, 1},
+         {1, 1, 0, 0, 1, 1, 0, 1, 0},
+         {1, 1, 0, 1, 0, 0, 1, 0, 1},
+         {1, 0, 1, 1, 0, 0, 1, 1, 0},
+         {1, 0, 1, 0, 1, 1, 0, 0, 1},
+         {0, 1, 1, 1, 0, 1, 0, 0, 1},
+         {0, 1, 1, 0, 1, 0, 1, 1, 0},
+         {1, 1, 0, 1, 1, 1, 0, 1, 0},
+         {1, 1, 0, 1, 1, 0, 1, 0, 1},
+         {1, 0, 1, 1, 0, 1, 1, 1, 0},
+         {1, 0, 1, 0, 1, 1, 1, 0, 1},
+         {0, 1, 1, 1, 0, 1, 0, 1, 1},
+         {0, 1, 1, 0, 1, 0, 1, 1, 1},
+         {0, 0, 0, 1, 1, 1, 1, 1, 1},
+         {1, 1, 1, 1, 1, 0, 1, 1, 0},
+         {1, 1, 1, 1, 1, 1, 0, 0, 1},
+         {1, 1, 1, 0, 1, 1, 1, 1, 0},
+         {1, 1, 1, 1, 0, 1, 1, 0, 1},
+         {1, 1, 1, 0, 1, 1, 0, 1, 1},
+         {1, 1, 1, 1, 0, 0, 1, 1, 1},
+         {0, 1, 1, 1, 1, 1, 1, 1, 0},
+         {1, 0, 1, 1, 1, 1, 0, 1, 1},
+         {1, 1, 0, 1, 0, 1, 1, 1, 1},
+         {0, 1, 1, 1, 1, 1, 1, 0, 1},
+         {1, 0, 1, 1, 1, 0, 1, 1, 1},
+         {1, 1, 0, 0, 1, 1, 1, 1, 1},
+         {0, 1, 1, 1, 1, 1, 1, 1, 1},
+         {1, 0, 1, 1, 1, 1, 1, 1, 1},
+         {1, 1, 0, 1, 1, 1, 1, 1, 1},
+         {1, 1, 1, 0, 1, 1, 1, 1, 1},
+         {1, 1, 1, 1, 0, 1, 1, 1, 1},
+         {1, 1, 1, 1, 1, 0, 1, 1, 1},
+         {1, 1, 1, 1, 1, 1, 0, 1, 1},
+         {1, 1, 1, 1, 1, 1, 1, 0, 1},
+         {1, 1, 1, 1, 1, 1, 1, 1, 0},
+         {1, 1, 1, 1, 1, 1, 1, 1, 1}
+     };
+    const int rows = 37;
+    const int cols = 9;
+
+    __device__ void operator() (const int cdtf_idx) const {
+
+        int offset = cdtf_idx * 9;
+        float best = 0.0;
+        for (int r = 0; r < rows; ++r) {
+            float result = 0.0;
+            const float *row = ys[r];
+            for (int i = 0; i < cols; ++i) {
+                result += row[i] * costs[offset + i];
+            }
+            best = min(result, best);
+        }
+        results[cdtf_idx] = best;
+    }
+};
+double multiwaycut_message_passing::cdtf_lower_bound() {
+    // With no triangles we have no lower bound
+    if (cdtf_costs.empty()) return 0.0;
+
+    // Number of cdtf factors
+    int size = CHOOSE2(n_classes) * triangle_correspondence_12.size();
+
+    // We parallelize over the class-dependent triangle factors as (K, 2) * T >> 37 in most cases
+    thrust::device_vector<float> results(size);
+    auto idx = thrust::make_counting_iterator<int>(0);
+    cdtf_lower_bound_func func({
+        thrust::raw_pointer_cast(results.data()), thrust::raw_pointer_cast(cdtf_costs.data())
+    });
+    thrust::for_each(idx, idx + size, func);
+    return thrust::reduce(results.begin(), results.end(), 0.0);
+}
+
 double multiwaycut_message_passing::lower_bound()
 {
     if (n_classes > 0) {
         double clb = class_lower_bound();
-        double res = edge_lower_bound() + triangle_lower_bound() + clb;
-        printf("%f+%f+%f = %f\n", edge_lower_bound(), triangle_lower_bound(), clb, res);
+        double cdtflb = cdtf_lower_bound();
+        double res = edge_lower_bound() + triangle_lower_bound() + clb + cdtflb;
+        printf("%f+%f+%f+%f = %f\n", edge_lower_bound(), triangle_lower_bound(), clb, cdtflb, res);
         return res;
     } else {
         std::cout << "No classes provided. Defaulting to multicut\n";
@@ -413,7 +492,8 @@ void multiwaycut_message_passing::send_messages_to_triplets()
     }
 
     // Send messaged to class dependent triangle factors
-    {
+    // Cannot write cdtf costs if no triangles are present
+    if (!cdtf_costs.empty()){
         thrust::counting_iterator<int> triangle_idx(0);
         auto first = thrust::make_zip_iterator(thrust::make_tuple(
             triangle_correspondence_12.begin(), triangle_correspondence_13.begin(), triangle_correspondence_23.begin(),
@@ -450,6 +530,7 @@ void multiwaycut_message_passing::send_messages_to_triplets()
 
     print_vector(edge_costs, "edge_costs after msg to triplets");
     print_vector(class_costs, "class_costs after msg to triplets");
+    print_vector(cdtf_costs, "cdtf_costs after msg to triplets");
     print_vector(t12_costs, "t12 after msg to triplets");
     print_vector(t13_costs, "t13 after msg to triplets");
     print_vector(t23_costs, "t23 after msg to triplets");
@@ -524,6 +605,7 @@ void multiwaycut_message_passing::send_messages_from_sum_to_edges()
     );
     print_vector(edge_costs, "edge_costs after msg to edges 2");
     print_vector(class_costs, "class_costs after msg to edges 2");
+    print_vector(cdtf_costs, "cdtf_costs after msg to edges 2");
     print_vector(t12_costs, "t12 after msg to edges 2");
     print_vector(t13_costs, "t13 after msg to edges 2");
     print_vector(t23_costs, "t23 after msg to edges 2");
@@ -541,6 +623,7 @@ void multiwaycut_message_passing::send_messages_to_edges()
     multicut_message_passing::send_messages_to_edges();
     print_vector(edge_costs, "edge_costs after msg to edges");
     print_vector(class_costs, "class_costs after msg to edges");
+    print_vector(cdtf_costs, "cdtf_costs after msg to edges");
     print_vector(t12_costs, "t12 after msg to edges ");
     print_vector(t13_costs, "t13 after msg to edges ");
     print_vector(t23_costs, "t23 after msg to edges ");
