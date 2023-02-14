@@ -3,7 +3,7 @@
 #include "test.h"
 #include <random>
 
-#define TEST_MAX_ITER 250
+#define TEST_MAX_ITER 20
 #define TEST_RAND_ITER 10   // How many test with random value
 #define PRECISION 1e-5
 
@@ -28,6 +28,9 @@ void test_multiway_cut_repulsive_triangle(
 
     thrust::device_vector<int> t1, t2, t3;
     if (add_triangles) {
+//        t1 = std::vector<int>{0};
+//        t2 = std::vector<int>{1};
+//        t3 = std::vector<int>{2};  // TODO: extra test case with only base graph triangle(s)
         t1 = std::vector<int>{0, 0, 0, 0, 0, 1, 1};
         t2 = std::vector<int>{1, 1, 2, 1, 2, 2, 2};
         t3 = std::vector<int>{2, 3, 3, 4, 4, 3, 4};
@@ -243,12 +246,15 @@ int main(int argc, char** argv)
 //    test_multiway_cut_repulsive_triangle(-1.0, -1.0, false);
 //    test_multiway_cut_repulsive_triangle(-1.0, 1.0, false);
     test_multiway_cut_repulsive_triangle(-1.0, 0.0, true);
+    // fails
     test_multiway_cut_repulsive_triangle(-1.0, 1.0, true);
+    // converges
     test_multiway_cut_repulsive_triangle(-1.0, -1.0, true);
     std::cout << "Testing 2 nodes 2 classes\n";
     test_multiway_cut_2_nodes_2_classes(1.0, 0.0, false);
     test_multiway_cut_2_nodes_2_classes(1.0, 0.0, true);
     test_multiway_cut_2_nodes_2_classes(1.0, -1.0, false);
+    // Next tests fails
     test_multiway_cut_2_nodes_2_classes(1.0, -1.0, true);
     test_multiway_cut_2_nodes_2_classes(1.0, 1.0, false);
     test_multiway_cut_2_nodes_2_classes(1.0, 1.0, true);
