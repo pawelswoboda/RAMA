@@ -22,7 +22,7 @@ multiwaycut_message_passing::multiwaycut_message_passing(
         {
     // Populate is_class_edge lookup table
     for (int idx = 0; idx < i.size(); ++idx) {
-        is_class_edge[idx]= IS_CLASS_EDGE(j[idx]);
+        is_class_edge[idx] = IS_CLASS_EDGE(j[idx]);
     }
 
     print_vector(i, "sources");
@@ -116,11 +116,9 @@ struct triangle_lower_bound_2_classes_func {
         bool includes_class_edge = (is_class_edge[t12]
                 || is_class_edge[t13]
                 || is_class_edge[t23]);
-        if (!includes_class_edge) {
+        if (includes_class_edge) {
             lb = min(lb, c12 + c13 + c23);
         }
-
-        printf("(%d %d %d) %f\n", t12, t13, t23, lb);
         return lb;
     }
 };
@@ -291,7 +289,7 @@ struct decrease_triangle_costs_2_classes_func {
         float min_marginal(const float x, const float y, const float z, const bool includes_class_edge) const
         {
             float mm1 = min(x+y, x+z);
-            if (!includes_class_edge) {
+            if (includes_class_edge) {
                 mm1 = min(x+y+z, mm1);
             }
             float mm0 = min(0.0, y+z);
