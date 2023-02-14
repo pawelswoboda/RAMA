@@ -7,6 +7,84 @@
 #define TEST_RAND_ITER 10   // How many test with random value
 #define PRECISION 1e-5
 
+
+/**
+ * Calculates N-ary the cartesian power of the set {0, ..., K-1}, i.e. {0, ..., K-1}^N
+ * @return Vector containing vectors of size N
+ */
+std::vector<std::vector<int>> product(const int K, const int N) {
+    std::vector<std::vector<int>> result;
+    // Start with the set {(0), ..., (K-1)}
+    for (int i = 0; i < K; ++i) {
+        result.push_back({ i });
+    }
+
+    // Iteratively add {0, ..., K-1} to each value in result
+    for (int i = 1; i < N; ++i) {
+        std::vector<std::vector<int>> temp;
+        for (std::vector<int>& prod : result) {
+            // Add all {0, ..., K-1} values to each element of {K-1}^(i-1)
+            for (int j = 0; j < K; ++j) {
+                auto set = prod;
+                set.push_back(j);
+                // Add the new product
+                temp.push_back(set);
+            }
+        }
+        // Result now is {K-1}^i
+        result = temp;
+    }
+    return result;
+}
+
+
+/**
+ * Calculates the expected lower bound for a triangle with K classes by iterating all possible node labelings
+ * and adding the costs of the cut edges
+ * @param K The number of classes
+ * @param source Vector with sources of each edge
+ * @param dest Vector with destination of each edge
+ * @param cost Vector with the cost of each edge
+ * @return The lower bound
+ */
+float triangle_expected_lb(
+    const int K,
+    const thrust::device_vector<int> &source,
+    const thrust::device_vector<int> &dest,
+    const thrust::device_vector<float> &cost
+) {
+    assert(source.size() == dest.size() && dest.size() == cost.size());
+
+    float lb = std::numeric_limits<float>::infinity();
+    // the labels are the cartesian product {0, ..., K-1}^3
+    for (std::vector<int>&label: product(K, 3)) {
+        // Iterate all the edges for this label and calculate the costs
+        float labeling_cost = 0.0;
+        for (int edge = 0; edge < source.size(); ++edge) {
+            int left = source[edge];
+            int right = dest[edge];
+            assert(left < 3);  // Only base nodes on the left side of an edge
+            assert(right < 3 + K); // Class nodes are encoded by n_nodes-1 (for triangle n_nodes=3) + n_classes
+
+            if (right >= 3) {
+                // We have a base-class edge -> we compare the label with the class index
+                right = right - 3;  // Class index calculation, see above
+
+                if (label[left] != right) {
+                    labeling_cost += cost[edge];
+                }
+
+            } else {
+                // We have a base edge ->  we compare the label of the two nodes
+                if (label[left] != label[right]) {
+                    labeling_cost += cost[edge];
+                }
+            }
+        }
+        lb = std::min(lb, labeling_cost);
+    }
+    return lb;
+}
 void test_multiway_cut_repulsive_triangle(
     const float edge_cost,
     const std::array<float, 3> c1,  // Class costs for class 1 for all nodes
