@@ -7,6 +7,33 @@
 #define TEST_RAND_ITER 10   // How many test with random value
 #define PRECISION 1e-5
 
+/**
+ * Allows easily setting and checking different options for the test cases
+ *
+ * Use `|` operator to combine multiple flags, note that some flags such as NO_TRIANGLES and ONLY_BASE_TRIANGLES
+ * are exclusive and should not combined. Currently NO_TRIANGLES is checked before ONLY_BASE_TRIANGLES
+ *
+ * Use `&` operator to check if a option is turned on:
+ * options & NO_TRIANGLES == true iff the second bit of options is turned on (options & NO_TRIANGLES) == NO_TRIANGLES
+ * Note that the order is important, i.e. NO_TRIANGLES & options will lead to non expected behaviour, only being true
+ * if the only flag in options is NO_TRIANGLES
+ */
+enum class TestOptions {
+  ALL_ON = 0,                             // Everything on i.e. normal triangles and summation messages
+  NO_TRIANGLES = 1,                       // No triangles
+  ONLY_BASE_TRIANGLES = 2,                // Only triangles in the base graph
+  NO_MESSAGES_FROM_TRIANGLES = 4          // No message passing from the triangles is performed
+};
+
+constexpr enum TestOptions operator |(const enum TestOptions self, const enum TestOptions other) {
+    return static_cast<TestOptions>(static_cast<int>(self) | static_cast<int>(other));
+}
+constexpr bool operator &(const enum TestOptions self, const enum TestOptions other) {
+    return static_cast<TestOptions>(static_cast<int>(self) & static_cast<int>(other)) == other;
+}
+
+const TestOptions DEFAULT_OPTIONS = TestOptions::ALL_ON;
+
 
 /**
  * Calculates N-ary the cartesian power of the set {0, ..., K-1}, i.e. {0, ..., K-1}^N
