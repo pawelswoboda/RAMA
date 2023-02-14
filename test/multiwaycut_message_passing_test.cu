@@ -112,7 +112,16 @@ float triangle_expected_lb(
     }
     return lb;
 }
-void test_multiway_cut_repulsive_triangle(
+float expected_initial_lb(
+    const thrust::device_vector<float> &cost
+) {
+    float result = 0.0;
+    for (float c: cost) {
+        result += std::min(c, 0.0f);
+    }
+    return result;
+}
+
     const float edge_cost,
     const std::array<float, 3> c1,  // Class costs for class 1 for all nodes
     const std::array<float, 3> c2,
