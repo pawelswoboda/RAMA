@@ -27,6 +27,7 @@ multiwaycut_message_passing::multiwaycut_message_passing(
         is_class_edge(create_class_edge_mask(i, j, [_n_nodes](int source, int dest) {return dest >= _n_nodes;} )),
         base_edge_counter(edge_counter.size(), 0),  // In how many triangles in the base graph an edge is present
         node_counter(n_nodes, 0),  // In how many triangles in the base graph a node is present
+        cdtf_counter(edge_counter.size(), 0),
         _k_choose_2(CHOOSE2(n_classes)),
         // We have cdtf costs for each 2 class combinations all the edges of all base graph triangles
         // triangle correspondence includes not only base graph triangles, but we will ignore
@@ -794,6 +795,7 @@ thrust::device_vector<bool> multiwaycut_message_passing::create_class_edge_mask(
 
     return mask;
 }
+
 std::unordered_set<int> multiwaycut_message_passing::get_nodes_in_triangle(int e1, int e2, int e3) {
     return std::unordered_set<int>({i[e1], j[e1], i[e2], j[e2], i[e3], j[e3]};);
 }
@@ -828,4 +830,104 @@ multiwaycut_message_passing::get_node_partition()
     return {nodes, starts, sizes};
 }
 
+int multiwaycut_message_passing::get_class_edge_index(int node, int k) {
 
+    if (node >= n_nodes) {
+        throw std::invalid_argument("Node is not part of the base graph");
+    }
+
+    // TODO: at the moment quite inefficient as we have to iterate over all nodes to find the index
+    //  in this case using a map would make more sense, however the current implementation of `get_node_partition`
+    //  is easier to use with thrust
+    thrust::device_vector<int> nodes; // Contains all nodes
+    thrust::device_vector<int> node_offset;  // The start of the edges with node v as source in the i or j vector for each node v in V
+    thrust::device_vector<int> n_edges;  // The number of edges with node v as source for each node v in V
+    std::tie(nodes, node_offset, n_edges) = get_node_partition();
+
+    for (int idx = 0; idx < nodes.size(); ++idx) {
+        if (nodes[idx] == node) {
+            int edges_end = node_offset[idx] + n_edges[idx];
+            return edges_end - n_classes + k;
+        }
+    }
+
+    throw std::runtime_error("Node is not part of the base graph");
+}
+
+/**
+ * Adds the triangle consisting of the three edges and the two classes as a class-dependent triangle factor
+ * subproblem
+ * @param e1 Index of the first edge
+ * @param e2 Index of the second edge
+ * @param e3 Index of the third edge
+ * @param c1 First class as integer in [0, K)
+ * @param c2 Second class as integer in [0, K)
+ */
+void multiwaycut_message_passing::add_class_dependent_triangle_subproblems(int e1, int e2, int e3, int c1, int c2) {
+    // The triangle has to be in the base graph
+    assert(!is_class_edge[e1] && !is_class_edge[e2] && !is_class_edge[e3]);
+
+    // Each subproblem consists of 9 costs, one for each edge
+    for (int i = 0; i < 9; ++i) {
+        cdtf_costs.push_back(0.0);
+    }
+
+    // e1, e2, e3 are already the indices of the edges as specified by i and j
+    cdtf_counter[e1] += 1;
+    cdtf_counter[e2] += 1;
+    cdtf_counter[e3] += 1;
+
+    // TODO: currently quite inefficient because of the implementation of get_class_edge_index being O(N), N being the
+    //  number of nodes
+    for (int node: get_nodes_in_triangle(e1, e2, e3)) {
+        // Node is part of the triangle
+        cdtf_counter[get_class_edge_index(node, c1)] += 1;
+        cdtf_counter[get_class_edge_index(node, c2)] += 1;
+    }
+}
+
+/**
+ * Adds the triangle consisting of the three edges and *all* class combinations as a class-dependent triangle factor
+ * @param e1 Index of the first edge
+ * @param e2 Index of the second edge
+ * @param e3 Index of the third edge
+ */
+void multiwaycut_message_passing::add_class_dependent_triangle_subproblems(int e1, int e2, int e3) {
+
+    for (int c1 = 0; c1 < n_classes; ++c1) {
+        for (int c2 = c1 + 1; c2 < n_classes; ++c2) {
+            add_class_dependent_triangle_subproblems(e1, e2, e3, c1, c2);
+        }
+    }
+}
+
+/**
+ * Adds the class-dependent triangle factors consisting of all triangles and the two given classes
+ * @param c1 First class as integer in [0, K)
+ * @param c2 Second class as integer in [0, K)
+ */
+void multiwaycut_message_passing::add_class_dependent_triangle_subproblems(int c1, int c2) {
+    for (int idx = 0; idx < triangle_correspondence_12.size(); ++idx) {
+        int e1 = triangle_correspondence_12[idx];
+        int e2 = triangle_correspondence_13[idx];
+        int e3 = triangle_correspondence_23[idx];
+
+        // Only base graph triangles
+        if (is_class_edge[e1] || is_class_edge[e2] || is_class_edge[e3])
+            continue;
+
+        add_class_dependent_triangle_subproblems(e1, e2, e3, c1, c2);
+    }
+}
+
+/**
+ * Adds all possible class dependent triangle factors, i.e. all base graph triangles * 2 class combinations
+ */
+void multiwaycut_message_passing::add_class_dependent_triangle_subproblems() {
+    for (int c1 = 0; c1 < n_classes; ++c1) {
+        for (int c2 = c1 + 1; c2 < n_classes; ++c2) {
+            add_class_dependent_triangle_subproblems(c1, c2);
+        }
+
+    }
+}

@@ -32,6 +32,13 @@ public:
      * the number of edges for each node.
      */
     std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<int>> get_node_partition();
+
+
+    void add_class_dependent_triangle_subproblems(int e1, int e2, int e3, int c1, int c2);
+    void add_class_dependent_triangle_subproblems(int e1, int e2, int e3);
+    void add_class_dependent_triangle_subproblems(int c1, int c2);
+    void add_class_dependent_triangle_subproblems();
+
 private:
     int n_nodes;
     int n_classes;
@@ -52,12 +59,16 @@ private:
 
     /**
      * Returns the set of nodes in this triangle
-     * @param e1
-     * @param e2
-     * @param e3
-     * @return
      */
     std::unordered_set<int> get_nodes_in_triangle(int e1, int e2, int e3);
+
+    /**
+     * Returns the index of the edge node - class k in the i / j vector
+     * @param node Node u specified by its index
+     * @param k Class id in the range [0, K)
+     * @return Index of u - k edge in i / j vector
+     */
+    int get_class_edge_index(int node, int k);
 
 protected:
     double class_lower_bound();
@@ -66,6 +77,7 @@ protected:
     thrust::device_vector<bool> is_class_edge;
     thrust::device_vector<int> base_edge_counter;  // In how many triangles in the base graph an edge is present
     thrust::device_vector<int> node_counter;  // In how many triangles in the base graph a node is present
+    thrust::device_vector<int> cdtf_counter;  // In how many class-dependent triangle factors a edge is present
 
     // How many combinations of two classes exist, needed for the class dependent triangle factors
     int _k_choose_2;
