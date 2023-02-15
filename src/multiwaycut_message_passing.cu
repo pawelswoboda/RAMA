@@ -30,8 +30,16 @@ multiwaycut_message_passing::multiwaycut_message_passing(
 }
 
 
+/**
+ * Partitions the edges by node. Assumes that i, j is sorted by the node values, this is the case after initializing
+ * multicut
+ * @return the number of edges per node and the offset at which the edges for a node u
+ * start in the i or j array start.
+ */
 std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<int>> multiwaycut_message_passing::get_node_partition()
 {
+    assert(thrust::is_sorted(i.begin(), i.end()));  // This should be the case after initializing multicut
+
     thrust::device_vector<int> nodes(n_nodes);
     thrust::device_vector<int> sizes(n_nodes);
     // After sorting i has the keys in consecutive, ascending order we can now
@@ -51,6 +59,10 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
     return {nodes, starts, sizes};
 }
 
+/**
+ * Functor to calculate the summation constraint lb for a single node, i.e.
+ * min{cost(node) * y | y in (0, 1, ..., 1), (1, 0, ..., 1), ... }
+ */
 struct class_lower_bound_parallel {
     int k;  // number of classes
     int N;  // number of elements in class_costs
@@ -71,6 +83,11 @@ struct class_lower_bound_parallel {
         result[node] -= largest;
     }
 };
+
+/**
+ * Calculates the lower bound for the summation constraint subproblems
+ * @return Lower bound of summation constraints
+ */
 double multiwaycut_message_passing::class_lower_bound()
 {
     // The minimal class-cost-configuration for a node will always be given as
@@ -93,8 +110,7 @@ double multiwaycut_message_passing::class_lower_bound()
 }
 
 /**
- * Triangle lower bound adapted to the case of 2 classes.
- * We dont allow all edges to be cut if a triangle contains class edges
+ * Functor to calculate the lower bound for a single triangle
  */
 struct triangle_lower_bound_2_classes_func {
     bool* is_class_edge;
@@ -122,6 +138,12 @@ struct triangle_lower_bound_2_classes_func {
         return lb;
     }
 };
+
+/**
+ * Calculates the lower bound of the triangle subproblems in the case of 2 classes.
+ * In this case we don't allow all edges in the base graph to be cut as this would imply that each node
+ * is part of a distinct class.
+ */
 double multiwaycut_message_passing::triangle_lower_bound_2_classes() {
     auto first = thrust::make_zip_iterator(thrust::make_tuple(
         t12_costs.begin(), t13_costs.begin(), t23_costs.begin(),
@@ -138,6 +160,9 @@ double multiwaycut_message_passing::triangle_lower_bound_2_classes() {
 }
 
 
+/**
+ * Calculates the overall lower bound for multiway cut, i.e. the sum of all subproblem lower bounds
+ */
 double multiwaycut_message_passing::lower_bound()
 {
     if (n_classes > 0) {
@@ -158,7 +183,9 @@ double multiwaycut_message_passing::lower_bound()
     }
 }
 
-// Adapted from multicut_message_passing to check if an edge is a class-node edge
+/**
+ * Message passing functor from edges to triplets
+ */
 struct increase_triangle_costs_func_mwc {
     float* edge_costs;
     int* edge_counter;
@@ -180,6 +207,9 @@ struct increase_triangle_costs_func_mwc {
     }
 };
 
+/**
+ * Message passing functor from edges to summation constraints
+ */
 struct increase_class_costs_func {
     int n_nodes;
     int n_classes;
@@ -202,6 +232,10 @@ struct increase_class_costs_func {
     }
 };
 
+/**
+ * Cost update functor after the message passing from the edges
+ * sets all edges that participate in any subproblem to 0
+ */
 struct decrease_edge_costs_func {
     int n_nodes;
     __host__ __device__ void operator()(const thrust::tuple<float&,int, int> x) const
@@ -215,11 +249,18 @@ struct decrease_edge_costs_func {
     }
 };
 
+/**
+ * Message passing from edges to triplets and summation constraints
+ * First sends messages to all edges in triangle subproblems then to all summation constraints
+ * In the end sets all edges that are party of any subproblem to 0
+ */
 void multiwaycut_message_passing::send_messages_to_triplets()
 {
     // Most of this is duplicated from the multicut_message_passing::send_messages_to_triplets method
     // as there is no way with the current interface to override the update function.
     // It might be worth to consider changing the interface to accept a function pointer
+
+    // Messages to triangles
     {
         auto first = thrust::make_zip_iterator(thrust::make_tuple(triangle_correspondence_12.begin(), t12_costs.begin()));
         auto last = thrust::make_zip_iterator(thrust::make_tuple(triangle_correspondence_12.end(), t12_costs.end()));
@@ -251,7 +292,7 @@ void multiwaycut_message_passing::send_messages_to_triplets()
         thrust::for_each(first, last, func);
     }
 
-    // Send messages to summation constraints
+    // Messages to summation constraints
     {
         increase_class_costs_func func({n_nodes, n_classes, thrust::raw_pointer_cast(class_costs.data())});
         auto first = thrust::make_zip_iterator(thrust::make_tuple(
@@ -277,7 +318,10 @@ void multiwaycut_message_passing::send_messages_to_triplets()
     print_vector(t23_costs, "t23 after msg to triplets");
 }
 
-
+/**
+ * Message passing functor from triplets to edges in the special case that the number of classes is 2
+ * Uses min-marginals to distribute messages uniformly to the edges in the triangle
+ */
 struct decrease_triangle_costs_2_classes_func {
     float* edge_costs;
     bool* is_class_edge;
@@ -370,6 +414,9 @@ struct decrease_triangle_costs_2_classes_func {
         }
 };
 
+/**
+ * Message passing from triplets to the edges
+ */
 void multiwaycut_message_passing::send_messages_to_edges()
 {
     if (n_classes <= 2) {
@@ -399,6 +446,9 @@ void multiwaycut_message_passing::send_messages_to_edges()
 }
 
 
+/**
+ * Message passing functor from summation constraints back to the edges
+ */
 struct sum_to_edges_func {
     int classes;
     float *edge_costs;
@@ -448,6 +498,9 @@ struct sum_to_edges_func {
     }
 };
 
+/**
+ * Message passing from summation constraints to edges
+ */
 void multiwaycut_message_passing::send_messages_from_sum_to_edges()
 {
     thrust::device_vector<int> node;
