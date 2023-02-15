@@ -1,6 +1,7 @@
 #include "multiwaycut_message_passing.h"
 #include "rama_utils.h"
 #include <algorithm>
+#include <numeric>
 #include <thrust/inner_product.h>
 
 // An edge is a node class-edge iff the destination node value is larger than the largest base node
@@ -836,14 +837,29 @@ void multiwaycut_message_passing::add_class_dependent_triangle_subproblems(int c
     }
 }
 
+
+/**
+ * Adds the class-dependent triangle factors consisting of all triangles and the combinations of the given classes
+ * @param classes
+ */
+void multiwaycut_message_passing::add_class_dependent_triangle_subproblems(std::vector<int> classes) {
+
+    std::vector<int> sorted_classes(classes.size());
+    std::partial_sort_copy(classes.begin(), classes.end(), sorted_classes.begin(), sorted_classes.end());
+
+    for (int c1: sorted_classes) {
+        for (int c2: sorted_classes) {
+            if (c2 < c1) continue;  // This case will be encountered when the order is switched
+            add_class_dependent_triangle_subproblems(c1, c2);
+        }
+    }
+}
+
 /**
  * Adds all possible class dependent triangle factors, i.e. all base graph triangles * 2 class combinations
  */
 void multiwaycut_message_passing::add_class_dependent_triangle_subproblems() {
-    for (int c1 = 0; c1 < n_classes; ++c1) {
-        for (int c2 = c1 + 1; c2 < n_classes; ++c2) {
-            add_class_dependent_triangle_subproblems(c1, c2);
-        }
-
-    }
+    std::vector<int>classes(n_classes);
+    std::iota(classes.begin(), classes.end(), 0);
+    add_class_dependent_triangle_subproblems(classes);
 }

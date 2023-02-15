@@ -35,6 +35,7 @@ public:
 
     void add_class_dependent_triangle_subproblems(int e1, int e2, int e3, int c1, int c2);
     void add_class_dependent_triangle_subproblems(int e1, int e2, int e3);
+    void add_class_dependent_triangle_subproblems(std::vector<int> classes);
     void add_class_dependent_triangle_subproblems(int c1, int c2);
     void add_class_dependent_triangle_subproblems();
 
