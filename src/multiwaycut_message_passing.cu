@@ -17,9 +17,11 @@ multiwaycut_message_passing::multiwaycut_message_passing(
         thrust::device_vector<int> &&_t1,
         thrust::device_vector<int> &&_t2,
         thrust::device_vector<int> &&_t3,
-        const bool verbose
+        const bool verbose,
+        const MWCOptions _options
         )
         : multicut_message_passing(A, std::move(_t1), std::move(_t2), std::move(_t3), verbose),
+        options(_options),
         n_classes(_n_classes),
         n_nodes(_n_nodes),
         class_costs(_n_nodes * _n_classes, 0),  // Zero initialize summation constraints
@@ -27,9 +29,18 @@ multiwaycut_message_passing::multiwaycut_message_passing(
         cdtf_counter(edge_counter.size(), 0),
         cdtf_costs(0, 0.0)  // Size is increased when adding new class dependent triangle factors
         {
-
     print_vector(i, "sources");
     print_vector(j, "dest   ");
+
+
+    // We pretend triangles don't exist but multicut initializes edge_counter
+    // Which is used even in the non triangle message, e.g. to the classes
+    // We simply set the edge_counter to 0
+    if (options & MWCOptions::IGNORE_TRIANGLES) {
+        for (int idx = 0; idx < edge_counter.size(); ++idx) {
+            edge_counter[idx] = 0;
+        }
+    }
 }
 
 /***************************** Lower bounds **********************************/
@@ -348,40 +359,53 @@ void multiwaycut_message_passing::send_messages_to_triplets()
     // Most of this is duplicated from the multicut_message_passing::send_messages_to_triplets method
     // as there is no way with the current interface to override the update function.
     // It might be worth to consider changing the interface to accept a function pointer
+    if (options & MWCOptions::NO_MESSAGES_FROM_EDGES) {
+        throw std::logic_error("options indicate that no messages from the edges should be send");
+    }
 
     // Messages to triangles
-    {
-        auto first = thrust::make_zip_iterator(thrust::make_tuple(triangle_correspondence_12.begin(), t12_costs.begin()));
-        auto last = thrust::make_zip_iterator(thrust::make_tuple(triangle_correspondence_12.end(), t12_costs.end()));
-        increase_triangle_costs_func_mwc func({
-            thrust::raw_pointer_cast(edge_costs.data()),
-            thrust::raw_pointer_cast(edge_counter.data()),
-            thrust::raw_pointer_cast(cdtf_counter.data()),
-            thrust::raw_pointer_cast(is_class_edge.data()),
-        });
-        thrust::for_each(first, last, func);
-    }
-    {
-        auto first = thrust::make_zip_iterator(thrust::make_tuple(triangle_correspondence_13.begin(), t13_costs.begin()));
-        auto last = thrust::make_zip_iterator(thrust::make_tuple(triangle_correspondence_13.end(), t13_costs.end()));
-        increase_triangle_costs_func_mwc func({
-            thrust::raw_pointer_cast(edge_costs.data()),
-            thrust::raw_pointer_cast(edge_counter.data()),
-            thrust::raw_pointer_cast(cdtf_counter.data()),
-            thrust::raw_pointer_cast(is_class_edge.data())
-        });
-        thrust::for_each(first, last, func);
-    }
-    {
-        auto first = thrust::make_zip_iterator(thrust::make_tuple(triangle_correspondence_23.begin(), t23_costs.begin()));
-        auto last = thrust::make_zip_iterator(thrust::make_tuple(triangle_correspondence_23.end(), t23_costs.end()));
-        increase_triangle_costs_func_mwc func({
-            thrust::raw_pointer_cast(edge_costs.data()),
-            thrust::raw_pointer_cast(edge_counter.data()),
-            thrust::raw_pointer_cast(cdtf_counter.data()),
-            thrust::raw_pointer_cast(is_class_edge.data())
-        });
-        thrust::for_each(first, last, func);
+    // If we ignore triangles we don't want to send messages to them as we pretend they don't exist
+    if (options ^ MWCOptions::IGNORE_TRIANGLES) {
+
+        {
+            auto first =
+                thrust::make_zip_iterator(thrust::make_tuple(triangle_correspondence_12.begin(), t12_costs.begin()));
+            auto
+                last = thrust::make_zip_iterator(thrust::make_tuple(triangle_correspondence_12.end(), t12_costs.end()));
+            increase_triangle_costs_func_mwc func({
+                                                      thrust::raw_pointer_cast(edge_costs.data()),
+                                                      thrust::raw_pointer_cast(edge_counter.data()),
+                                                      thrust::raw_pointer_cast(cdtf_counter.data()),
+                                                      thrust::raw_pointer_cast(is_class_edge.data()),
+                                                  });
+            thrust::for_each(first, last, func);
+        }
+        {
+            auto first =
+                thrust::make_zip_iterator(thrust::make_tuple(triangle_correspondence_13.begin(), t13_costs.begin()));
+            auto
+                last = thrust::make_zip_iterator(thrust::make_tuple(triangle_correspondence_13.end(), t13_costs.end()));
+            increase_triangle_costs_func_mwc func({
+                                                      thrust::raw_pointer_cast(edge_costs.data()),
+                                                      thrust::raw_pointer_cast(edge_counter.data()),
+                                                      thrust::raw_pointer_cast(cdtf_counter.data()),
+                                                      thrust::raw_pointer_cast(is_class_edge.data())
+                                                  });
+            thrust::for_each(first, last, func);
+        }
+        {
+            auto first =
+                thrust::make_zip_iterator(thrust::make_tuple(triangle_correspondence_23.begin(), t23_costs.begin()));
+            auto
+                last = thrust::make_zip_iterator(thrust::make_tuple(triangle_correspondence_23.end(), t23_costs.end()));
+            increase_triangle_costs_func_mwc func({
+                                                      thrust::raw_pointer_cast(edge_costs.data()),
+                                                      thrust::raw_pointer_cast(edge_counter.data()),
+                                                      thrust::raw_pointer_cast(cdtf_counter.data()),
+                                                      thrust::raw_pointer_cast(is_class_edge.data())
+                                                  });
+            thrust::for_each(first, last, func);
+        }
     }
 
     // Messages to summation constraints
@@ -531,6 +555,10 @@ struct decrease_triangle_costs_2_classes_func {
  */
 void multiwaycut_message_passing::send_messages_to_edges()
 {
+    if (options & MWCOptions::NO_MESSAGES_FROM_TRIANGLES) {
+        throw std::logic_error("options indicate that no messages from the triangle subproblems should be send");
+    }
+
     if (n_classes <= 2) {
         auto first = thrust::make_zip_iterator(thrust::make_tuple(
             t1.begin(), t2.begin(), t3.begin(),
@@ -615,6 +643,10 @@ struct sum_to_edges_func {
  */
 void multiwaycut_message_passing::send_messages_from_sum_to_edges()
 {
+    if (options & MWCOptions::NO_MESSAGES_FROM_TRIANGLES) {
+        throw std::logic_error("options indicate that no messages from summation constraints should be send");
+    }
+
     thrust::device_vector<int> node;
     thrust::device_vector<int> start;
     thrust::device_vector<int> size;
@@ -640,11 +672,18 @@ void multiwaycut_message_passing::send_messages_from_sum_to_edges()
 
 void multiwaycut_message_passing::iteration()
 {
-    send_messages_to_triplets();
-    send_messages_to_edges();
-    send_messages_from_sum_to_edges();
-}
+    if (options ^ MWCOptions::NO_MESSAGES_FROM_EDGES) {
+        send_messages_to_triplets();
+    }
 
+    if (options ^ MWCOptions::NO_MESSAGES_FROM_TRIANGLES) {
+        send_messages_to_edges();
+    }
+
+    if (options ^ MWCOptions::NO_MESSAGES_FROM_SUM_CONSTRAINTS) {
+        send_messages_from_sum_to_edges();
+    }
+}
 
 /***************************** Helper functions ******************************/
 

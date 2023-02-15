@@ -3,6 +3,41 @@
 #include "multicut_message_passing.h"
 #include "functional"
 
+
+enum class MWCOptions {
+  DEFAULT = 0,
+  IGNORE_TRIANGLES = (1 << 0),                    // Build `triangle_correspondence_ij` as these are needed for the cdtf
+                                                  // problems but do not pass messages to/from triangles
+  // TODO: Implement these if needed, takes some refactoring to correctly change the message weights
+  IGNORE_SUMMATION_CONSTRAINTS = (1 << 1),        // Do not send messages from edges to summation constraints
+  IGNORE_CDTF_PROBLEMS = (1 << 2),                // Do not send messages from edges to cdtf problems
+
+  // Options to disable message passing (in the iteration method)
+  // Calling the method by hand will still work
+  NO_MESSAGES_FROM_TRIANGLES = (1 << 3),          // No message passing from the triangles is performed
+  NO_MESSAGES_FROM_EDGES = (1 << 4),              // No messages from edges to triplets / summation constraints
+  NO_MESSAGES_FROM_SUM_CONSTRAINTS = (1 << 5),    // No messages from the summation constraints back to the edges
+};
+
+constexpr enum MWCOptions operator |(const enum MWCOptions self, const enum MWCOptions other) {
+    return static_cast<MWCOptions>(static_cast<int>(self) | static_cast<int>(other));
+}
+
+/**
+ * Check if a flag is turned on
+ */
+constexpr bool operator &(const enum MWCOptions self, const enum MWCOptions other) {
+    return static_cast<MWCOptions>(static_cast<int>(self) & static_cast<int>(other)) == other;
+}
+
+/**
+ * Check if a flag is not turned on
+ */
+constexpr bool operator ^(const enum MWCOptions self, const enum MWCOptions other) {
+    return !(static_cast<int>(self) & static_cast<int>(other));
+}
+
+
 class multiwaycut_message_passing: public multicut_message_passing {
 public:
     multiwaycut_message_passing(
@@ -12,7 +47,8 @@ public:
                 thrust::device_vector<int>&& _t1,
                 thrust::device_vector<int>&& _t2,
                 thrust::device_vector<int>&& _t3,
-                const bool _verbose = true
+                const bool _verbose = true,
+                const MWCOptions _options = MWCOptions::DEFAULT
                 );
 
     double lower_bound() override;
@@ -40,6 +76,7 @@ public:
     void add_class_dependent_triangle_subproblems();
 
 private:
+    MWCOptions options;
     int n_nodes;
     int n_classes;
     thrust::device_vector<float> class_costs;
