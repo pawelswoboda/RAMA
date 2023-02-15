@@ -343,13 +343,14 @@ struct increase_class_costs_func {
  */
 struct decrease_edge_costs_func {
     int n_nodes;
-    __host__ __device__ void operator()(const thrust::tuple<float&,int, int> x) const
+    __host__ __device__ void operator()(const thrust::tuple<float&,int, int, bool> x) const
     {
         float& cost = thrust::get<0>(x);
-        int counter = thrust::get<1>(x);
-        int dest = thrust::get<2>(x);
-        if(counter > 0 || IS_CLASS_EDGE(dest)) {
-            cost = 0.0;  // Participates in a triangle or is a class edge
+        int triangle_counter = thrust::get<1>(x);
+        int cdtf_counter = thrust::get<3>(x);
+        int is_class_edge = thrust::get<2>(x);
+        if(triangle_counter > 0 || cdtf_counter > 0 || is_class_edge) {
+            cost = 0.0;  // Participates in a triangle, is a class edge or part of a class dependent triangle factor
         }
     }
 };
@@ -443,11 +444,13 @@ void multiwaycut_message_passing::send_messages_to_triplets()
     }
 
     // set costs of edges to zero (if edge participates in a triangle or is a class edge)
-    // No need to check if part of class dependent triangle factor because this implied by being part of a triangle
-    // or being a class edge
     {
-        auto first = thrust::make_zip_iterator(thrust::make_tuple(edge_costs.begin(), edge_counter.begin(), j.begin()));
-        auto last = thrust::make_zip_iterator(thrust::make_tuple(edge_costs.end(), edge_counter.end(), j.end()));
+        auto first = thrust::make_zip_iterator(thrust::make_tuple(
+            edge_costs.begin(), edge_counter.begin(), cdtf_counter.begin(), is_class_edge.begin()
+        ));
+        auto last = thrust::make_zip_iterator(thrust::make_tuple(
+            edge_costs.end(), edge_counter.end(), cdtf_counter.end(), is_class_edge.end()
+       ));
         thrust::for_each(first, last, decrease_edge_costs_func({n_nodes}));
     }
 
