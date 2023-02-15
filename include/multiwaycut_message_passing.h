@@ -1,6 +1,7 @@
 #ifndef RAMA_MULTIWAYCUT_MESSAGE_PASSING_H
 #define RAMA_MULTIWAYCUT_MESSAGE_PASSING_H
 #include "multicut_message_passing.h"
+#include "functional"
 
 class multiwaycut_message_passing: public multicut_message_passing {
 public:
@@ -35,6 +36,19 @@ private:
     int n_classes;
     thrust::device_vector<float> class_costs;
     thrust::device_vector<float> cdtf_costs;  // class-dependent triangle factor costs
+
+    /**
+     * Returns a vector with as many items as edges, describing if the edge is a class edge or not
+     * @param sources Start of an edge
+     * @param dests End of an edge
+     * @param is_class_edge_f Function taking the source and destination of an edge and returning whether it is a class edge
+     */
+    static thrust::device_vector<bool> create_class_edge_mask(
+        thrust::device_vector<int> sources,
+        thrust::device_vector<int> dests,
+        std::function<bool(int, int)> is_class_edge_f
+    );
+
 protected:
     double class_lower_bound();
     double cdtf_lower_bound();

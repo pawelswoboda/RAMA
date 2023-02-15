@@ -6,6 +6,7 @@
 
 // An edge is a node class-edge iff the destination node value is larger than the largest base node
 // which are assigned values from [0...n_nodes]
+// TODO: Replace all occurences of the macro with the is_class_edge vector
 #define IS_CLASS_EDGE(dest) (dest >= n_nodes)
 #define CHOOSE2(N) (N*(N-1) / 2)
 
@@ -22,8 +23,8 @@ multiwaycut_message_passing::multiwaycut_message_passing(
         : multicut_message_passing(A, std::move(_t1), std::move(_t2), std::move(_t3), verbose),
         n_classes(_n_classes),
         n_nodes(_n_nodes),
-        class_costs(thrust::device_vector<float>(_n_nodes * _n_classes)),  // Zero initialize summation constraints
-        is_class_edge(i.size(), false),
+        class_costs(_n_nodes * _n_classes, 0),  // Zero initialize summation constraints
+        is_class_edge(create_class_edge_mask(i, j, [_n_nodes](int source, int dest) {return dest >= _n_nodes;} )),
         base_edge_counter(edge_counter.size(), 0),  // In how many triangles in the base graph an edge is present
         node_counter(n_nodes, 0),  // In how many triangles in the base graph a node is present
         _k_choose_2(CHOOSE2(n_classes)),
@@ -32,10 +33,6 @@ multiwaycut_message_passing::multiwaycut_message_passing(
         // those when updating the costs
         cdtf_costs(CHOOSE2(n_classes) * triangle_correspondence_12.size() * 9, 0.0)
         {
-    // Populate is_class_edge lookup table
-    for (int idx = 0; idx < i.size(); ++idx) {
-        is_class_edge[idx] = IS_CLASS_EDGE(j[idx]);
-    }
 
     print_vector(i, "sources");
     print_vector(j, "dest   ");
@@ -810,5 +807,19 @@ void multiwaycut_message_passing::iteration()
     send_messages_to_triplets();
     send_messages_to_edges();
     send_messages_from_sum_to_edges();
+}
+
+thrust::device_vector<bool> multiwaycut_message_passing::create_class_edge_mask(
+    thrust::device_vector<int> sources,
+    thrust::device_vector<int> dests,
+    std::function<bool(int,int)> is_class_edge_f) {
+    assert(sources.size() == dests.size());
+    thrust::device_vector<bool> mask(sources.size());
+
+    for (int i = 0; i < sources.size(); ++i) {
+        mask[i] = is_class_edge_f(sources[i], dests[i]);
+    }
+
+    return mask;
 }
 
