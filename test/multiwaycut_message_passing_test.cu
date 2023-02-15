@@ -23,7 +23,9 @@ enum class TestOptions {
   ALL_ON = 0,                             // Everything on i.e. normal triangles and summation messages
   NO_TRIANGLES = 1,                       // No triangles
   ONLY_BASE_TRIANGLES = 2,                // Only triangles in the base graph
-  NO_MESSAGES_FROM_TRIANGLES = 4          // No message passing from the triangles is performed
+  NO_MESSAGES_FROM_TRIANGLES = 4,         // No message passing from the triangles is performed
+  NO_MESSAGES_FROM_EDGES = 8,             // No messages from edges to triplets / summation constraints
+  NO_MESSAGES_FROM_SUM_CONSTRAINTS = 16   // No messages from the summation constraints back to the edges
 };
 
 constexpr enum TestOptions operator |(const enum TestOptions self, const enum TestOptions other) {
@@ -315,12 +317,16 @@ void test_triangle(
     for (int k = 0; k < TEST_MAX_ITER; ++k)
     {
         std::cout << "---------------" << "iteration = " << k << "---------------\n";
-        mwcp.send_messages_to_triplets();
-        double new_lb = mwcp.lower_bound();
-        test(new_lb > last_lb || std::abs(new_lb - last_lb) < PRECISION,
-             "Lower bound did not increase after message to triplets");
-        last_lb = new_lb;
-
+        double new_lb = last_lb;
+        if (options & TestOptions::NO_MESSAGES_FROM_EDGES) {
+            std::cout << "Skipping messages from edges\n";
+        } else {
+            mwcp.send_messages_to_triplets();
+            new_lb = mwcp.lower_bound();
+            test(new_lb > last_lb || std::abs(new_lb - last_lb) < PRECISION,
+                 "Lower bound did not increase after message to triplets");
+            last_lb = new_lb;
+        }
 
         if (options & TestOptions::NO_MESSAGES_FROM_TRIANGLES) {
             std::cout << "Skipping messages from triangles\n";
@@ -332,13 +338,15 @@ void test_triangle(
             last_lb = new_lb;
         }
 
-        mwcp.send_messages_from_sum_to_edges();
-        new_lb = mwcp.lower_bound();
-        test(new_lb > last_lb || std::abs(new_lb - last_lb) < PRECISION,
-             "Lower bound did not increase after messages from class constraints");
-
-        // Update best lb
-        last_lb = new_lb;
+        if (options & TestOptions::NO_MESSAGES_FROM_SUM_CONSTRAINTS) {
+            std::cout << "Skipping messages from summation constraints\n";
+        } else {
+            mwcp.send_messages_from_sum_to_edges();
+            new_lb = mwcp.lower_bound();
+            test(new_lb > last_lb || std::abs(new_lb - last_lb) < PRECISION,
+                 "Lower bound did not increase after messages from class constraints");
+            last_lb = new_lb;
+        }
 
         // short circuit if we encounter the optimal lower bound earlier
         if (std::abs(last_lb - expected_final_lb) <= PRECISION)
@@ -363,7 +371,7 @@ void test_triangle(
 void test_triangle_N_classes_between_class_difference(
     const float edge_cost,
     const std::vector<float> class_costs,
-    const TestOptions options
+    const TestOptions options = DEFAULT_OPTIONS
 ) {
 
     // Create the per node class costs
@@ -406,6 +414,8 @@ void test_triangle_2_classes_same_costs(
 void repulsive_triangle_tests(){
 
     std::cout << "Testing repulsive triangle\n";
+    test_triangle_N_classes_between_class_difference(-1, std::vector<float>({-100.0, -10.0, -10.0}), TestOptions::NO_MESSAGES_FROM_TRIANGLES | TestOptions::NO_TRIANGLES);
+
     test_triangle_2_classes_same_costs(-1.0, 0.0, TestOptions::ONLY_BASE_TRIANGLES);
     test_triangle_2_classes_same_costs(-1.0, -1.0, TestOptions::ONLY_BASE_TRIANGLES);
     test_triangle_2_classes_same_costs(-1.0, 1.0, TestOptions::ONLY_BASE_TRIANGLES);
