@@ -83,12 +83,7 @@ protected:
     double cdtf_lower_bound();
     double triangle_lower_bound_2_classes();
     thrust::device_vector<bool> is_class_edge;
-    thrust::device_vector<int> base_edge_counter;  // In how many triangles in the base graph an edge is present
-    thrust::device_vector<int> node_counter;  // In how many triangles in the base graph a node is present
     thrust::device_vector<int> cdtf_counter;  // In how many class-dependent triangle factors a edge is present
-
-    // How many combinations of two classes exist, needed for the class dependent triangle factors
-    int _k_choose_2;
 };
 
 #endif //RAMA_MULTIWAYCUT_MESSAGE_PASSING_H

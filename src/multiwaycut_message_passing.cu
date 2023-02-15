@@ -8,7 +8,6 @@
 // which are assigned values from [0...n_nodes]
 // TODO: Replace all occurrences of the macro with the is_class_edge vector
 #define IS_CLASS_EDGE(dest) (dest >= n_nodes)
-#define CHOOSE2(N) (N*(N-1) / 2)
 
 
 multiwaycut_message_passing::multiwaycut_message_passing(
@@ -25,42 +24,12 @@ multiwaycut_message_passing::multiwaycut_message_passing(
         n_nodes(_n_nodes),
         class_costs(_n_nodes * _n_classes, 0),  // Zero initialize summation constraints
         is_class_edge(create_class_edge_mask(i, j, [_n_nodes](int source, int dest) {return dest >= _n_nodes;} )),
-        base_edge_counter(edge_counter.size(), 0),  // In how many triangles in the base graph an edge is present
-        node_counter(n_nodes, 0),  // In how many triangles in the base graph a node is present
         cdtf_counter(edge_counter.size(), 0),
-        _k_choose_2(CHOOSE2(n_classes)),
         cdtf_costs(0, 0.0)  // Size is increased when adding new class dependent triangle factors
         {
 
     print_vector(i, "sources");
     print_vector(j, "dest   ");
-
-    // Calculate how often each edge is part of a base graph triangle and how often each node
-    // is part of a base graph triangle
-    thrust::copy(edge_counter.begin(), edge_counter.end(), base_edge_counter.begin());
-    // Should probably be parallelized
-    for (int idx = 0; idx < triangle_correspondence_12.size(); ++idx) {
-        int e12 = triangle_correspondence_12[idx];
-        int e13 = triangle_correspondence_13[idx];
-        int e23 = triangle_correspondence_23[idx];
-        // If any edge is a class edge this is not a base graph triangle
-        if (is_class_edge[e12]
-        || is_class_edge[e13]
-        || is_class_edge[e23]
-        ) {
-            base_edge_counter[e12] -= 1;
-            base_edge_counter[e13] -= 1;
-            base_edge_counter[e23] -= 1;
-        } else {
-            // Iterate the nodes of this triangle
-            for (int node: get_nodes_in_triangle(e12, e13, e23)) {
-                assert(node < n_nodes);  // There should be no class node in this triangle
-                node_counter[node] += 1;
-            }
-        }
-    }
-    print_vector(base_edge_counter, "Edge counter base graph");
-    print_vector(node_counter, "Node counter");
 }
 
 /***************************** Lower bounds **********************************/
