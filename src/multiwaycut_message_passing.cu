@@ -213,7 +213,7 @@ struct cdtf_lower_bound_func{
     const int cols = 9;
 
     __device__ void operator() (const int cdtf_idx) const {
-
+        // 9 values for each problem
         int offset = cdtf_idx * 9;
         float best = 0.0;
         for (int r = 0; r < rows; ++r) {
@@ -231,16 +231,18 @@ double multiwaycut_message_passing::cdtf_lower_bound() {
     // With no triangles we have no lower bound
     if (cdtf_costs.empty()) return 0.0;
 
-    // Number of cdtf factors
-    int size = CHOOSE2(n_classes) * triangle_correspondence_12.size();
+    auto dv = std::div(cdtf_costs.size(), 9);
+    assert(dv.rem == 0);  // We should always have chunks of 9 costs, one for each subproblem
+    int nr_cdtf_problems = dv.quot;
 
-    // We parallelize over the class-dependent triangle factors as (K, 2) * T >> 37 in most cases
-    thrust::device_vector<float> results(size);
-    auto idx = thrust::make_counting_iterator<int>(0);
+    // We parallelize over the class-dependent triangle factors
+    thrust::device_vector<float> results(nr_cdtf_problems);
+    auto idx = thrust::make_counting_iterator<int>(0);  // Index of the cdtf
     cdtf_lower_bound_func func({
-        thrust::raw_pointer_cast(results.data()), thrust::raw_pointer_cast(cdtf_costs.data())
+        thrust::raw_pointer_cast(results.data()), 
+        thrust::raw_pointer_cast(cdtf_costs.data())
     });
-    thrust::for_each(idx, idx + size, func);
+    thrust::for_each(idx, idx + nr_cdtf_problems, func);
     return thrust::reduce(results.begin(), results.end(), 0.0);
 }
 
