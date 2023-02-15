@@ -20,12 +20,13 @@
  * if the only flag in options is NO_TRIANGLES
  */
 enum class TestOptions {
-  ALL_ON = 0,                                    // Everything on i.e. normal triangles and summation messages
-  NO_TRIANGLES = (1 << 0),                       // No triangles
-  ONLY_BASE_TRIANGLES = (1 << 1),                // Only triangles in the base graph
-  NO_MESSAGES_FROM_TRIANGLES = (1 << 2),         // No message passing from the triangles is performed
-  NO_MESSAGES_FROM_EDGES = (1 << 3),             // No messages from edges to triplets / summation constraints
-  NO_MESSAGES_FROM_SUM_CONSTRAINTS = (1 << 4)    // No messages from the summation constraints back to the edges
+  ALL_ON = 0,                                     // Everything on i.e. normal triangles and summation messages
+  NO_TRIANGLES = (1 << 0),                        // No triangles
+  ONLY_BASE_TRIANGLES = (1 << 1),                 // Only triangles in the base graph
+  NO_MESSAGES_FROM_TRIANGLES = (1 << 2),          // No message passing from the triangles is performed
+  NO_MESSAGES_FROM_EDGES = (1 << 3),              // No messages from edges to triplets / summation constraints
+  NO_MESSAGES_FROM_SUM_CONSTRAINTS = (1 << 4),    // No messages from the summation constraints back to the edges
+  ALL_CDTF_PROBLEMS = (1 << 5)                    // Add all cdtf problems in the graph
 };
 
 constexpr enum TestOptions operator |(const enum TestOptions self, const enum TestOptions other) {
@@ -35,7 +36,7 @@ constexpr bool operator &(const enum TestOptions self, const enum TestOptions ot
     return static_cast<TestOptions>(static_cast<int>(self) & static_cast<int>(other)) == other;
 }
 
-const TestOptions DEFAULT_OPTIONS = TestOptions::ALL_ON;
+const TestOptions DEFAULT_OPTIONS = TestOptions::ALL_ON;  // TODO: Consider adding ALL_CDTF_PROBLEMS as default
 
 
 /**
@@ -238,14 +239,21 @@ void two_nodes_2_classes_tests() {
  * @param cls_costs Class costs for each node, i.e. 3xK vector with each row being the class costs in order 0, ..., K-1
  * @param K Number of classes
  * @param options Options for this test
+ * @param cdtf_classes For which classes the class dependent triangle factors should be added, with class encoded by
+ *                      an integer in the range 0, ..., K-1
  */
 void test_triangle(
     const std::vector<float> edge_costs,
     const std::vector<std::vector<float>> cls_costs,
     const int K,
-    const TestOptions options = DEFAULT_OPTIONS
+    const TestOptions options = DEFAULT_OPTIONS,
+    const std::vector<int> cdtf_classes = {}
 ){
     const int n_nodes = 3;
+
+    if (K < 2) {
+        throw std::invalid_argument("Multiway cut with 1 class makes no sense");
+    }
 
     if (edge_costs.size() != n_nodes) {
         throw std::invalid_argument("Size of edge_costs has to be 3");
@@ -253,6 +261,19 @@ void test_triangle(
     if (cls_costs.size() != n_nodes) {
         throw std::invalid_argument("cls_costs needs one vector with costs for each node");
     }
+    if (!cdtf_classes.empty() && cdtf_classes.size() > K) {
+        throw std::invalid_argument("Cannot have more classes in the cdtf problems than in the instance");
+    }
+    if (!cdtf_classes.empty() && cdtf_classes.size() < 2) {
+        throw std::invalid_argument("Class-dependent triangle factors need at least two classes");
+    }
+
+    if (!cdtf_classes.empty() && options & TestOptions::NO_TRIANGLES) {
+        throw std::invalid_argument("Class-dependent triangle factors are directly related to the triangles"
+                                    "and cannot simply be turned off as the triangles passed to the class are"
+                                    "basis for constructing the class-dependent triangle factors.");
+    }
+
 
     // Set up the base triangle
     std::vector<int> src = {0, 0, 1};
@@ -271,12 +292,7 @@ void test_triangle(
 
     // Create triangles
     thrust::device_vector<int> t1, t2, t3;
-    if (options & TestOptions::NO_TRIANGLES) {
-        t1 = std::vector<int>{};
-        t2 = std::vector<int>{};
-        t3 = std::vector<int>{};
-    }
-    else if (options & TestOptions::ONLY_BASE_TRIANGLES) {
+    if (options & TestOptions::ONLY_BASE_TRIANGLES) {
         t1 = std::vector<int>{0};
         t2 = std::vector<int>{1};
         t3 = std::vector<int>{2};
@@ -291,7 +307,7 @@ void test_triangle(
             // No need to consider v < u+1 as this leads to symmetric triangles i.e. (u,v,ci) and (v, u, ci)
             for (int v = u+1; v < n_nodes; ++v) {
                 for (int cls = n_nodes; cls < n_nodes + K; ++cls) {
-                    t1.push_back(u);  // NOLINT
+                    t1.push_back(u);
                     t2.push_back(v);
                     t3.push_back(cls);
                 }
@@ -299,9 +315,24 @@ void test_triangle(
         }
     }
 
+    MWCOptions mwc_options = MWCOptions::VERBOSE;
+    if (options & TestOptions::NO_TRIANGLES) {
+        // If we just set the triangles to be empty we will not be able to create
+        // the class dependent triangle factors easily hence we just pretend that the
+        // triangles don't exist.
+        mwc_options = MWCOptions::VERBOSE | MWCOptions::IGNORE_TRIANGLES;
+    }
+
     //
     dCOO A(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end(), true);
-    multiwaycut_message_passing mwcp(A, n_nodes, K, std::move(t1), std::move(t2), std::move(t3));
+    multiwaycut_message_passing mwcp(A, n_nodes, K, std::move(t1), std::move(t2), std::move(t3), mwc_options);
+
+    if (options & TestOptions::ALL_CDTF_PROBLEMS) {
+        mwcp.add_class_dependent_triangle_subproblems();
+    }
+    else if (!cdtf_classes.empty()) {
+        mwcp.add_class_dependent_triangle_subproblems(cdtf_classes);
+    }
 
     // Check initial lower bound
     const double initial_lb = mwcp.lower_bound();
@@ -366,12 +397,15 @@ void test_triangle(
  *
  * @param edge_cost Cost applied to each edge in the base graph
  * @param class_costs Vector with K costs, one for each class
- * @param options
+ * @param options Options for test_triangle, see TestOptions declaration
+ * @param cdtf_classes For which classes the class dependent triangle factors should be added, with class encoded by
+ *                      an integer in the range 0, ..., K-1
  */
 void test_triangle_N_classes_between_class_difference(
     const float edge_cost,
     const std::vector<float> class_costs,
-    const TestOptions options = DEFAULT_OPTIONS
+    const TestOptions options = DEFAULT_OPTIONS,
+    const std::vector<int> cdtf_classes = {}
 ) {
 
     // Create the per node class costs
@@ -388,7 +422,8 @@ void test_triangle_N_classes_between_class_difference(
         std::vector<float>({edge_cost, edge_cost, edge_cost}),
         costs,
         class_costs.size(),
-        options
+        options,
+        cdtf_classes
     );
 }
 
@@ -396,17 +431,21 @@ void test_triangle_N_classes_between_class_difference(
  * Tests a triangle with the same costs in the base graph and all class edges having equal cost
  * @param edge_cost Cost applied to each edge in the base graph
  * @param class_cost Cost applied to all base-class edges
- * @param options Test options
+ * @param options Options for test_triangle, see TestOptions declaration
+ * @param cdtf_classes For which classes the class dependent triangle factors should be added, with class encoded by
+ *                      an integer in the range 0, ..., K-1
  */
 void test_triangle_2_classes_same_costs(
     const float edge_cost,
     const float class_cost,
-    const TestOptions options = DEFAULT_OPTIONS
+    const TestOptions options = DEFAULT_OPTIONS,
+    const std::vector<int> cdtf_classes = {}
 ) {
     test_triangle_N_classes_between_class_difference(
         edge_cost,
         std::vector<float>({class_cost, class_cost}),
-        options
+        options,
+        cdtf_classes
     );
 }
 
@@ -414,7 +453,10 @@ void test_triangle_2_classes_same_costs(
 void repulsive_triangle_tests(){
 
     std::cout << "Testing repulsive triangle\n";
-    test_triangle_N_classes_between_class_difference(-1, std::vector<float>({-100.0, -10.0, -10.0}), TestOptions::NO_MESSAGES_FROM_TRIANGLES | TestOptions::NO_TRIANGLES);
+    test_triangle_N_classes_between_class_difference(
+        -1, std::vector<float>({-100.0, -10.0, -10.0}),
+        TestOptions::NO_MESSAGES_FROM_TRIANGLES | TestOptions::NO_TRIANGLES | TestOptions::ALL_CDTF_PROBLEMS
+    );
 
     test_triangle_2_classes_same_costs(-1.0, 0.0, TestOptions::ONLY_BASE_TRIANGLES);
     test_triangle_2_classes_same_costs(-1.0, -1.0, TestOptions::ONLY_BASE_TRIANGLES);
