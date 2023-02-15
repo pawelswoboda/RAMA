@@ -20,12 +20,12 @@
  * if the only flag in options is NO_TRIANGLES
  */
 enum class TestOptions {
-  ALL_ON = 0,                             // Everything on i.e. normal triangles and summation messages
-  NO_TRIANGLES = 1,                       // No triangles
-  ONLY_BASE_TRIANGLES = 2,                // Only triangles in the base graph
-  NO_MESSAGES_FROM_TRIANGLES = 4,         // No message passing from the triangles is performed
-  NO_MESSAGES_FROM_EDGES = 8,             // No messages from edges to triplets / summation constraints
-  NO_MESSAGES_FROM_SUM_CONSTRAINTS = 16   // No messages from the summation constraints back to the edges
+  ALL_ON = 0,                                    // Everything on i.e. normal triangles and summation messages
+  NO_TRIANGLES = (1 << 0),                       // No triangles
+  ONLY_BASE_TRIANGLES = (1 << 1),                // Only triangles in the base graph
+  NO_MESSAGES_FROM_TRIANGLES = (1 << 2),         // No message passing from the triangles is performed
+  NO_MESSAGES_FROM_EDGES = (1 << 3),             // No messages from edges to triplets / summation constraints
+  NO_MESSAGES_FROM_SUM_CONSTRAINTS = (1 << 4)    // No messages from the summation constraints back to the edges
 };
 
 constexpr enum TestOptions operator |(const enum TestOptions self, const enum TestOptions other) {
