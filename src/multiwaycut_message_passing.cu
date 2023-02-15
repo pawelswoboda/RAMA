@@ -1,6 +1,5 @@
 #include "multiwaycut_message_passing.h"
 #include "rama_utils.h"
-#include <unordered_set>
 #include <algorithm>
 #include <thrust/inner_product.h>
 
@@ -55,10 +54,8 @@ multiwaycut_message_passing::multiwaycut_message_passing(
             base_edge_counter[e13] -= 1;
             base_edge_counter[e23] -= 1;
         } else {
-            // get the nodes of this triangle
-            std::unordered_set<int> nodes = get_nodes_in_triangle(e12, e13, e23);
-
-            for (int node: nodes) {
+            // Iterate the nodes of this triangle
+            for (int node: get_nodes_in_triangle(e12, e13, e23);) {
                 assert(node < n_nodes);  // There should be no class node in this triangle
                 node_counter[node] += 1;
             }
@@ -796,8 +793,16 @@ thrust::device_vector<bool> multiwaycut_message_passing::create_class_edge_mask(
     return mask;
 }
 
-std::unordered_set<int> multiwaycut_message_passing::get_nodes_in_triangle(int e1, int e2, int e3) {
-    return std::unordered_set<int>({i[e1], j[e1], i[e2], j[e2], i[e3], j[e3]};);
+thrust::device_vector<int> multiwaycut_message_passing::get_nodes_in_triangle(int e1, int e2, int e3) {
+
+    thrust::device_vector<int> nodes= std::vector<int>({i[e1], j[e1], i[e2], j[e2], i[e3], j[e3]});
+    thrust::device_vector<int> unique_nodes(3);
+
+    thrust::unique_copy(nodes.begin(), nodes.end(), unique_nodes.begin());
+    assert(unique_nodes.size() == 3);  // No more than 3 unique nodes should be in the edges of an triangle
+    thrust::sort(unique_nodes.begin(), unique_nodes.end());  // We want ascending order
+
+    return unique_nodes;
 }
 
 /**
