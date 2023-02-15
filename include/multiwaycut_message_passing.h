@@ -43,6 +43,14 @@ private:
     int n_classes;
     thrust::device_vector<float> class_costs;
     thrust::device_vector<float> cdtf_costs;  // class-dependent triangle factor costs
+    // Stores the edge index for all class-dependent triangle factors
+    // Even tough the order should not be important we add the edges as follows
+    // 1c1 2c1 3c1 1c2 2c2 3c3 e12 e13 e23
+    // where 1,2,3 indicate the nodes sorted in ascending order
+    // This is based on the order of the cost vector in equation (12)
+
+    // Based on this it is clear that chunks of 9 represent a single cdtf subproblem
+    thrust::device_vector<int> cdtf_correspondence;
 
     /**
      * Returns a vector with as many items as edges, describing if the edge is a class edge or not

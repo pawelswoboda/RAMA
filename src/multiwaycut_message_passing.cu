@@ -882,13 +882,25 @@ void multiwaycut_message_passing::add_class_dependent_triangle_subproblems(int e
     cdtf_counter[e2] += 1;
     cdtf_counter[e3] += 1;
 
-    // TODO: currently quite inefficient because of the implementation of get_class_edge_index being O(N), N being the
-    //  number of nodes
-    for (int node: get_nodes_in_triangle(e1, e2, e3)) {
-        // Node is part of the triangle
-        cdtf_counter[get_class_edge_index(node, c1)] += 1;
-        cdtf_counter[get_class_edge_index(node, c2)] += 1;
+    // get_nodes_in_triangle returns an ascending vector of the node ids
+    // Hence the loop will iterate in order 1c1 2c1 3c1 1c2 ...
+    // as specified in equation (12)
+    thrust::device_vector<int> nodes = get_nodes_in_triangle(e1, e2, e3);
+    for (int cls: {c1, c2}) {
+        for (int node: nodes) {
+            // TODO: currently quite inefficient because of the implementation of get_class_edge_index being O(N), N being the
+            //  number of nodes
+            int edge_idx = get_class_edge_index(node, cls);
+            cdtf_counter[edge_idx] += 1;
+
+            cdtf_correspondence.push_back(edge_idx);
+        }
     }
+
+    // Insert the edge indices in the order specified by equation 12 in the paper
+    cdtf_correspondence.push_back(e1);
+    cdtf_correspondence.push_back(e2);
+    cdtf_correspondence.push_back(e3);
 }
 
 /**
