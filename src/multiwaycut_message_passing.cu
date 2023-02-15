@@ -67,35 +67,7 @@ multiwaycut_message_passing::multiwaycut_message_passing(
     print_vector(node_counter, "Node counter");
 }
 
-
-/**
- * Partitions the edges by node. Assumes that i, j is sorted by the node values, this is the case after initializing
- * multicut
- * @return the number of edges per node and the offset at which the edges for a node u
- * start in the i or j array start.
- */
-std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<int>> multiwaycut_message_passing::get_node_partition()
-{
-    assert(thrust::is_sorted(i.begin(), i.end()));  // This should be the case after initializing multicut
-
-    thrust::device_vector<int> nodes(n_nodes);
-    thrust::device_vector<int> sizes(n_nodes);
-    // After sorting i has the keys in consecutive, ascending order we can now
-    // sum up the number of times the key exists in the array and thus find
-    // the start of the partition that only contains the edges with this node
-    thrust::reduce_by_key(
-        i.begin(), i.end(),
-        thrust::make_constant_iterator(1),
-        nodes.begin(), sizes.begin()
-    );
-
-
-    // Sum up the sizes to find the starting index
-    thrust::device_vector<int> starts(n_nodes);
-    thrust::exclusive_scan(sizes.begin(), sizes.end(), starts.begin());
-
-    return {nodes, starts, sizes};
-}
+/***************************** Lower bounds **********************************/
 
 /**
  * Functor to calculate the summation constraint lb for a single node, i.e.
@@ -196,7 +168,6 @@ double multiwaycut_message_passing::triangle_lower_bound_2_classes() {
     });
     return thrust::transform_reduce(first, last, f, 0.0, thrust::plus<float>());
 }
-
 
 /**
  * Calculates the overall lower bound for multiway cut, i.e. the sum of all subproblem lower bounds
@@ -299,7 +270,7 @@ double multiwaycut_message_passing::lower_bound()
     }
 }
 
-
+/***************************** Message passing *******************************/
 
 /**
  * Message passing functor from edges to triplets
@@ -720,7 +691,6 @@ void multiwaycut_message_passing::send_messages_to_edges()
     print_vector(t23_costs, "t23 after msg to edges ");
 }
 
-
 /**
  * Message passing functor from summation constraints back to the edges
  */
@@ -808,6 +778,9 @@ void multiwaycut_message_passing::iteration()
     send_messages_from_sum_to_edges();
 }
 
+
+/***************************** Helper functions ******************************/
+
 thrust::device_vector<bool> multiwaycut_message_passing::create_class_edge_mask(
     thrust::device_vector<int> sources,
     thrust::device_vector<int> dests,
@@ -824,4 +797,35 @@ thrust::device_vector<bool> multiwaycut_message_passing::create_class_edge_mask(
 std::unordered_set<int> multiwaycut_message_passing::get_nodes_in_triangle(int e1, int e2, int e3) {
     return std::unordered_set<int>({i[e1], j[e1], i[e2], j[e2], i[e3], j[e3]};);
 }
+
+/**
+ * Partitions the edges by node. Assumes that i, j is sorted by the node values, this is the case after initializing
+ * multicut
+ * @return the number of edges per node and the offset at which the edges for a node u
+ * start in the i or j array start.
+ */
+std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<int>>
+multiwaycut_message_passing::get_node_partition()
+{
+    assert(thrust::is_sorted(i.begin(), i.end()));  // This should be the case after initializing multicut
+
+    thrust::device_vector<int> nodes(n_nodes);
+    thrust::device_vector<int> sizes(n_nodes);
+    // After sorting i has the keys in consecutive, ascending order we can now
+    // sum up the number of times the key exists in the array and thus find
+    // the start of the partition that only contains the edges with this node
+    thrust::reduce_by_key(
+        i.begin(), i.end(),
+        thrust::make_constant_iterator(1),
+        nodes.begin(), sizes.begin()
+    );
+
+
+    // Sum up the sizes to find the starting index
+    thrust::device_vector<int> starts(n_nodes);
+    thrust::exclusive_scan(sizes.begin(), sizes.end(), starts.begin());
+
+    return {nodes, starts, sizes};
+}
+
 
