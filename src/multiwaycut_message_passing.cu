@@ -5,7 +5,7 @@
 
 // An edge is a node class-edge iff the destination node value is larger than the largest base node
 // which are assigned values from [0...n_nodes]
-// TODO: Replace all occurences of the macro with the is_class_edge vector
+// TODO: Replace all occurrences of the macro with the is_class_edge vector
 #define IS_CLASS_EDGE(dest) (dest >= n_nodes)
 #define CHOOSE2(N) (N*(N-1) / 2)
 
@@ -55,7 +55,7 @@ multiwaycut_message_passing::multiwaycut_message_passing(
             base_edge_counter[e23] -= 1;
         } else {
             // Iterate the nodes of this triangle
-            for (int node: get_nodes_in_triangle(e12, e13, e23);) {
+            for (int node: get_nodes_in_triangle(e12, e13, e23)) {
                 assert(node < n_nodes);  // There should be no class node in this triangle
                 node_counter[node] += 1;
             }
