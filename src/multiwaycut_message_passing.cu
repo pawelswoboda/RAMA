@@ -4,12 +4,6 @@
 #include <numeric>
 #include <thrust/inner_product.h>
 
-// An edge is a node class-edge iff the destination node value is larger than the largest base node
-// which are assigned values from [0...n_nodes]
-// TODO: Replace all occurrences of the macro with the is_class_edge vector
-#define IS_CLASS_EDGE(dest) (dest >= n_nodes)
-
-
 multiwaycut_message_passing::multiwaycut_message_passing(
         const dCOO &A,
         const int _n_nodes,
@@ -320,20 +314,21 @@ struct increase_class_costs_func {
     float *class_costs;
 
 
-    __device__ void operator()(const thrust::tuple<int, int, int, float, int> t) {
+    __device__ void operator()(const thrust::tuple<int, int, bool, float, int, int> t) {
         int source = thrust::get<0>(t);
         int dest = thrust::get<1>(t);
-        int edge_count = thrust::get<2>(t);
+        int is_class_edge = thrust::get<2>(t);
         float edge_cost = thrust::get<3>(t);
-        int cdtf_count = thrust::get<4>(t);
+        int triangle_count = thrust::get<4>(t);
+        int cdtf_count = thrust::get<5>(t);
 
         // Check if it is class edge
-        if (!IS_CLASS_EDGE(dest)) return;
+        if (!is_class_edge) return;
 
         // the ith class is encoded as n_nodes + i
         int class_idx = source * n_classes + (dest - n_nodes);
         assert(class_idx < n_nodes * n_classes);
-        class_costs[class_idx] += edge_cost / (1.0f + float(edge_count) + float(cdtf_count));
+        class_costs[class_idx] += edge_cost / (1.0f + float(triangle_count) + float(cdtf_count));
     }
 };
 
@@ -418,10 +413,10 @@ void multiwaycut_message_passing::send_messages_to_triplets()
     {
         increase_class_costs_func func({n_nodes, n_classes, thrust::raw_pointer_cast(class_costs.data())});
         auto first = thrust::make_zip_iterator(thrust::make_tuple(
-            i.begin(), j.begin(), edge_counter.begin(), edge_costs.begin(), cdtf_counter.end()
+            i.begin(), j.begin(), is_class_edge.begin(), edge_costs.begin(), edge_counter.begin(), cdtf_counter.end()
         ));
         auto last = thrust::make_zip_iterator(thrust::make_tuple(
-            i.end(), j.end(), edge_counter.end(), edge_costs.end(), cdtf_counter.end()
+            i.end(), j.end(), is_class_edge.end(), edge_costs.end(), edge_counter.end(), cdtf_counter.end()
         ));
         thrust::for_each(first, last, func);
     }
@@ -544,13 +539,6 @@ struct decrease_triangle_costs_2_classes_func {
                 t12_costs -= mm12;
                 e12_diff += mm12;
             }
-
-//            {
-//                printf("(%d, %d, %d) \t", t12_correspondence, t13_correspondence, t23_correspondence);
-//                const float mm13 = min_marginal(t13_costs, t12_costs, t23_costs, includes_class_edge);
-//                t13_costs -= mm13;
-//                e13_diff += mm13;
-//            }
 
             atomicAdd(&edge_costs[t12_correspondence], e12_diff);
             atomicAdd(&edge_costs[t13_correspondence], e13_diff);
