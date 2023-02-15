@@ -37,8 +37,8 @@ multiwaycut_message_passing::multiwaycut_message_passing(
     print_vector(i, "sources");
     print_vector(j, "dest   ");
 
-    // Calculate how often each edge is part of a base graph triangle
-    int base_triangles = 0;
+    // Calculate how often each edge is part of a base graph triangle and how often each node
+    // is part of a base graph triangle
     thrust::copy(edge_counter.begin(), edge_counter.end(), base_edge_counter.begin());
     // Should probably be parallelized
     for (int idx = 0; idx < triangle_correspondence_12.size(); ++idx) {
@@ -54,9 +54,8 @@ multiwaycut_message_passing::multiwaycut_message_passing(
             base_edge_counter[e13] -= 1;
             base_edge_counter[e23] -= 1;
         } else {
-            base_triangles += 1;
             // get the nodes of this triangle
-            std::unordered_set<int> nodes = {i[e12], j[e12], i[e13], j[e13], i[e23], j[e23]};
+            std::unordered_set<int> nodes = get_nodes_in_triangle(e12, e13, e23);
 
             for (int node: nodes) {
                 assert(node < n_nodes);  // There should be no class node in this triangle
@@ -821,5 +820,8 @@ thrust::device_vector<bool> multiwaycut_message_passing::create_class_edge_mask(
     }
 
     return mask;
+}
+std::unordered_set<int> multiwaycut_message_passing::get_nodes_in_triangle(int e1, int e2, int e3) {
+    return std::unordered_set<int>({i[e1], j[e1], i[e2], j[e2], i[e3], j[e3]};);
 }
 

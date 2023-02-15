@@ -2,6 +2,7 @@
 #define RAMA_MULTIWAYCUT_MESSAGE_PASSING_H
 #include "multicut_message_passing.h"
 #include "functional"
+#include <unordered_set>
 
 class multiwaycut_message_passing: public multicut_message_passing {
 public:
@@ -48,6 +49,15 @@ private:
         thrust::device_vector<int> dests,
         std::function<bool(int, int)> is_class_edge_f
     );
+
+    /**
+     * Returns the set of nodes in this triangle
+     * @param e1
+     * @param e2
+     * @param e3
+     * @return
+     */
+    std::unordered_set<int> get_nodes_in_triangle(int e1, int e2, int e3);
 
 protected:
     double class_lower_bound();
