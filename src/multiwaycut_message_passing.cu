@@ -17,10 +17,10 @@ multiwaycut_message_passing::multiwaycut_message_passing(
         thrust::device_vector<int> &&_t1,
         thrust::device_vector<int> &&_t2,
         thrust::device_vector<int> &&_t3,
-        const bool verbose,
         const MWCOptions _options
         )
-        : multicut_message_passing(A, std::move(_t1), std::move(_t2), std::move(_t3), verbose),
+        :
+        multicut_message_passing(A, std::move(_t1), std::move(_t2), std::move(_t3), _options & MWCOptions::VERBOSE),
         options(_options),
         n_classes(_n_classes),
         n_nodes(_n_nodes),
@@ -233,11 +233,16 @@ double multiwaycut_message_passing::lower_bound()
         double clb = class_lower_bound();
 
         double tlb;
-        if (n_classes <= 2) {
-            tlb = triangle_lower_bound_2_classes();
+        if (options ^ MWCOptions::IGNORE_TRIANGLES) {
+            if (n_classes <= 2) {
+                tlb = triangle_lower_bound_2_classes();
+            } else {
+                tlb = triangle_lower_bound();
+            }
         } else {
-            tlb = triangle_lower_bound();
+            tlb = 0.0;
         }
+
         double cdtflb = cdtf_lower_bound();
         double res = edge_lower_bound() + tlb + clb + cdtflb;
         printf("%f+%f+%f+%f = %f\n", edge_lower_bound(), tlb, clb, cdtflb, res);

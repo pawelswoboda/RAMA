@@ -5,7 +5,6 @@
 
 
 enum class MWCOptions {
-  DEFAULT = 0,
   IGNORE_TRIANGLES = (1 << 0),                    // Build `triangle_correspondence_ij` as these are needed for the cdtf
                                                   // problems but do not pass messages to/from triangles
   // TODO: Implement these if needed, takes some refactoring to correctly change the message weights
@@ -17,7 +16,10 @@ enum class MWCOptions {
   NO_MESSAGES_FROM_TRIANGLES = (1 << 3),          // No message passing from the triangles is performed
   NO_MESSAGES_FROM_EDGES = (1 << 4),              // No messages from edges to triplets / summation constraints
   NO_MESSAGES_FROM_SUM_CONSTRAINTS = (1 << 5),    // No messages from the summation constraints back to the edges
+
+  VERBOSE = (1 << 6)                              // Disable printing
 };
+
 
 constexpr enum MWCOptions operator |(const enum MWCOptions self, const enum MWCOptions other) {
     return static_cast<MWCOptions>(static_cast<int>(self) | static_cast<int>(other));
@@ -47,8 +49,7 @@ public:
                 thrust::device_vector<int>&& _t1,
                 thrust::device_vector<int>&& _t2,
                 thrust::device_vector<int>&& _t3,
-                const bool _verbose = true,
-                const MWCOptions _options = MWCOptions::DEFAULT
+                const MWCOptions _options = MWCOptions::VERBOSE
                 );
 
     double lower_bound() override;
