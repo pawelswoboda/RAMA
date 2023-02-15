@@ -34,8 +34,11 @@ multiwaycut_message_passing::multiwaycut_message_passing(
         {
     // Populate is_class_edge lookup table
     for (int idx = 0; idx < i.size(); ++idx) {
-        is_class_edge[idx]= IS_CLASS_EDGE(j[idx]);
+        is_class_edge[idx] = IS_CLASS_EDGE(j[idx]);
     }
+
+    print_vector(i, "sources");
+    print_vector(j, "dest   ");
 
     // Calculate how often each edge is part of a base graph triangle
     int base_triangles = 0;
@@ -69,8 +72,16 @@ multiwaycut_message_passing::multiwaycut_message_passing(
 }
 
 
+/**
+ * Partitions the edges by node. Assumes that i, j is sorted by the node values, this is the case after initializing
+ * multicut
+ * @return the number of edges per node and the offset at which the edges for a node u
+ * start in the i or j array start.
+ */
 std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<int>> multiwaycut_message_passing::get_node_partition()
 {
+    assert(thrust::is_sorted(i.begin(), i.end()));  // This should be the case after initializing multicut
+
     thrust::device_vector<int> nodes(n_nodes);
     thrust::device_vector<int> sizes(n_nodes);
     // After sorting i has the keys in consecutive, ascending order we can now
@@ -90,6 +101,10 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
     return {nodes, starts, sizes};
 }
 
+/**
+ * Functor to calculate the summation constraint lb for a single node, i.e.
+ * min{cost(node) * y | y in (0, 1, ..., 1), (1, 0, ..., 1), ... }
+ */
 struct class_lower_bound_parallel {
     int k;  // number of classes
     int N;  // number of elements in class_costs
@@ -110,6 +125,11 @@ struct class_lower_bound_parallel {
         result[node] -= largest;
     }
 };
+
+/**
+ * Calculates the lower bound for the summation constraint subproblems
+ * @return Lower bound of summation constraints
+ */
 double multiwaycut_message_passing::class_lower_bound()
 {
     // The minimal class-cost-configuration for a node will always be given as
@@ -131,6 +151,60 @@ double multiwaycut_message_passing::class_lower_bound()
     return thrust::reduce(res.begin(), res.end(), 0.0);
 }
 
+/**
+ * Functor to calculate the lower bound for a single triangle
+ */
+struct triangle_lower_bound_2_classes_func {
+    bool* is_class_edge;
+
+    __host__ __device__ float operator() (const thrust::tuple<float,float,float, int, int, int> x) {
+        const float c12 = thrust::get<0>(x);
+        const float c13 = thrust::get<1>(x);
+        const float c23 = thrust::get<2>(x);
+        const int t12 = thrust::get<3>(x);
+        const int t13 = thrust::get<4>(x);
+        const int t23 = thrust::get<5>(x);
+
+        float lb = 0.0;
+        lb = min(lb, c12 + c13);
+        lb = min(lb, c12 + c23);
+        lb = min(lb, c13 + c23);
+
+        // No class in triangle => all edges can be cut
+        bool includes_class_edge = (is_class_edge[t12]
+                || is_class_edge[t13]
+                || is_class_edge[t23]);
+        if (includes_class_edge) {
+            lb = min(lb, c12 + c13 + c23);
+        }
+        return lb;
+    }
+};
+
+/**
+ * Calculates the lower bound of the triangle subproblems in the case of 2 classes.
+ * In this case we don't allow all edges in the base graph to be cut as this would imply that each node
+ * is part of a distinct class.
+ */
+double multiwaycut_message_passing::triangle_lower_bound_2_classes() {
+    auto first = thrust::make_zip_iterator(thrust::make_tuple(
+        t12_costs.begin(), t13_costs.begin(), t23_costs.begin(),
+        triangle_correspondence_12.begin(), triangle_correspondence_13.begin(), triangle_correspondence_23.begin()
+    ));
+    auto last = thrust::make_zip_iterator(thrust::make_tuple(
+        t12_costs.end(), t13_costs.end(), t23_costs.end(),
+        triangle_correspondence_12.end(), triangle_correspondence_13.end(), triangle_correspondence_23.end()
+    ));
+    triangle_lower_bound_2_classes_func f = triangle_lower_bound_2_classes_func({
+        thrust::raw_pointer_cast(is_class_edge.data())
+    });
+    return thrust::transform_reduce(first, last, f, 0.0, thrust::plus<float>());
+}
+
+
+/**
+ * Calculates the overall lower bound for multiway cut, i.e. the sum of all subproblem lower bounds
+ */
 struct cdtf_lower_bound_func{
     float* results;
     float* costs;
@@ -212,9 +286,16 @@ double multiwaycut_message_passing::lower_bound()
 {
     if (n_classes > 0) {
         double clb = class_lower_bound();
+
+        double tlb;
+        if (n_classes <= 2) {
+            tlb = triangle_lower_bound_2_classes();
+        } else {
+            tlb = triangle_lower_bound();
+        }
         double cdtflb = cdtf_lower_bound();
-        double res = edge_lower_bound() + triangle_lower_bound() + clb + cdtflb;
-        printf("%f+%f+%f+%f = %f\n", edge_lower_bound(), triangle_lower_bound(), clb, cdtflb, res);
+        double res = edge_lower_bound() + tlb + clb + cdtflb;
+        printf("%f+%f+%f+%f = %f\n", edge_lower_bound(), tlb, clb, cdtflb, res);
         return res;
     } else {
         std::cout << "No classes provided. Defaulting to multicut\n";
@@ -222,49 +303,40 @@ double multiwaycut_message_passing::lower_bound()
     }
 }
 
-// Adapted from multicut_message_passing to check if an edge is a class-node edge
+
+
+/**
+ * Message passing functor from edges to triplets
+ */
 struct increase_triangle_costs_func_mwc {
     float* edge_costs;
     int* edge_counter;
 
     bool* is_class_edge;
-    int* node_counter;
-    int* base_edge_counter;
-    int* sources;
-    int k_choose_2;
-    int n_classes;
 
     __device__ void operator()(const thrust::tuple<int,float&> t) const
     {
         const int edge_idx = thrust::get<0>(t);
         float& triangle_cost = thrust::get<1>(t);
 
+        // TODO: Change weights based if part of new subproblem
         if (is_class_edge[edge_idx]) {
-            float update = edge_costs[edge_idx]/(
-                1.0f + float(edge_counter[edge_idx])
-                // This edge is part of all class dependent triangle factors that include this class and
-                // this node, we have k-1 possible other classes
-                + float(node_counter[sources[edge_idx]]) * float(n_classes - 1)
-
-            );
+            float update = edge_costs[edge_idx]/(1.0f + float(edge_counter[edge_idx]));
             triangle_cost += update;
         } else {
             assert(edge_counter[edge_idx] > 0);
-            triangle_cost += edge_costs[edge_idx] / (
-                float(edge_counter[edge_idx])
-                // This edge is part of all class dependent triangle factors that include this edge
-                // There are k choose 2 combinations for the classes
-                + float(base_edge_counter[edge_idx]) * float(k_choose_2)
-            );
+            triangle_cost += edge_costs[edge_idx] / float(edge_counter[edge_idx]);
         }
     }
 };
 
+/**
+ * Message passing functor from edges to summation constraints
+ */
 struct increase_class_costs_func {
     int n_nodes;
     int n_classes;
     float *class_costs;
-    int *node_counter;
 
 
     __device__ void operator()(const thrust::tuple<int, int, int, float> t) {
@@ -279,10 +351,8 @@ struct increase_class_costs_func {
         // the ith class is encoded as n_nodes + i
         int class_idx = source * n_classes + (dest - n_nodes);
         assert(class_idx < n_nodes * n_classes);
-        class_costs[class_idx] += edge_cost / (
-            1.0f + float(edge_count)
-            + float(node_counter[source]) * float(n_classes - 1)
-        );
+        // TODO: Change weights based if part of new subproblem
+        class_costs[class_idx] += edge_cost / (1.0f + float(edge_count));
     }
 };
 
@@ -409,6 +479,10 @@ struct increase_cdtf_costs_func{
     }
 };
 
+/**
+ * Cost update functor after the message passing from the edges
+ * sets all edges that participate in any subproblem to 0
+ */
 struct decrease_edge_costs_func {
     int n_nodes;
     __host__ __device__ void operator()(const thrust::tuple<float&,int, int> x) const
@@ -422,24 +496,25 @@ struct decrease_edge_costs_func {
     }
 };
 
-
+/**
+ * Message passing from edges to triplets and summation constraints
+ * First sends messages to all edges in triangle subproblems then to all summation constraints
+ * In the end sets all edges that are party of any subproblem to 0
+ */
 void multiwaycut_message_passing::send_messages_to_triplets()
 {
     // Most of this is duplicated from the multicut_message_passing::send_messages_to_triplets method
     // as there is no way with the current interface to override the update function.
     // It might be worth to consider changing the interface to accept a function pointer
+
+    // Messages to triangles
     {
         auto first = thrust::make_zip_iterator(thrust::make_tuple(triangle_correspondence_12.begin(), t12_costs.begin()));
         auto last = thrust::make_zip_iterator(thrust::make_tuple(triangle_correspondence_12.end(), t12_costs.end()));
         increase_triangle_costs_func_mwc func({
             thrust::raw_pointer_cast(edge_costs.data()),
             thrust::raw_pointer_cast(edge_counter.data()),
-            thrust::raw_pointer_cast(is_class_edge.data()),
-            thrust::raw_pointer_cast(node_counter.data()),
-            thrust::raw_pointer_cast(base_edge_counter.data()),
-            thrust::raw_pointer_cast(i.data()),
-            _k_choose_2,
-            n_classes
+            thrust::raw_pointer_cast(is_class_edge.data())
         });
         thrust::for_each(first, last, func);
     }
@@ -449,12 +524,7 @@ void multiwaycut_message_passing::send_messages_to_triplets()
         increase_triangle_costs_func_mwc func({
             thrust::raw_pointer_cast(edge_costs.data()),
             thrust::raw_pointer_cast(edge_counter.data()),
-            thrust::raw_pointer_cast(is_class_edge.data()),
-            thrust::raw_pointer_cast(node_counter.data()),
-            thrust::raw_pointer_cast(base_edge_counter.data()),
-            thrust::raw_pointer_cast(i.data()),
-            _k_choose_2,
-            n_classes
+            thrust::raw_pointer_cast(is_class_edge.data())
         });
         thrust::for_each(first, last, func);
     }
@@ -464,24 +534,14 @@ void multiwaycut_message_passing::send_messages_to_triplets()
         increase_triangle_costs_func_mwc func({
             thrust::raw_pointer_cast(edge_costs.data()),
             thrust::raw_pointer_cast(edge_counter.data()),
-            thrust::raw_pointer_cast(is_class_edge.data()),
-            thrust::raw_pointer_cast(node_counter.data()),
-            thrust::raw_pointer_cast(base_edge_counter.data()),
-            thrust::raw_pointer_cast(i.data()),
-            _k_choose_2,
-            n_classes
+            thrust::raw_pointer_cast(is_class_edge.data())
         });
         thrust::for_each(first, last, func);
     }
 
-    // Send messages to summation constraints
+    // Messages to summation constraints
     {
-        increase_class_costs_func func({
-            n_nodes,
-            n_classes,
-            thrust::raw_pointer_cast(class_costs.data()),
-            thrust::raw_pointer_cast(node_counter.data())
-        });
+        increase_class_costs_func func({n_nodes, n_classes, thrust::raw_pointer_cast(class_costs.data())});
         auto first = thrust::make_zip_iterator(thrust::make_tuple(
             i.begin(), j.begin(), edge_counter.begin(), edge_costs.begin()
         ));
@@ -536,7 +596,138 @@ void multiwaycut_message_passing::send_messages_to_triplets()
     print_vector(t23_costs, "t23 after msg to triplets");
 }
 
+/**
+ * Message passing functor from triplets to edges in the special case that the number of classes is 2
+ * Uses min-marginals to distribute messages uniformly to the edges in the triangle
+ */
+struct decrease_triangle_costs_2_classes_func {
+    float* edge_costs;
+    bool* is_class_edge;
 
+    /**
+     * Calculate the min marginal to edge with costs x, i.e. the order of the parameters defines the min marginal
+     */
+    __host__ __device__
+        float min_marginal(const float x, const float y, const float z, const bool includes_class_edge) const
+        {
+            float mm1 = min(x+y, x+z);
+            if (includes_class_edge) {
+                mm1 = min(x+y+z, mm1);
+            }
+            float mm0 = min(0.0, y+z);
+            printf("[%d](%f, %f, %f): %f - %f = %f\n", includes_class_edge, x, y, z, mm1, mm0, mm1-mm0);
+            return mm1-mm0;
+        }
+
+    __device__
+        void operator()(const thrust::tuple<int,int,int,float&,float&,float&,int,int,int> t) const
+        {
+            const int t12 = thrust::get<0>(t);
+            const int t13 = thrust::get<1>(t);
+            const int t23 = thrust::get<2>(t);
+            float& t12_costs = thrust::get<3>(t);
+            float& t13_costs = thrust::get<4>(t);
+            float& t23_costs = thrust::get<5>(t);
+            const int t12_correspondence = thrust::get<6>(t);
+            const int t13_correspondence = thrust::get<7>(t);
+            const int t23_correspondence = thrust::get<8>(t);
+
+            // If this triangle includes a class edge we have to adapt our min marginal
+            // such that not all edges can be cut.
+            bool includes_class_edge = (is_class_edge[t12_correspondence]
+                || is_class_edge[t13_correspondence]
+                || is_class_edge[t23_correspondence]);
+
+            float e12_diff = 0.0;
+            float e13_diff = 0.0;
+            float e23_diff = 0.0;
+
+            {
+                printf("(%d, %d, %d) \t", t12_correspondence, t13_correspondence, t23_correspondence);
+                const float mm12 = min_marginal(t12_costs, t13_costs, t23_costs, includes_class_edge);
+                t12_costs -= 1.0/3.0*mm12;
+                e12_diff += 1.0/3.0*mm12;
+            }
+            {
+                printf("(%d, %d, %d) \t", t13_correspondence, t12_correspondence, t23_correspondence);
+                const float mm13 = min_marginal(t13_costs, t12_costs, t23_costs, includes_class_edge);
+                t13_costs -= 1.0/2.0*mm13;
+                e13_diff += 1.0/2.0*mm13;
+            }
+            {
+                printf("(%d, %d, %d) \t", t23_correspondence, t12_correspondence, t13_correspondence);
+                const float mm23 = min_marginal(t23_costs, t12_costs, t13_costs, includes_class_edge);
+                t23_costs -= mm23;
+                e23_diff += mm23;
+            }
+            {
+                printf("(%d, %d, %d) \t", t12_correspondence, t13_correspondence, t23_correspondence);
+                const float mm12 = min_marginal(t12_costs, t13_costs, t23_costs, includes_class_edge);
+                t12_costs -= 1.0/2.0*mm12;
+                e12_diff += 1.0/2.0*mm12;
+            }
+            {
+                printf("(%d, %d, %d) \t", t13_correspondence, t12_correspondence, t23_correspondence);
+                const float mm13 = min_marginal(t13_costs, t12_costs, t23_costs, includes_class_edge);
+                t13_costs -= mm13;
+                e13_diff += mm13;
+            }
+            {
+                printf("(%d, %d, %d) \t", t12_correspondence, t13_correspondence, t23_correspondence);
+                const float mm12 = min_marginal(t12_costs, t13_costs, t23_costs, includes_class_edge);
+                t12_costs -= mm12;
+                e12_diff += mm12;
+            }
+
+//            {
+//                printf("(%d, %d, %d) \t", t12_correspondence, t13_correspondence, t23_correspondence);
+//                const float mm13 = min_marginal(t13_costs, t12_costs, t23_costs, includes_class_edge);
+//                t13_costs -= mm13;
+//                e13_diff += mm13;
+//            }
+
+            atomicAdd(&edge_costs[t12_correspondence], e12_diff);
+            atomicAdd(&edge_costs[t13_correspondence], e13_diff);
+            atomicAdd(&edge_costs[t23_correspondence], e23_diff);
+        }
+};
+
+/**
+ * Message passing from triplets to the edges
+ */
+void multiwaycut_message_passing::send_messages_to_edges()
+{
+    if (n_classes <= 2) {
+        auto first = thrust::make_zip_iterator(thrust::make_tuple(
+            t1.begin(), t2.begin(), t3.begin(),
+            t12_costs.begin(), t13_costs.begin(), t23_costs.begin(),
+            triangle_correspondence_12.begin(), triangle_correspondence_13.begin(), triangle_correspondence_23.begin()
+        ));
+        auto last = thrust::make_zip_iterator(thrust::make_tuple(
+            t1.end(), t2.end(), t3.end(),
+            t12_costs.end(), t13_costs.end(), t23_costs.end(),
+            triangle_correspondence_12.end(), triangle_correspondence_13.end(), triangle_correspondence_23.end()
+        ));
+        decrease_triangle_costs_2_classes_func f = decrease_triangle_costs_2_classes_func({
+            thrust::raw_pointer_cast(edge_costs.data()),
+            thrust::raw_pointer_cast(is_class_edge.data())
+        });
+        thrust::for_each(first, last, f);
+    } else {
+        multicut_message_passing::send_messages_to_edges();
+    }
+    print_vector(edge_costs, "edge_costs after msg to edges");
+    print_vector(class_costs, "class_costs after msg to edges");
+    print_vector(cdtf_costs, "cdtf_costs after msg to edges");
+    print_vector(t12_costs, "t12 after msg to edges ");
+    print_vector(t13_costs, "t13 after msg to edges ");
+    print_vector(t23_costs, "t23 after msg to edges ");
+}
+
+
+/**
+ * Message passing functor from summation constraints back to the edges
+ */
 struct sum_to_edges_func {
     int classes;
     float *edge_costs;
@@ -586,7 +777,9 @@ struct sum_to_edges_func {
     }
 };
 
-
+/**
+ * Message passing from summation constraints to edges
+ */
 void multiwaycut_message_passing::send_messages_from_sum_to_edges()
 {
     thrust::device_vector<int> node;
@@ -617,15 +810,5 @@ void multiwaycut_message_passing::iteration()
     send_messages_to_triplets();
     send_messages_to_edges();
     send_messages_from_sum_to_edges();
-}
-void multiwaycut_message_passing::send_messages_to_edges()
-{
-    multicut_message_passing::send_messages_to_edges();
-    print_vector(edge_costs, "edge_costs after msg to edges");
-    print_vector(class_costs, "class_costs after msg to edges");
-    print_vector(cdtf_costs, "cdtf_costs after msg to edges");
-    print_vector(t12_costs, "t12 after msg to edges ");
-    print_vector(t13_costs, "t13 after msg to edges ");
-    print_vector(t23_costs, "t23 after msg to edges ");
 }
 
