@@ -23,10 +23,11 @@ multiwaycut_message_passing::multiwaycut_message_passing(
         cdtf_counter(edge_counter.size(), 0),
         cdtf_costs(0, 0.0)  // Size is increased when adding new class dependent triangle factors
         {
-    print_vector(i, "sources");
-    print_vector(j, "dest   ");
 
-
+    if (options & MWCOptions::VERBOSE) {
+        print_vector(i, "sources");
+        print_vector(j, "dest   ");
+    }
     // We pretend triangles don't exist but multicut initializes edge_counter
     // Which is used even in the non triangle message, e.g. to the classes
     // We simply set the edge_counter to 0
@@ -449,12 +450,14 @@ void multiwaycut_message_passing::send_messages_to_triplets()
         thrust::for_each(first, last, decrease_edge_costs_func({n_nodes}));
     }
 
-    print_vector(edge_costs, "edge_costs after msg to triplets");
-    print_vector(class_costs, "class_costs after msg to triplets");
-    print_vector(cdtf_costs, "cdtf_costs after msg to triplets");
-    print_vector(t12_costs, "t12 after msg to triplets");
-    print_vector(t13_costs, "t13 after msg to triplets");
-    print_vector(t23_costs, "t23 after msg to triplets");
+    if (options & MWCOptions::VERBOSE) {
+        print_vector(edge_costs, "edge_costs after msg to triplets");
+        print_vector(class_costs, "class_costs after msg to triplets");
+        print_vector(cdtf_costs, "cdtf_costs after msg to triplets");
+        print_vector(t12_costs, "t12 after msg to triplets");
+        print_vector(t13_costs, "t13 after msg to triplets");
+        print_vector(t23_costs, "t23 after msg to triplets");
+    }
 }
 
 /**
@@ -574,12 +577,15 @@ void multiwaycut_message_passing::send_messages_to_edges()
     } else {
         multicut_message_passing::send_messages_to_edges();
     }
-    print_vector(edge_costs, "edge_costs after msg to edges");
-    print_vector(class_costs, "class_costs after msg to edges");
-    print_vector(cdtf_costs, "cdtf_costs after msg to edges");
-    print_vector(t12_costs, "t12 after msg to edges ");
-    print_vector(t13_costs, "t13 after msg to edges ");
-    print_vector(t23_costs, "t23 after msg to edges ");
+
+    if (options & MWCOptions::VERBOSE) {
+        print_vector(edge_costs, "edge_costs after msg to edges");
+        print_vector(class_costs, "class_costs after msg to edges");
+        print_vector(cdtf_costs, "cdtf_costs after msg to edges");
+        print_vector(t12_costs, "t12 after msg to edges ");
+        print_vector(t13_costs, "t13 after msg to edges ");
+        print_vector(t23_costs, "t23 after msg to edges ");
+    }
 }
 
 /**
@@ -657,12 +663,15 @@ void multiwaycut_message_passing::send_messages_from_sum_to_edges()
         thrust::make_zip_iterator(thrust::make_tuple(node.end(), start.end(), size.end())),
         func
     );
-    print_vector(edge_costs, "edge_costs after msg to edges 2");
-    print_vector(class_costs, "class_costs after msg to edges 2");
-    print_vector(cdtf_costs, "cdtf_costs after msg to edges 2");
-    print_vector(t12_costs, "t12 after msg to edges 2");
-    print_vector(t13_costs, "t13 after msg to edges 2");
-    print_vector(t23_costs, "t23 after msg to edges 2");
+
+    if (options & MWCOptions::VERBOSE) {
+        print_vector(edge_costs, "edge_costs after msg to edges 2");
+        print_vector(class_costs, "class_costs after msg to edges 2");
+        print_vector(cdtf_costs, "cdtf_costs after msg to edges 2");
+        print_vector(t12_costs, "t12 after msg to edges 2");
+        print_vector(t13_costs, "t13 after msg to edges 2");
+        print_vector(t23_costs, "t23 after msg to edges 2");
+    }
 }
 
 
