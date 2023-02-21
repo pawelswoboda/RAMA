@@ -3,8 +3,10 @@
 #include "test.h"
 #include <random>
 #include <stdexcept>
+#include <fstream>
+#include <iostream>
 
-#define TEST_MAX_ITER 20
+#define TEST_MAX_ITER 50
 #define TEST_RAND_ITER 10   // How many test with random value
 #define PRECISION 1e-5
 
@@ -20,13 +22,13 @@
  * if the only flag in options is NO_TRIANGLES
  */
 enum class TestOptions {
-  ALL_ON = 0,                                     // Everything on i.e. normal triangles and summation messages
-  NO_TRIANGLES = (1 << 0),                        // No triangles
+  NO_TRIANGLES = (1 << 0),                        // No triangles, no messages are send to triangles
   ONLY_BASE_TRIANGLES = (1 << 1),                 // Only triangles in the base graph
   NO_MESSAGES_FROM_TRIANGLES = (1 << 2),          // No message passing from the triangles is performed
   NO_MESSAGES_FROM_EDGES = (1 << 3),              // No messages from edges to triplets / summation constraints
   NO_MESSAGES_FROM_SUM_CONSTRAINTS = (1 << 4),    // No messages from the summation constraints back to the edges
-  ALL_CDTF_PROBLEMS = (1 << 5)                    // Add all cdtf problems in the graph
+  ALL_CDTF_PROBLEMS = (1 << 5),                   // Add all cdtf problems in the graph
+  NO_CDTF_PROBLEMS = (1 << 6),                    // Everything except cdtf problems
 };
 
 constexpr enum TestOptions operator |(const enum TestOptions self, const enum TestOptions other) {
@@ -36,7 +38,37 @@ constexpr bool operator &(const enum TestOptions self, const enum TestOptions ot
     return static_cast<TestOptions>(static_cast<int>(self) & static_cast<int>(other)) == other;
 }
 
-const TestOptions DEFAULT_OPTIONS = TestOptions::ALL_ON;  // TODO: Consider adding ALL_CDTF_PROBLEMS as default
+std::string options_to_string(TestOptions options) {
+    std::string msg = "";
+
+    if (options & TestOptions::NO_CDTF_PROBLEMS) {
+        msg += " EVERYTHING_EXCEPT_CDTF";
+    }
+
+    if (options & TestOptions::NO_TRIANGLES) {
+        msg += " NO_TRIANGLES";
+    }
+    if (options & TestOptions::NO_MESSAGES_FROM_TRIANGLES) {
+        msg += " NO_MSG_FROM_TRIANGLES";
+    }
+    if (options & TestOptions::NO_MESSAGES_FROM_EDGES) {
+        msg += " NO_MSG_FROM_EDGES";
+    }
+    if (options & TestOptions::NO_MESSAGES_FROM_SUM_CONSTRAINTS) {
+        msg += " NO_MSG_FROM_SUM_CONSTRAINTS";
+    }
+    if (options & TestOptions::ONLY_BASE_TRIANGLES) {
+        msg += " ONLY_BASE_TRIANGLES";
+    }
+
+    if (options & TestOptions::ALL_CDTF_PROBLEMS) {
+        msg += " ALL_CDTF_PROBLEMS";
+    }
+
+    return msg;
+}
+
+const TestOptions DEFAULT_OPTIONS = TestOptions::NO_CDTF_PROBLEMS;
 
 
 /**
@@ -452,30 +484,86 @@ void test_triangle_2_classes_same_costs(
 
 void repulsive_triangle_tests(){
 
+    std::string result;
+
+    std::ofstream file;
+    file.open("repulsive_triangles_tests_3_classes.txt");
+    std::streambuf* old_cout = std::cout.rdbuf();
+    std::streambuf* file_buf = file.rdbuf();
+
     std::cout << "Testing repulsive triangle\n";
-    test_triangle_N_classes_between_class_difference(
-        -1, std::vector<float>({-100.0, -10.0, -10.0}),
-        TestOptions::NO_MESSAGES_FROM_TRIANGLES | TestOptions::NO_TRIANGLES | TestOptions::ALL_CDTF_PROBLEMS
-    );
 
-    test_triangle_2_classes_same_costs(-1.0, 0.0, TestOptions::ONLY_BASE_TRIANGLES);
-    test_triangle_2_classes_same_costs(-1.0, -1.0, TestOptions::ONLY_BASE_TRIANGLES);
-    test_triangle_2_classes_same_costs(-1.0, 1.0, TestOptions::ONLY_BASE_TRIANGLES);
+    std::cout.rdbuf(file_buf);
 
-    // fail both
-    test_triangle_2_classes_same_costs(-1.0, 0.0);
-    test_triangle_2_classes_same_costs(-1.0, 1.0);
-    // converges
-    test_triangle_2_classes_same_costs(-1.0, -1.0);
+    int fail_counter = 0;
+    int success_counter = 0;
+
+    auto options = {
+        TestOptions::NO_CDTF_PROBLEMS,
+        TestOptions::NO_TRIANGLES,
+        TestOptions::ALL_CDTF_PROBLEMS,
+        TestOptions::NO_MESSAGES_FROM_TRIANGLES,
+        TestOptions::ONLY_BASE_TRIANGLES | TestOptions::ALL_CDTF_PROBLEMS,
+        TestOptions::NO_MESSAGES_FROM_TRIANGLES | TestOptions::ONLY_BASE_TRIANGLES | TestOptions::ALL_CDTF_PROBLEMS,
+
+        TestOptions::NO_MESSAGES_FROM_TRIANGLES | TestOptions::ALL_CDTF_PROBLEMS,
+        TestOptions::NO_MESSAGES_FROM_TRIANGLES | TestOptions::NO_TRIANGLES,
+        TestOptions::NO_MESSAGES_FROM_TRIANGLES | TestOptions::NO_TRIANGLES | TestOptions::ALL_CDTF_PROBLEMS,
+
+    };
+    for (TestOptions option: options) {
+        std::cout << options_to_string(option) << std::endl;
+        bool failed = false;
+        try {
+            test_triangle_N_classes_between_class_difference(
+                -1, std::vector<float>({-100.0, -10.0, -10.0}),
+                option
+            );
+        } catch (std::runtime_error& e) {
+            failed = true;
+            std::cout << e.what() << std::endl << std::endl;
+        }
+
+        fail_counter += failed ? 1 : 0;
+        success_counter += failed ? 0: 1;
+        result += "3 classes" + options_to_string(option) + (failed ? " failed" : " passed") + "\n";
+    }
+
+    std::cout.rdbuf(old_cout);
+    file.close();
+
+
+    file.open("repulsive_triangles_tests_2_classes.txt");
+    old_cout = std::cout.rdbuf();
+    file_buf = file.rdbuf();
+
+    std::cout.rdbuf(file_buf);
+
+    for (auto option: options) {
+        for (float class_cost: {0.0f, 1.0f, -1.0f}) {
+            std::cout << options_to_string(option) + " " + std::to_string(class_cost) << std::endl;
+            bool failed = false;
+            try {
+                test_triangle_2_classes_same_costs(-1.0, 0.0, option);
+            } catch (std::runtime_error& e) {
+                std::cout << e.what() << std::endl << std::endl;
+                failed = true;
+            }
+            result += "2 classes class_cost = " +
+                std::to_string(class_cost) + " " + options_to_string(option) + (failed ? " failed " : " passed ") + "\n";
+            fail_counter += failed ? 1 : 0;
+            success_counter += failed ? 0: 1;
+        }
+    }
+
+    std::cout.rdbuf(old_cout);
+    file.close();
+
+    std::cout << result << std::endl;
+    std::cout << fail_counter << " failed" << "  " << success_counter << " passed" << std::endl;
 }
 
-
-int main(int argc, char** argv)
-{
-    repulsive_triangle_tests();
-    two_nodes_2_classes_tests();
-
-    // Random number tests:
+void random_tests() {
     std::mt19937 gen(17410);
     std::uniform_real_distribution<> dist(-5, 5);
     for (int i = 0; i < TEST_RAND_ITER; ++i) {
@@ -527,4 +615,12 @@ int main(int argc, char** argv)
             2
         );
     }
+}
+
+
+int main(int argc, char** argv)
+{
+    repulsive_triangle_tests();
+//    two_nodes_2_classes_tests();
+//    random_tests();
 }

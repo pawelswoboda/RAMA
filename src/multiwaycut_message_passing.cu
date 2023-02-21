@@ -240,7 +240,7 @@ double multiwaycut_message_passing::lower_bound()
 
         double cdtflb = cdtf_lower_bound();
         double res = edge_lower_bound() + tlb + clb + cdtflb;
-        printf("%f+%f+%f+%f = %f\n", edge_lower_bound(), tlb, clb, cdtflb, res);
+        std::cout << edge_lower_bound() << " + " << tlb << " + " << clb << " + " << cdtflb << " = " << res << std::endl;
         return res;
     } else {
         std::cout << "No classes provided. Defaulting to multicut\n";
