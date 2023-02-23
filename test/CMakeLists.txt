@@ -4,7 +4,7 @@ target_link_libraries(multicut_message_passing_test dCOO multicut_message_passin
 add_executable(cc_gpu_test cc_gpu_test.cu)
 target_link_libraries(cc_gpu_test ECL-CC_11)
 
-add_executable(rama_cuda_test rama_cuda_test.cpp)
+add_executable(rama_cuda_test rama_cuda_test.cu)
 target_link_libraries(rama_cuda_test rama_cuda)
 
 add_executable(maximum_matching_vertex_based_test maximum_matching_vertex_based_test.cu)
