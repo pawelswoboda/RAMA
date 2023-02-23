@@ -29,7 +29,7 @@ target_link_libraries(rama_cuda dCOO dual_solver maximum_matching_vertex_based e
 add_executable(rama_text_input rama_text_input.cu)
 target_link_libraries(rama_text_input multicut_text_parser rama_cuda)
 
-pybind11_add_module(rama_py rama_py.cpp)
+pybind11_add_module(rama_py rama_py.cu)
 target_link_libraries(rama_py PRIVATE multicut_text_parser rama_cuda) 
 
 if(WITH_TORCH)
