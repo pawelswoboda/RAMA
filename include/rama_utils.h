@@ -5,6 +5,12 @@
 #include <thrust/device_vector.h>
 #include <thrust/gather.h>
 #include <thrust/iterator/discard_iterator.h>
+#include <thrust/adjacent_difference.h>
+#include <thrust/iterator/constant_iterator.h>
+#include <thrust/remove.h>
+#include <thrust/unique.h>
+#include <thrust/extrema.h>
+#include <thrust/sort.h>
 
 inline int get_cuda_device()
 {   

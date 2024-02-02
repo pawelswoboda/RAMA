@@ -3,6 +3,10 @@
 #include <thrust/tuple.h>
 #include <thrust/for_each.h>
 #include <thrust/iterator/zip_iterator.h>
+#include <thrust/adjacent_difference.h>
+#include <thrust/iterator/constant_iterator.h>
+#include <thrust/remove.h>
+#include <thrust/unique.h>
 #include <ECLgraph.h>
 #include "time_measure_util.h"
 #include "rama_utils.h"

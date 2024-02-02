@@ -2,6 +2,11 @@
 #include <thrust/device_vector.h>
 #include <thrust/for_each.h>
 #include <thrust/transform.h>
+#include <thrust/adjacent_difference.h>
+#include <thrust/iterator/constant_iterator.h>
+#include <thrust/remove.h>
+#include <thrust/unique.h>
+#include <thrust/set_operations.h>
 #include <algorithm>
 #include "rama_utils.h"
 #include "time_measure_util.h"

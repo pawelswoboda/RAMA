@@ -1,6 +1,8 @@
 #include "edge_contractions_woc.h"
 #include "edge_contractions_woc_thrust.h"
 #include <thrust/binary_search.h>
+#include <thrust/set_operations.h>
+#include <thrust/partition.h>
 #include <gpuMST.h>
 #include "ECLgraph.h"
 #include "rama_utils.h"

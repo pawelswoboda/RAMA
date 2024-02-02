@@ -2,6 +2,9 @@
 #include <cuda_runtime.h>
 #include <thrust/reduce.h>
 #include <thrust/binary_search.h>
+#include <thrust/adjacent_difference.h>
+#include <thrust/unique.h>
+#include <thrust/iterator/constant_iterator.h>
 #include "time_measure_util.h"
 #include <thrust/partition.h>
 #include "rama_utils.h"

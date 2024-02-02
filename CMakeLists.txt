@@ -5,18 +5,59 @@ cmake_minimum_required(VERSION 2.8.12)
 
 set(CMAKE_CUDA_ARCHITECTURES OFF)
 
-include_directories(external/thrust/)
-include_directories(external/thrust/dependencies/cub)
 include_directories(external/ECL-CC)
-include_directories(external/CLI11/include)
 include_directories(include)
 
 add_library(RAMA INTERFACE)
 target_include_directories(RAMA INTERFACE include/)
 target_compile_features(RAMA INTERFACE cxx_std_17)
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -arch=compute_60 -code=sm_89")
+
 target_compile_options(RAMA INTERFACE -march=native)
 target_compile_options(RAMA INTERFACE -fPIC)
 target_include_directories(RAMA INTERFACE external/Eigen)
+
+# external dependencies
+set(CPM_DOWNLOAD_VERSION 0.34.0)
+
+if(CPM_SOURCE_CACHE)
+  set(CPM_DOWNLOAD_LOCATION "${CPM_SOURCE_CACHE}/cpm/CPM_${CPM_DOWNLOAD_VERSION}.cmake")
+elseif(DEFINED ENV{CPM_SOURCE_CACHE})
+  set(CPM_DOWNLOAD_LOCATION "$ENV{CPM_SOURCE_CACHE}/cpm/CPM_${CPM_DOWNLOAD_VERSION}.cmake")
+else()
+  set(CPM_DOWNLOAD_LOCATION "${CMAKE_BINARY_DIR}/cmake/CPM_${CPM_DOWNLOAD_VERSION}.cmake")
+endif()
+
+if(NOT (EXISTS ${CPM_DOWNLOAD_LOCATION}))
+  message(STATUS "Downloading CPM.cmake to ${CPM_DOWNLOAD_LOCATION}")
+  file(DOWNLOAD
+       https://github.com/TheLartians/CPM.cmake/releases/download/v${CPM_DOWNLOAD_VERSION}/CPM.cmake
+       ${CPM_DOWNLOAD_LOCATION}
+  )
+endif()
+
+include(${CPM_DOWNLOAD_LOCATION})
+
+CPMAddPackage(
+    NAME pybind11
+    GIT_TAG master
+    GITHUB_REPOSITORY pybind/pybind11
+    OPTIONS
+    "PYBIND11_CPP_STANDARD -std=c++17"
+    "PYBIND11_INSTALL ON CACHE BOOL"
+)
+find_package(pybind11 REQUIRED)
+
+CPMAddPackage("gh:NVIDIA/thrust#main")
+find_package(Thrust REQUIRED CONFIG PATHS "${thrust_SOURCE_DIR}")
+thrust_create_target(Thrust)
+target_link_libraries(RAMA INTERFACE Thrust)
+
+CPMAddPackage("gl:libeigen/eigen#master")
+target_include_directories(RAMA INTERFACE "${eigen_SOURCE_DIR}")
+
+CPMAddPackage("gh:CLIUtils/CLI11#main")
+target_include_directories(RAMA INTERFACE "${CLI11_SOURCE_DIR}/include")
 
 find_package(OpenMP)
 if(OpenMP_CXX_FOUND)
@@ -36,18 +77,16 @@ endif()
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-set(PYBIND11_CPP_STANDARD -std=c++17)
-set(PYBIND11_INSTALL ON CACHE BOOL "enable pybind11 bindings.")
-add_subdirectory(external/pybind11)
-
 add_library(ECL-CC_11 external/ECL-CC/ECL-CC_11.cu)
 target_include_directories(ECL-CC_11 INTERFACE external/ECL-CC)
 
 add_library(gpuMST_boruvka external/cudaMST/gpuMST/gpuMST.cu)
+target_link_libraries(gpuMST_boruvka RAMA Thrust)
 target_include_directories(gpuMST_boruvka PUBLIC external/cudaMST/gpuMST/)
 target_include_directories(gpuMST_boruvka PUBLIC external/cudaMST/common/)
 
 add_library(gpuMST_kruskal external/cudaMST/gpuMSTdpk/gpuMST.cu)
+target_link_libraries(gpuMST_kruskal RAMA Thrust)
 target_include_directories(gpuMST_kruskal PUBLIC external/cudaMST/gpuMSTdpk/)
 target_include_directories(gpuMST_kruskal PUBLIC external/cudaMST/common/)
 

@@ -1,5 +1,7 @@
 #include "edge_contractions_woc_thrust.h"
 #include <gpuMST.h>
+#include <thrust/set_operations.h>
+#include <thrust/partition.h>
 #include "ECLgraph.h"
 #include "rama_utils.h"
 
