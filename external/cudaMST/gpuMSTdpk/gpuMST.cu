@@ -162,7 +162,10 @@ void merge_vertices(int *successors, size_t size)
       if (ssuccessor != successor) {
         successors[pos] = ssuccessor;
       }
-      goon = __any(ssuccessor != successor);
+
+      const unsigned FULL_MASK = 0xffffffff;
+      //goon = __any(ssuccessor != successor);
+      goon = __any_sync(FULL_MASK, ssuccessor != successor);
       __syncthreads();
     }
   }

@@ -11,7 +11,7 @@ include_directories(include)
 add_library(RAMA INTERFACE)
 target_include_directories(RAMA INTERFACE include/)
 target_compile_features(RAMA INTERFACE cxx_std_17)
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -arch=compute_60 -code=sm_89")
+#set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -arch=compute_60 -code=sm_89")
 
 target_compile_options(RAMA INTERFACE -march=native)
 target_compile_options(RAMA INTERFACE -fPIC)
