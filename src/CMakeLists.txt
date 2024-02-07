@@ -1,9 +1,13 @@
 add_library(multicut_text_parser multicut_text_parser.cpp)
+add_library(multiwaycut_text_parser multiwaycut_text_parser.cpp)
 
 add_library(dCOO dCOO.cu)
 target_link_libraries(dCOO ECL-CC_11)
 
 add_library(multicut_message_passing multicut_message_passing.cu)
+
+add_library(multiwaycut_message_passing multiwaycut_message_passing.cu)
+target_link_libraries(multiwaycut_message_passing multicut_message_passing)
 
 add_library(conflicted_cycles_cuda conflicted_cycles_cuda.cu)
 target_link_libraries(conflicted_cycles_cuda dCOO)
