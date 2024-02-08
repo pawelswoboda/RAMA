@@ -21,10 +21,14 @@ make -j 4
 ```
 
 ### Python bindings:
-We also provide python bindings using [pybind](https://github.com/pybind/pybind11). Simply run the following command:
+We also provide python bindings using [pybind](https://github.com/pybind/pybind11). Run the following command:
 
 ```bash
-python -m pip install git+https://github.com/pawelswoboda/RAMA.git
+git clone git@github.com:pawelswoboda/RAMA.git
+cd RAMA
+git checkout offline_installer
+git submodule update --init --recursive
+python setup.py install
 ```
 
 ## Usage
