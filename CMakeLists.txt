@@ -1,7 +1,7 @@
 project(RAMA LANGUAGES CXX CUDA)
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -use_fast_math")
 
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 3.22.1)
 
 set(CMAKE_CUDA_ARCHITECTURES OFF)
 
