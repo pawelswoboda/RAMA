@@ -16,7 +16,8 @@ struct multicut_solver_options {
     int max_time_sec = -1;
     bool dump_timeline = false;
     bool verbose = true;
-    bool sanitize_graph = false; 
+    bool sanitize_graph = false;
+    bool run_preprocessor = false;
 
     multicut_solver_options() { }
     multicut_solver_options(const std::string& solver_type) {
@@ -64,7 +65,8 @@ struct multicut_solver_options {
         const bool _only_compute_lb,
         const int _max_time_sec, 
         const bool _dump_timeline = false,
-        const bool _sanitize_graph = false) :
+        const bool _sanitize_graph = false,
+        const bool _run_preprocessor = false) :
         max_cycle_length_lb(_max_cycle_length_lb), 
         num_dual_itr_lb(_num_dual_itr_lb), 
         max_cycle_length_primal(_max_cycle_length_primal), 
@@ -76,7 +78,8 @@ struct multicut_solver_options {
         only_compute_lb(_only_compute_lb),
         max_time_sec(_max_time_sec),
         dump_timeline(_dump_timeline),
-        sanitize_graph(_sanitize_graph)
+        sanitize_graph(_sanitize_graph),
+        run_preprocessor(_run_preprocessor)
     {}
 
     int from_cl(int argc, char** argv) {
@@ -96,6 +99,7 @@ struct multicut_solver_options {
         app.add_flag("--only_lb", only_compute_lb, "Only compute the lower bound. (Default: false).");
         app.add_flag("--dump_timeline", dump_timeline, "Return the output of each contraction step. Only use for debugging/visualization purposes. (slow). (Default: false).");
         app.add_flag("--sanitize_graph", sanitize_graph, "If the input graph contains nodes without any edges and thus needs sanitizing. Cluster labels in this case will be -1 for these nodes. (Default: false).");
+        app.add_flag("--run_preprocessor", run_preprocessor, "Run a preprossor, searching for Persistency Criteria to reduce the effective graph dimensionalality");
         try {
             app.parse(argc, argv);
             return -1;

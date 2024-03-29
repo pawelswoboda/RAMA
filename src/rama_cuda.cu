@@ -3,6 +3,8 @@
 #include "time_measure_util.h"
 #include <algorithm>
 #include <cstdlib>
+#include <persistency_preprocessor.h>
+
 #include "ECLgraph.h"
 #include <thrust/transform_scan.h>
 #include <thrust/transform.h>
@@ -171,8 +173,11 @@ std::tuple<std::vector<int>, double, int, std::vector<std::vector<int>> > rama_c
     thrust::device_vector<int> sanitized_node_ids;
     if (opts.sanitize_graph)
         sanitized_node_ids = compute_sanitized_graph(i_gpu, j_gpu, costs_gpu);
-
     dCOO A(std::move(i_gpu), std::move(j_gpu), std::move(costs_gpu), true);
+    if (opts.run_preprocessor) {
+        std::cout << "Running the preprossor" << std::endl;
+        A = preprocessor_cuda(i,j, costs, opts);
+    }
 
     thrust::device_vector<int> node_mapping;
     double lb;
@@ -180,11 +185,14 @@ std::tuple<std::vector<int>, double, int, std::vector<std::vector<int>> > rama_c
     
     std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
     std::tie(node_mapping, lb, timeline) = rama_cuda(A, opts);
+
     std::chrono::steady_clock::time_point end_time = std::chrono::steady_clock::now();
     int time_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
 
     if (opts.sanitize_graph)
         node_mapping = desanitize_node_labels(node_mapping, sanitized_node_ids);
+    A.print();
+    print_vector(node_mapping, "mapping");
     std::vector<int> h_node_mapping(node_mapping.size());
     thrust::copy(node_mapping.begin(), node_mapping.end(), h_node_mapping.begin());
     return {h_node_mapping, lb, time_duration, timeline};

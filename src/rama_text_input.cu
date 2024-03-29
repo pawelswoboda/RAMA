@@ -4,6 +4,7 @@
 #include "rama_utils.h"
 #include <stdexcept>
 #include <string>
+#include "persistency_preprocessor.h"
 
 int main(int argc, char** argv)
 {
@@ -15,8 +16,9 @@ int main(int argc, char** argv)
     int e = opts.from_cl(argc, argv);
     if (e != -1)
         return e;
-        
     std::tie(i, j, costs) = read_file(opts.input_file);
+
+
     std::vector<int> h_node_mapping;
     double lb;
     int dur;
