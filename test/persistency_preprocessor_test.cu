@@ -5,8 +5,15 @@
 #include "multicut_solver_options.h"
 #include "dCOO.h"
 
-int main(int argc, char** argv)
-{
+inline dCOO createMockGraph(std::vector<int> i, std::vector<int> j, std::vector<float> costs) {
+    thrust::device_vector<int> i_gpu(i.begin(), i.end());
+    thrust::device_vector<int> j_gpu(j.begin(), j.end());
+    thrust::device_vector<float> costs_gpu(costs.begin(), costs.end());
+    dCOO A(std::move(i_gpu), std::move(j_gpu), std::move(costs_gpu), true);
+    return A;
+}
+
+void test_preprocessor_with_edge_criterion() {
     {
         // Create a mock triangular graph
         const std::vector<int> i = {0,0,1};
@@ -23,16 +30,16 @@ int main(int argc, char** argv)
         test(node_edge_weights[1] == 6.0);
         test(node_edge_weights[2] == 9.0);
         // The resulting vector describing the contractable edges is correct
-        auto contracting_edges  = calculate_contracting_edges(A, node_edge_weights);
+        auto contracting_edges  = calculate_contracting_edges_edge_criterion(A, node_edge_weights);
         test(contracting_edges[0] == 0);
         test(contracting_edges[1] == 0);
         test(contracting_edges[2] == 1);
         // The connected Subgraph is correct
         dCOO B = calculate_connected_subgraph(A, contracting_edges).export_undirected();
-        test(B.get_row_ids().size() == 2);
-        test(B.get_col_ids().size() == 2);
+        test(B.get_row_ids().size() == A.max_dim()+1);
+        test(B.get_col_ids().size() == A.max_dim()+1);
         // The contracted graph is correct
-        dCOO C = calculate_contracted_graph(A, B);
+        auto [C,_] = calculate_contracted_graph(A, B);
         test(C.get_row_ids().size() == 1);
         test(C.get_col_ids().size() == 1);
         test(C.get_data()[0] == -7);
@@ -43,20 +50,22 @@ int main(int argc, char** argv)
         const std::vector<int> i = {0,0,1};
         const std::vector<int> j = {1,2,2};
         const std::vector<float> costs = {-1.0,-1.0,-1.0};
-        dCOO A = preprocessor_cuda(i, j, costs, opts);
-        test(A.get_row_ids().size() == 3);
-        test(A.get_col_ids().size() == 3);
-        test(A.get_data()[0] == -1);
+        dCOO A = createMockGraph(i,j,costs);
+        auto[ B,_] = preprocessor_cuda(A, opts);
+        test(B.get_row_ids().size() == 3);
+        test(B.get_col_ids().size() == 3);
+        test(B.get_data()[0] == -1);
     }
     {
         multicut_solver_options opts;
         const std::vector<int> i = {0,0,1,2};
         const std::vector<int> j = {1,2,3,3};
         const std::vector<float> costs = {1.0,5.0,5.0,1.0};
-        dCOO A = preprocessor_cuda(i, j, costs, opts);
-        test(A.get_row_ids().size() == 1);
-        test(A.get_col_ids().size() == 1);
-        test(A.get_data()[0] == 2);
+        dCOO A = createMockGraph(i,j,costs);
+        auto[ B,_]  = preprocessor_cuda(A, opts);
+        test(B.get_row_ids().size() == 1);
+        test(B.get_col_ids().size() == 1);
+        test(B.get_data()[0] == 2);
     }
     {
         // A square graph with ascending values gets contracted into a single point
@@ -64,9 +73,10 @@ int main(int argc, char** argv)
         const std::vector<int> i = {0,0,1,2};
         const std::vector<int> j = {1,2,3,3};
         const std::vector<float> costs = {1.0,4.0,2.0,3.0};
-        dCOO A = preprocessor_cuda(i, j, costs, opts);
-        test(A.get_row_ids().size() == 0);
-        test(A.get_col_ids().size() == 0);
+        dCOO A = createMockGraph(i,j,costs);
+        auto[ B,_]  = preprocessor_cuda(A, opts);
+        test(B.get_row_ids().size() == 0);
+        test(B.get_col_ids().size() == 0);
     }
     {
         multicut_solver_options opts;
@@ -74,7 +84,28 @@ int main(int argc, char** argv)
         const std::vector<int> i = {0,0,1};
         const std::vector<int> j = {1,2,2};
         const std::vector<float> costs = {-2.0,-5.0,4.0};
-        preprocessor_cuda(i, j, costs, opts);
+        dCOO A = createMockGraph(i,j,costs);
+        preprocessor_cuda(A, opts);
     }
+    {
+        multicut_solver_options opts;
+        auto A = createMockGraph({0,0,1,1,2,2,3,4,4,5,5,6,7},
+            {1,4,2,4,3,5,6,5,7,6,8,9,8},
+            {1,3,4,-2,1,-1,1,-3,-2,-2,2,1,3});
+        auto [B,_]= preprocessor_cuda(A, opts, 1);
+        test(B.get_col_ids().size() == 5);
+        test(thrust::reduce(B.get_data().begin(), B.get_data().end()) == -7);
+    }
+}
 
+void test_preprocessor_with_triangle_criterion() {
+    dCOO A = createMockGraph({0,0,1},{1,2,2},{-2,-5,4});
+    auto weights = calculate_sums(A);
+    auto edges = calculate_contracting_edges_triangle_criterion(A, weights);
+}
+
+int main(int argc, char** argv)
+{
+    test_preprocessor_with_edge_criterion();
+    test_preprocessor_with_triangle_criterion();
 }

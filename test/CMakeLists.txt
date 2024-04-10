@@ -25,3 +25,6 @@ target_link_libraries(conflicted_cycles_test conflicted_cycles_cuda)
 
 add_executable(persistency_preprocessor_test persistency_preprocessor_test.cu)
 target_link_libraries(persistency_preprocessor_test persistency_preprocessor)
+
+add_executable(benchmark benchmark.cu)
+target_link_libraries(benchmark rama_cuda persistency_preprocessor multicut_text_parser)
