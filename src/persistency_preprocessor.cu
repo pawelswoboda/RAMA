@@ -12,27 +12,24 @@
 #define numThreads 256
 #define maxNumberOfIterations 100
 
-
-void print(std::string string) {
-    std::cout << string << std::endl;
-}
-
-__device__ int counter;
-
-__global__ void check_persistency_criterion_triangle(const int number_of_triangles,
-    const int* const __restrict__ row_offset_pos,
-    const int* const __restrict__ col_ids_pos,
-    const float* const __restrict__ costs_pos,
-    const int* const __restrict__ row_offset,
-    const int* const __restrict__ col_ids,
-    const float* const __restrict__ costs,
-    const float* const __restrict__ total_weights,
-    const float* const __restrict__ pos_weights,
-    const int* const __restrict__ v1,
-    const int* const __restrict__ v2,
-    const int* const __restrict__ v3,
-    float* __restrict__ edges
-    ) {
+/**
+ * Checks the triangle persistency criterion
+ * @param number_of_triangles total number of triangles in the graph
+ * @param row_offset graph row offset
+ * @param col_ids graph column indices
+ * @param costs graph edge costs
+ * @param total_weights sum of absolute weights of outgoing edges for each node
+ * @param pos_weights sum of positive weights of outgoing edges for each node (due to symmetry this is actually twice the sum of positive weights)
+ * @param v1 triangle vertex 1
+ * @param v2 triangle vertex 2
+ * @param v3 triangle vertex 3
+ * @param edges edges for which the triangle persistency criterion applies
+ */
+__global__ void check_persistency_criterion_triangle(const int number_of_triangles, const int *const row_offset,
+                                                     const int *const col_ids, const float *const costs,
+                                                     const float *const total_weights, const float *const pos_weights,
+                                                     const int *const v1, const int *const v2, const int *const v3,
+                                                     float *edges) {
         auto get_edge_cost = [=] (const int u, const int v) -> float {
             assert(u < v);
             for (int i = row_offset[u]; i < row_offset[u+1]; i++) {
@@ -58,46 +55,27 @@ __global__ void check_persistency_criterion_triangle(const int number_of_triangl
             const float cost_uv = get_edge_cost(u,v);
             const float cost_uw = get_edge_cost(u,w);
             const float cost_vw = get_edge_cost(v,w);
-            const float pos_neighborhood = (pos_weights[u] + pos_weights[v] + pos_weights[w]) - 2*(cost_uv)*(cost_uv > 0) - 2*(cost_uw)*(cost_uw > 0) - 2 * (cost_vw) * (cost_vw > 0);
+            const float pos_neighborhood = (pos_weights[u] + pos_weights[v] + pos_weights[w])/2. - 2*(cost_uv)*(cost_uv > 0) - 2*(cost_uw)*(cost_uw > 0) - 2 * (cost_vw) * (cost_vw > 0);
             if (const bool pred_mc = (cost_uv + cost_uw + cost_vw) >= pos_neighborhood; not pred_mc) {
-                atomicAdd(&counter, 1);
                 continue;
             }
-//             if (const bool pred_mc = (cost_uv + cost_uw + cost_vw) >= get_positive_neighborhood(u,v,w); not pred_mc) continue;
             const float cost_u = total_weights[v1[i]] - abs(cost_uv) - abs(cost_uw);
             const float cost_v = total_weights[v2[i]] - abs(cost_uv) - abs(cost_vw);
             const float cost_w = total_weights[v3[i]] - abs(cost_uw) - abs(cost_vw);
             const bool pred1 = (cost_uv + cost_uw) >= cost_u or (cost_uv + cost_uw) >= (cost_v + cost_w);
             const bool pred2 = (cost_uw + cost_vw) >= cost_w or (cost_uw + cost_vw) >= (cost_u + cost_v);
             const bool pred3 = (cost_uv + cost_vw) >= cost_v or (cost_uv + cost_vw) >= (cost_u + cost_w);
-            bool rejected = true;
             if (pred1 or pred2) {
                 edges[get_edge_index(u,w)] = 1;
-                rejected = false;
             }
             if (pred1 or pred3) {
                 edges[get_edge_index(u,v)] = 1;
-                rejected = false;
             }
             if (pred2 or pred3) {
                 edges[get_edge_index(v,w)] = 1;
-                rejected = false;
             }
         }
 }
-
-struct map_nodes_to_new_clusters_func
-{
-    const int* node_mapping_cont_graph;
-    int* node_mapping_orig_graph;
-    const unsigned long num_nodes_cont;
-    __host__ __device__ void operator()(const int n)
-    {
-        const int n_map = node_mapping_orig_graph[n];
-        if (n_map < num_nodes_cont)
-            node_mapping_orig_graph[n] = node_mapping_cont_graph[n_map];
-    }
-};
 
 
 /**
@@ -188,21 +166,18 @@ thrust::device_vector<float> calculate_contracting_edges_triangle_criterion(cons
     thrust::device_vector<float> edges(A.get_col_ids().size());
     blockCount = ceil(edges.size() / (float) threadCount);
     check_persistency_criterion_triangle<<<blockCount, threadCount>>>(empty_tri_index[0],
-        thrust::raw_pointer_cast(A_pos_row_offsets.data()),
-        thrust::raw_pointer_cast(A_pos.get_col_ids().data()),
-        thrust::raw_pointer_cast(A_pos.get_data().data()),
-        thrust::raw_pointer_cast(A.compute_row_offsets().data()),
-        thrust::raw_pointer_cast(A.get_col_ids().data()),
-        thrust::raw_pointer_cast(A.get_data().data()),
-        thrust::raw_pointer_cast(node_costs.data()),
-        thrust::raw_pointer_cast(calculate_sums(A_pos).data()),
-        thrust::raw_pointer_cast(triangles_v1.data()),
-        thrust::raw_pointer_cast(triangles_v2.data()),
-        thrust::raw_pointer_cast(triangles_v3.data()),
-        thrust::raw_pointer_cast(edges.data())
-        );
-    if (verbose)
-        std::cout << "Rejected edges early: " << counter << std::endl;
+                                                                      thrust::raw_pointer_cast(
+                                                                              A.compute_row_offsets().data()),
+                                                                      thrust::raw_pointer_cast(A.get_col_ids().data()),
+                                                                      thrust::raw_pointer_cast(A.get_data().data()),
+                                                                      thrust::raw_pointer_cast(node_costs.data()),
+                                                                      thrust::raw_pointer_cast(
+                                                                              calculate_sums(A_pos).data()),
+                                                                      thrust::raw_pointer_cast(triangles_v1.data()),
+                                                                      thrust::raw_pointer_cast(triangles_v2.data()),
+                                                                      thrust::raw_pointer_cast(triangles_v3.data()),
+                                                                      thrust::raw_pointer_cast(edges.data())
+    );
     return edges;
 }
 
@@ -236,7 +211,6 @@ thrust::device_vector<float> calculate_contracting_edges_edge_criterion(const dC
  */
 dCOO calculate_connected_subgraph(const dCOO& A, thrust::device_vector<float>& edges) {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
-
     thrust::device_vector<int> i_gpu(A.get_row_ids());
     thrust::device_vector<int> j_gpu(A.get_col_ids());
     assert(i_gpu.size()==edges.size());
@@ -279,7 +253,6 @@ std::tuple<dCOO,thrust::device_vector<int>> calculate_contracted_graph(dCOO& A, 
 }
 
 
-
 /**
  * Calculate the edges that are found to be persistent
  * @param A The initial graph
@@ -293,8 +266,8 @@ thrust::device_vector<float> calculate_contracting_edges(dCOO& A, const thrust::
     auto contracting_edges_edge_criterion = calculate_contracting_edges_edge_criterion(A, node_costs);
     auto edges = contracting_edges_edge_criterion;
     // Use this instead of the above line to combine edge and triangle criterion (generally no significant gain in persistency for high computational cost)
-//     auto contracting_edges_triangle_criterion = calculate_contracting_edges_triangle_criterion(A, node_costs, opts.max_cycle_length_lb, opts.tri_memory_factor, opts.verbose)
-     // thrust::device_vector<float> edges(contracting_edges_edge_criterion.size());
+    // auto contracting_edges_triangle_criterion = calculate_contracting_edges_triangle_criterion(A, node_costs, opts.max_cycle_length_lb, opts.tri_memory_factor, opts.verbose)
+    // thrust::device_vector<float> edges(contracting_edges_edge_criterion.size());
     // thrust::transform(contracting_edges_edge_criterion.begin(), contracting_edges_edge_criterion.end(), contracting_edges_triangle_criterion.begin(), edges.begin(),
     //     [=] __device__ __host__ (const float x, const float y) {
     //         return x or y;
@@ -305,6 +278,7 @@ thrust::device_vector<float> calculate_contracting_edges(dCOO& A, const thrust::
     }
     return edges;
 }
+
 
 /**
  * Calculates the reduced graph resulting from contracting the connected components given by the edges where the persistency criterion is met
@@ -323,7 +297,7 @@ std::tuple<dCOO, thrust::device_vector<int>> preprocessor_cuda(dCOO& A, const mu
             auto contracting_edges = calculate_contracting_edges(A, node_costs, opts);
             const float M = thrust::reduce(contracting_edges.begin(), contracting_edges.end());
             if (opts.verbose)
-                std::cout << "Relerative Number of Persistent Edges found: " << M/m_i*100.0 << "%" << std::endl;
+                std::cout << "Percentage of Edges that are persistent: " << M/m_i*100.0 << "%" << std::endl;
             if (M < m_i * opts.preprocessor_threshold) return {A, node_mapping};
             if (M  == 0) return {A, node_mapping};
 
@@ -342,7 +316,7 @@ std::tuple<dCOO, thrust::device_vector<int>> preprocessor_cuda(dCOO& A, const mu
             auto contracting_edges = calculate_contracting_edges(A, node_costs, opts);
             const float M = thrust::reduce(contracting_edges.begin(), contracting_edges.end());
             if (opts.verbose)
-                std::cout << "Relerative Number of Persistent Edges found: " << M/m_i*100.0 << "%" << std::endl;
+                std::cout << "Percentage of Edges that are persistent: " << M/m_i*100.0 << "%" << std::endl;
             if (M < m_i * opts.preprocessor_threshold) return {A, node_mapping};
             const dCOO B = calculate_connected_subgraph(A, contracting_edges).export_undirected();
             auto [C, new_node_mapping] = calculate_contracted_graph(A, B);

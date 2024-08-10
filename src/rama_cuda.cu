@@ -3,8 +3,7 @@
 #include "time_measure_util.h"
 #include <algorithm>
 #include <cstdlib>
-#include <persistency_preprocessor.h>
-
+#include "persistency_preprocessor.h"
 #include "ECLgraph.h"
 #include <thrust/transform_scan.h>
 #include <thrust/transform.h>
