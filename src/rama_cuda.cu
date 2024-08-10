@@ -29,6 +29,21 @@ bool has_bad_contractions(const dCOO& A)
     return thrust::count_if(d.begin(), d.end(), is_negative()) > 0;
 }
 
+int get_obj(const dCOO& A, thrust::device_vector<int>& mapping) {
+    int M = A.get_col_ids().size();
+    thrust::device_vector<float> costs = thrust::device_vector<float>(M,0.0);
+    auto begin = thrust::make_zip_iterator(thrust::make_tuple(A.get_row_ids().begin(), A.get_col_ids().begin(), A.get_data().begin()));
+    auto end = thrust::make_zip_iterator(thrust::make_tuple(A.get_row_ids().end(), A.get_col_ids().end(), A.get_data().end()));
+    const auto ptr = thrust::raw_pointer_cast(mapping.data());
+    auto kernel = [=] __host__ __device__ (thrust::tuple<int, int, float> t){
+        return
+            (t.get<2>()) * (ptr[t.get<0>()] != ptr[t.get<1>()]) ;
+    };
+    thrust::transform(thrust::device,begin, end, costs.begin(), kernel);
+    int i = thrust::reduce(costs.begin(), costs.end(), 0);
+    return i;
+}
+
 struct map_nodes_to_new_clusters_func
 {
     const int* node_mapping_cont_graph;
@@ -42,8 +57,25 @@ struct map_nodes_to_new_clusters_func
     }
 };
 
+__global__ void contracting_edges_from_mapping_kernel(
+        const int* row_ids,
+        const int* col_ids,
+        const int* node_mapping,
+        float* contract_edges,
+        const unsigned long num_nodes_count)
+{
+    int n = blockIdx.x * blockDim.x + threadIdx.x;
+    if (n < num_nodes_count){
+        auto u = row_ids[n];
+        auto v = col_ids[n];
+        if (node_mapping[u] == node_mapping[v])
+            contract_edges[n] = 1.0;
+    }
+}
+
+
 void map_node_labels(const thrust::device_vector<int>& cur_node_mapping, thrust::device_vector<int>& orig_node_mapping)
-{   
+{
     map_nodes_to_new_clusters_func node_mapper({thrust::raw_pointer_cast(cur_node_mapping.data()), 
                                                 thrust::raw_pointer_cast(orig_node_mapping.data()),
                                                 cur_node_mapping.size()});
@@ -66,15 +98,24 @@ std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>> > r
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
     std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 
-    assert(A.is_directed());
+    thrust::device_vector<int> node_mapping(A.max_dim());
+    thrust::sequence(node_mapping.begin(), node_mapping.end());
 
+    if (opts.run_preprocessor) {
+        auto[A_new, current_node_mapping] = preprocessor_cuda(A, opts,-1);
+        map_node_labels(current_node_mapping,node_mapping);
+        thrust::swap(A, A_new);
+        if (opts.verbose)
+            std::cout << "Energy after Preprocessor= " << A.sum() << "\n";
+    }
+
+    assert(A.is_directed());
     const double final_lb = dual_solver(A, opts.max_cycle_length_lb, opts.num_dual_itr_lb, opts.tri_memory_factor, opts.num_outer_itr_dual, 1e-4, opts.verbose);
+
 
     if (opts.verbose)
         std::cout << "initial energy = " << A.sum() << "\n";
 
-    thrust::device_vector<int> node_mapping(A.max_dim());
-    thrust::sequence(node_mapping.begin(), node_mapping.end());
 
     std::vector<std::vector<int>> timeline;
 
@@ -84,6 +125,9 @@ std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>> > r
     bool try_edges_to_contract_by_maximum_matching = true;
     if (opts.matching_thresh_crossover_ratio > 1.0)
         try_edges_to_contract_by_maximum_matching = false;
+    dCOO C;
+    thrust::device_vector<float> contracting_edges;
+
 
     for(size_t iter=0; A.nnz() > 0; ++iter)
     {
@@ -112,13 +156,13 @@ std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>> > r
             std::tie(cur_node_mapping, nr_edges_to_contract) = c_mapper.find_contraction_mapping();
         }
 
+
         if(nr_edges_to_contract == 0)
         {
             if (opts.verbose)
                 std::cout << "# iterations = " << iter << "\n";
             break;
         }
-
         dCOO new_A = A.contract_cuda(cur_node_mapping);
         if (opts.verbose)
         {
@@ -140,8 +184,17 @@ std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>> > r
         A.remove_diagonal();
         if (opts.verbose)
             std::cout << "energy after iteration " << iter << ": " << A.sum() << ", #components = " << A.cols() << "\n";
-
         map_node_labels(cur_node_mapping, node_mapping);
+
+
+
+         if (opts.run_preprocessor && opts.preprocessor_each_step) {
+             auto [A_after_pp, pp_node_mapping] = preprocessor_cuda(A, opts,1);
+             map_node_labels(pp_node_mapping,node_mapping);
+             thrust::swap(A, A_after_pp);
+         }
+
+
         if (opts.dump_timeline)
         {
             std::vector<int> current_timeline(node_mapping.size());
@@ -160,6 +213,8 @@ std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>> > r
     if (opts.verbose)
         std::cout << "final energy = " << A.sum() << "\n";
 
+
+
     return {node_mapping, final_lb, timeline};
 }
 
@@ -175,21 +230,16 @@ std::tuple<std::vector<int>, double, int, std::vector<std::vector<int>> > rama_c
         sanitized_node_ids = compute_sanitized_graph(i_gpu, j_gpu, costs_gpu);
     dCOO A(std::move(i_gpu), std::move(j_gpu), std::move(costs_gpu), true);
 
-    thrust::device_vector<int> pp_node_mapping;
-    if (opts.run_preprocessor) {
-        std::tie(A, pp_node_mapping) = preprocessor_cuda(A, opts,-1);
-    }
+
     double lb;
     std::vector<std::vector<int>> timeline;
     thrust::device_vector<int> node_mapping;
     std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
     std::tie(node_mapping, lb, timeline) = rama_cuda(A, opts);
+
     std::chrono::steady_clock::time_point end_time = std::chrono::steady_clock::now();
     int time_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
-    if (opts.run_preprocessor) {
-        map_node_labels(node_mapping,pp_node_mapping);
-        node_mapping = pp_node_mapping;
-    }
+
     if (opts.sanitize_graph)
         node_mapping = desanitize_node_labels(node_mapping, sanitized_node_ids);
     std::vector<int> h_node_mapping(node_mapping.size());

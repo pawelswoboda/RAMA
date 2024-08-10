@@ -56,7 +56,7 @@ void dCOO::init(const bool is_sorted)
 
 dCOO dCOO::contract_cuda(const thrust::device_vector<int>& node_mapping)
 {
-    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
+    // MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
     assert(is_directed_);
 
     const int numThreads = 256;
