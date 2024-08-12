@@ -12,6 +12,19 @@
 #define numThreads 256
 #define maxNumberOfIterations 100
 
+struct map_nodes_to_new_clusters_func
+{
+    const int* node_mapping_cont_graph;
+    int* node_mapping_orig_graph;
+    const unsigned long num_nodes_cont;
+    __host__ __device__ void operator()(const int n)
+    {
+        const int n_map = node_mapping_orig_graph[n];
+        if (n_map < num_nodes_cont)
+            node_mapping_orig_graph[n] = node_mapping_cont_graph[n_map];
+    }
+};
+
 /**
  * Checks the triangle persistency criterion
  * @param number_of_triangles total number of triangles in the graph

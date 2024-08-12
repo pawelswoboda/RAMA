@@ -4,7 +4,6 @@ project(RAMA LANGUAGES CXX CUDA)
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -use_fast_math")
 set(CMAKE_CUDA_STANDARD 17)
 
-set(CMAKE_CUDA_HOST_COMPILER /usr/bin/g++-10)
 set(CMAKE_CUDA_ARCHITECTURES OFF)
 
 include_directories(external/ECL-CC)
