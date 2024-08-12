@@ -155,7 +155,6 @@ bool edge_contractions_woc::check_triangles()
         thrust::raw_pointer_cast(mst_col_ids.data()),
         thrust::raw_pointer_cast(mst_data.data()),
         thrust::raw_pointer_cast(mst_edge_valid.data()));
-
     bool any_removed = remove_mst_by_mask(mst_edge_valid);
     return any_removed;
 }

@@ -1,8 +1,10 @@
+cmake_minimum_required(VERSION 3.27)
+
 project(RAMA LANGUAGES CXX CUDA)
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -use_fast_math")
+set(CMAKE_CUDA_STANDARD 17)
 
-cmake_minimum_required(VERSION 3.22.1)
-
+set(CMAKE_CUDA_HOST_COMPILER /usr/bin/g++-10)
 set(CMAKE_CUDA_ARCHITECTURES OFF)
 
 include_directories(external/ECL-CC)
@@ -16,6 +18,8 @@ target_compile_features(RAMA INTERFACE cxx_std_17)
 target_compile_options(RAMA INTERFACE -march=native)
 target_compile_options(RAMA INTERFACE -fPIC)
 target_include_directories(RAMA INTERFACE external/Eigen)
+
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --extended-lambda")
 
 # external dependencies
 set(CPM_DOWNLOAD_VERSION 0.34.0)

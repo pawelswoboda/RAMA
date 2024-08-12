@@ -16,7 +16,12 @@ struct multicut_solver_options {
     int max_time_sec = -1;
     bool dump_timeline = false;
     bool verbose = true;
-    bool sanitize_graph = false; 
+    bool sanitize_graph = false;
+    // =========== Preprocessor ============//
+    bool run_preprocessor = false;
+    bool preprocessor_each_step = false;
+    float preprocessor_threshold = 0.005;
+
 
     multicut_solver_options() { }
     multicut_solver_options(const std::string& solver_type) {
@@ -61,10 +66,13 @@ struct multicut_solver_options {
         const float _mean_multiplier_mm,
         const float _matching_thresh_crossover_ratio,
         const float _tri_memory_factor,
+        const float _preprocessor_threshold,
         const bool _only_compute_lb,
         const int _max_time_sec, 
         const bool _dump_timeline = false,
-        const bool _sanitize_graph = false) :
+        const bool _sanitize_graph = false,
+        const bool _run_preprocessor = false,
+        const bool _preprocessor_each_step = false) :
         max_cycle_length_lb(_max_cycle_length_lb), 
         num_dual_itr_lb(_num_dual_itr_lb), 
         max_cycle_length_primal(_max_cycle_length_primal), 
@@ -73,10 +81,13 @@ struct multicut_solver_options {
         mean_multiplier_mm(_mean_multiplier_mm),
         matching_thresh_crossover_ratio(_matching_thresh_crossover_ratio),
         tri_memory_factor(_tri_memory_factor),
+        preprocessor_threshold(_preprocessor_threshold),
         only_compute_lb(_only_compute_lb),
         max_time_sec(_max_time_sec),
         dump_timeline(_dump_timeline),
-        sanitize_graph(_sanitize_graph)
+        sanitize_graph(_sanitize_graph),
+        run_preprocessor(_run_preprocessor),
+        preprocessor_each_step(_preprocessor_each_step)
     {}
 
     int from_cl(int argc, char** argv) {
@@ -93,9 +104,12 @@ struct multicut_solver_options {
             "(Default: 0.1). Greater than 1 will always use MST.")->check(CLI::NonNegativeNumber);
         app.add_option("tri_memory_factor", tri_memory_factor, 
             "Average number of triangles per repulsive edge. (Used for memory allocation. Use lesser value in-case of out of memory errors during dual solve). (Default: 2.0).")->check(CLI::PositiveNumber);
+        app.add_option("--preprocessor_threshold", preprocessor_threshold, "Minimum fraction of edges found by the preprocessor to warrant the contraction of the graph. (Default: 0.005).") -> check(CLI::Range(0.0,1.0));
         app.add_flag("--only_lb", only_compute_lb, "Only compute the lower bound. (Default: false).");
         app.add_flag("--dump_timeline", dump_timeline, "Return the output of each contraction step. Only use for debugging/visualization purposes. (slow). (Default: false).");
         app.add_flag("--sanitize_graph", sanitize_graph, "If the input graph contains nodes without any edges and thus needs sanitizing. Cluster labels in this case will be -1 for these nodes. (Default: false).");
+        app.add_flag("--run_preprocessor", run_preprocessor, "Run a preprocessor, searching for persistency criteria to reduce the effective size of the graph. (Default: false).");
+        app.add_flag("--preprocessor_each_step", preprocessor_each_step, "If true, the preprocessor will run in between each cycle of the RAMA algorithm. (slow). (Default: false).");
         try {
             app.parse(argc, argv);
             return -1;
@@ -118,7 +132,10 @@ struct multicut_solver_options {
             ", only_compute_lb: " + std::to_string(only_compute_lb) +
             ", max_time_sec: " + std::to_string(max_time_sec) +
             ", sanitize_graph: " + std::to_string(sanitize_graph) +
-            ", verbose: " + std::to_string(verbose) + "\n";
+            ", verbose: " + std::to_string(verbose) +
+            ", run_preprocessor: " + std::to_string(run_preprocessor) +
+            ", preprocessor_each_step: " + std::to_string(preprocessor_each_step) +
+            ", preprocessor_threshold: " + std::to_string(preprocessor_threshold) + "\n";
     }
 
     void print() const
