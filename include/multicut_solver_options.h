@@ -15,7 +15,7 @@ struct multicut_solver_options {
     bool only_compute_lb = false;
     int max_time_sec = -1;
     bool dump_timeline = false;
-    bool verbose = false;
+    bool verbose = true;
     bool sanitize_graph = false;
     // =========== Preprocessor ============//
     bool run_preprocessor = false;

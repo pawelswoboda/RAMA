@@ -56,7 +56,7 @@ void dCOO::init(const bool is_sorted)
 
 dCOO dCOO::contract_cuda(const thrust::device_vector<int>& node_mapping)
 {
-    // MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
+    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
     assert(is_directed_);
 
     const int numThreads = 256;
@@ -71,6 +71,7 @@ dCOO dCOO::contract_cuda(const thrust::device_vector<int>& node_mapping)
             thrust::raw_pointer_cast(node_mapping.data()), 
             thrust::raw_pointer_cast(new_row_ids.data()), 
             thrust::raw_pointer_cast(new_col_ids.data()));
+
     coo_sorting(new_row_ids, new_col_ids, new_data); // in-place sorting by rows.
 
     auto first = thrust::make_zip_iterator(thrust::make_tuple(new_row_ids.begin(), new_col_ids.begin()));

@@ -4,7 +4,6 @@
 #include "rama_utils.h"
 #include <stdexcept>
 #include <string>
-#include "persistency_preprocessor.h"
 
 int main(int argc, char** argv)
 {
