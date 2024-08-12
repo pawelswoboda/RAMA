@@ -28,20 +28,6 @@ bool has_bad_contractions(const dCOO& A)
     return thrust::count_if(d.begin(), d.end(), is_negative()) > 0;
 }
 
-//int get_obj(const dCOO& A, thrust::device_vector<int>& mapping) {
-//    int M = A.get_col_ids().size();
-//    thrust::device_vector<float> costs = thrust::device_vector<float>(M,0.0);
-//    auto begin = thrust::make_zip_iterator(thrust::make_tuple(A.get_row_ids().begin(), A.get_col_ids().begin(), A.get_data().begin()));
-//    auto end = thrust::make_zip_iterator(thrust::make_tuple(A.get_row_ids().end(), A.get_col_ids().end(), A.get_data().end()));
-//    const auto ptr = thrust::raw_pointer_cast(mapping.data());
-//    auto kernel = [=] __host__ __device__ (thrust::tuple<int, int, float> t){
-//        return
-//            (t.get<2>()) * (ptr[t.get<0>()] != ptr[t.get<1>()]) ;
-//    };
-//    thrust::transform(thrust::device,begin, end, costs.begin(), kernel);
-//    int i = thrust::reduce(costs.begin(), costs.end(), 0);
-//    return i;
-//}
 
 struct map_nodes_to_new_clusters_func
 {
@@ -55,22 +41,6 @@ struct map_nodes_to_new_clusters_func
             node_mapping_orig_graph[n] = node_mapping_cont_graph[n_map];
     }
 };
-
-//__global__ void contracting_edges_from_mapping_kernel(
-//        const int* row_ids,
-//        const int* col_ids,
-//        const int* node_mapping,
-//        float* contract_edges,
-//        const unsigned long num_nodes_count)
-//{
-//    int n = blockIdx.x * blockDim.x + threadIdx.x;
-//    if (n < num_nodes_count){
-//        auto u = row_ids[n];
-//        auto v = col_ids[n];
-//        if (node_mapping[u] == node_mapping[v])
-//            contract_edges[n] = 1.0;
-//    }
-//}
 
 
 void map_node_labels(const thrust::device_vector<int>& cur_node_mapping, thrust::device_vector<int>& orig_node_mapping)
