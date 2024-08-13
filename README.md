@@ -86,7 +86,7 @@ We included a persistency-based preprocessor that can reduce the effective size 
 Options for the preprocessor:
 - `--run_preprocessor`: Flag to activate the preprocessor
 - `--preprocessor_each_step`: Flag to let the preprocessor run between each iteration of the RAMA algorithm (generally not recommended)
-- `--preprocessor_each_step <THRESHOLD>`: The preprocessor will stop if less than THRESHOLD of the edges of the graph are found to be persistent
+- `--prerpocessor_threshold <THRESHOLD>`: The preprocessor will stop if less than THRESHOLD of the edges of the graph are found to be persistent
 
 
 ```bash
