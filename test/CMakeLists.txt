@@ -22,3 +22,6 @@ add_executable(compute_unique_test compute_unique_test.cu)
 
 add_executable(conflicted_cycles_test conflicted_cycles_test.cu)
 target_link_libraries(conflicted_cycles_test conflicted_cycles_cuda)
+
+add_executable(persistency_preprocessor_test persistency_preprocessor_test.cu)
+target_link_libraries(persistency_preprocessor_test persistency_preprocessor)

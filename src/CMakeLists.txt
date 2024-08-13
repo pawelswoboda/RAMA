@@ -23,11 +23,14 @@ target_link_libraries(edge_contractions_woc_thrust dCOO ECL-CC_11 gpuMST_boruvka
 add_library(edge_contractions_woc edge_contractions_woc.cu)
 target_link_libraries(edge_contractions_woc edge_contractions_woc_thrust dCOO ECL-CC_11 gpuMST_boruvka)
 
+add_library(persistency_preprocessor persistency_preprocessor.cu)
+target_link_libraries(persistency_preprocessor dCOO dual_solver edge_contractions_woc rama_cuda)
+
 add_library(rama_cuda rama_cuda.cu)
-target_link_libraries(rama_cuda dCOO dual_solver maximum_matching_vertex_based edge_contractions_woc)
+target_link_libraries(rama_cuda dCOO dual_solver maximum_matching_vertex_based edge_contractions_woc persistency_preprocessor)
 
 add_executable(rama_text_input rama_text_input.cu)
-target_link_libraries(rama_text_input multicut_text_parser rama_cuda)
+target_link_libraries(rama_text_input multicut_text_parser rama_cuda persistency_preprocessor)
 
 pybind11_add_module(rama_py rama_py.cu)
 target_link_libraries(rama_py PRIVATE multicut_text_parser rama_cuda) 

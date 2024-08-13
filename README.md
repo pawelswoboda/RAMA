@@ -80,6 +80,18 @@ Use this algorithm for only computing the lower bound. Our lower bounds are slig
 	```
 Run  `./rama_text_input --help` for details about the parameters. 
 
+#### Persistency Preprocessor:
+We included a persistency-based preprocessor that can reduce the effective size of the input graph while retaining the optimal solution. The gains from the preprocessor are heavily dependent on the structure of the graph. It works best for only loosely connected graphs. However, due to its light weight, in the worst case scenario it only impacts the performance marginally.
+
+Options for the preprocessor:
+- `--run_preprocessor`: Flag to activate the preprocessor
+- `--preprocessor_each_step`: Flag to let the preprocessor run between each iteration of the RAMA algorithm (generally not recommended)
+- `--prerpocessor_threshold <THRESHOLD>`: The preprocessor will stop if less than THRESHOLD of the edges of the graph are found to be persistent
+
+
+```bash
+	./rama_text_input -f <PATH_TO_MULTICUT_INSTANCE> --run_preprocessor --prerpocessor_threshold 0.005
+```
 
 ## PyTorch support (Optional):
 The above-mentioned Python solver takes input in CPU memory and then copies to GPU memory. In cases where this takes too much time we offer additional (optional) functionality in Python bindings which allow to directly use the GPU tensors and return the result in GPU memory. For this there are two options:

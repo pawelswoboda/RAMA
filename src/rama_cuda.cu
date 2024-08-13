@@ -3,6 +3,7 @@
 #include "time_measure_util.h"
 #include <algorithm>
 #include <cstdlib>
+#include "persistency_preprocessor.h"
 #include "ECLgraph.h"
 #include <thrust/transform_scan.h>
 #include <thrust/transform.h>
@@ -27,6 +28,7 @@ bool has_bad_contractions(const dCOO& A)
     return thrust::count_if(d.begin(), d.end(), is_negative()) > 0;
 }
 
+
 struct map_nodes_to_new_clusters_func
 {
     const int* node_mapping_cont_graph;
@@ -40,8 +42,9 @@ struct map_nodes_to_new_clusters_func
     }
 };
 
+
 void map_node_labels(const thrust::device_vector<int>& cur_node_mapping, thrust::device_vector<int>& orig_node_mapping)
-{   
+{
     map_nodes_to_new_clusters_func node_mapper({thrust::raw_pointer_cast(cur_node_mapping.data()), 
                                                 thrust::raw_pointer_cast(orig_node_mapping.data()),
                                                 cur_node_mapping.size()});
@@ -64,15 +67,24 @@ std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>> > r
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
     std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 
-    assert(A.is_directed());
+    thrust::device_vector<int> node_mapping(A.max_dim());
+    thrust::sequence(node_mapping.begin(), node_mapping.end());
 
+    if (opts.run_preprocessor) {
+        auto[A_new, current_node_mapping] = preprocessor_cuda(A, opts,-1);
+        map_node_labels(current_node_mapping,node_mapping);
+        thrust::swap(A, A_new);
+        if (opts.verbose)
+            std::cout << "Energy after Preprocessor= " << A.sum() << "\n";
+    }
+
+    assert(A.is_directed());
     const double final_lb = dual_solver(A, opts.max_cycle_length_lb, opts.num_dual_itr_lb, opts.tri_memory_factor, opts.num_outer_itr_dual, 1e-4, opts.verbose);
+
 
     if (opts.verbose)
         std::cout << "initial energy = " << A.sum() << "\n";
 
-    thrust::device_vector<int> node_mapping(A.max_dim());
-    thrust::sequence(node_mapping.begin(), node_mapping.end());
 
     std::vector<std::vector<int>> timeline;
 
@@ -82,6 +94,7 @@ std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>> > r
     bool try_edges_to_contract_by_maximum_matching = true;
     if (opts.matching_thresh_crossover_ratio > 1.0)
         try_edges_to_contract_by_maximum_matching = false;
+
 
     for(size_t iter=0; A.nnz() > 0; ++iter)
     {
@@ -110,13 +123,13 @@ std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>> > r
             std::tie(cur_node_mapping, nr_edges_to_contract) = c_mapper.find_contraction_mapping();
         }
 
+
         if(nr_edges_to_contract == 0)
         {
             if (opts.verbose)
                 std::cout << "# iterations = " << iter << "\n";
             break;
         }
-
         dCOO new_A = A.contract_cuda(cur_node_mapping);
         if (opts.verbose)
         {
@@ -138,8 +151,17 @@ std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>> > r
         A.remove_diagonal();
         if (opts.verbose)
             std::cout << "energy after iteration " << iter << ": " << A.sum() << ", #components = " << A.cols() << "\n";
-
         map_node_labels(cur_node_mapping, node_mapping);
+
+
+
+         if (opts.run_preprocessor && opts.preprocessor_each_step) {
+             auto [A_after_pp, pp_node_mapping] = preprocessor_cuda(A, opts,1);
+             map_node_labels(pp_node_mapping,node_mapping);
+             thrust::swap(A, A_after_pp);
+         }
+
+
         if (opts.dump_timeline)
         {
             std::vector<int> current_timeline(node_mapping.size());
@@ -158,6 +180,8 @@ std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>> > r
     if (opts.verbose)
         std::cout << "final energy = " << A.sum() << "\n";
 
+
+
     return {node_mapping, final_lb, timeline};
 }
 
@@ -171,15 +195,15 @@ std::tuple<std::vector<int>, double, int, std::vector<std::vector<int>> > rama_c
     thrust::device_vector<int> sanitized_node_ids;
     if (opts.sanitize_graph)
         sanitized_node_ids = compute_sanitized_graph(i_gpu, j_gpu, costs_gpu);
-
     dCOO A(std::move(i_gpu), std::move(j_gpu), std::move(costs_gpu), true);
 
-    thrust::device_vector<int> node_mapping;
+
     double lb;
     std::vector<std::vector<int>> timeline;
-    
+    thrust::device_vector<int> node_mapping;
     std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
     std::tie(node_mapping, lb, timeline) = rama_cuda(A, opts);
+
     std::chrono::steady_clock::time_point end_time = std::chrono::steady_clock::now();
     int time_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
 
