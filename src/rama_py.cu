@@ -41,13 +41,14 @@ std::vector<torch::Tensor> rama_torch(
 	thrust::device_vector<int> j(_j.data_ptr<int32_t>(), _j.data_ptr<int32_t>() + _j.size(0));
 	thrust::device_vector<float> costs(_costs.data_ptr<float>(), _costs.data_ptr<float>() + _costs.size(0));
 	thrust::device_vector<int> node_mapping;
+    std::vector<std::vector<int>> timeline;
 	double lb;
 	const int device = _costs.device().index();
 	if (device < 0)
 		throw std::runtime_error("Invalid device ID");
-    std::tie(node_mapping, lb) = rama_cuda(std::move(i), std::move(j), std::move(costs), opts, device);
+    std::tie(node_mapping, lb, timeline) = rama_cuda(std::move(i), std::move(j), std::move(costs), opts, device);
     
-	torch::Tensor node_mapping_torch = at::empty({node_mapping.size()}, _i.options());
+	torch::Tensor node_mapping_torch = at::empty({long(node_mapping.size())}, _i.options());
     thrust::copy(node_mapping.begin(), node_mapping.end(), node_mapping_torch.data_ptr<int32_t>());
 
 	torch::Tensor lb_torch = at::empty({1}, _i.options());
