@@ -41,6 +41,8 @@ void multicut_message_passing::compute_triangle_edge_correspondence(
     assert(thrust::is_sorted(first_edge, last_edge));
     assert(std::distance(first_edge, thrust::unique(first_edge, last_edge)) == i.size());
 
+    auto test_it = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
+
     auto first_unique = thrust::make_zip_iterator(thrust::make_tuple(ta_unique.begin(), tb_unique.begin()));
     auto last_unique = thrust::make_zip_iterator(thrust::make_tuple(ta_unique.end(), tb_unique.end()));
     thrust::device_vector<int> unique_correspondence(ta_unique.size());

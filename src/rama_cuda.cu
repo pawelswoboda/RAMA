@@ -1,12 +1,14 @@
-#include <cuda_runtime.h>
+//#include <cuda_runtime.h>
+#include "rama_cuda.h"
 #include "union_find.hxx"
 #include "time_measure_util.h"
 #include <algorithm>
 #include <cstdlib>
 #include "ECLgraph.h"
-#include <thrust/transform_scan.h>
+//#include <thrust/transform_scan.h>
 #include <thrust/transform.h>
 #include "maximum_matching_vertex_based.h"
+#include "dCOO.h"
 #include "maximum_matching_thrust.h"
 #include "multicut_solver_options.h"
 #include "dual_solver.h"

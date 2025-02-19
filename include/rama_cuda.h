@@ -2,7 +2,7 @@
 
 #include <vector>
 #include <tuple>
-#include "dCOO.h"
+#include <thrust/device_vector.h>
 #include "multicut_solver_options.h"
 
 std::tuple<std::vector<int>, double, int, std::vector<std::vector<int>> > rama_cuda(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs, const multicut_solver_options& opts); 
