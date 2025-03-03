@@ -19,9 +19,9 @@ int main(int argc, char** argv)
 
     mcp.send_messages_to_triplets();
 
-    mcp.iteration();
-    mcp.iteration();
-    mcp.iteration();
+    mcp.iteration(false);
+    mcp.iteration(false);
+    mcp.iteration(false);
 
     const double final_lb = mcp.lower_bound();
     std::cout << "final lb = " << final_lb << "\n";

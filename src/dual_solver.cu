@@ -6,6 +6,7 @@
 
 std::tuple<dCOO, double, int> dual_update_cycle_length(const dCOO& A, const int cycle_length, const int num_dual_steps_per_cycle, const float tri_memory_factor, const float tol_ratio, const bool verbose)
 {
+
     thrust::device_vector<int> triangles_v1, triangles_v2, triangles_v3;
     std::tie(triangles_v1, triangles_v2, triangles_v3) = conflicted_cycles_cuda(A, cycle_length, tri_memory_factor, tol_ratio, verbose);
     const int num_tri = triangles_v1.size();
@@ -21,7 +22,7 @@ std::tuple<dCOO, double, int> dual_update_cycle_length(const dCOO& A, const int 
             std::cout << "dual updates cycle length: " << cycle_length << ", iteration: " << iter << ", lower bound: " << lb << "\n";
         if (iter > 0 && (lb - prev_lb) < 1e-3)
             break;
-        mp.iteration();
+        mp.iteration(true); //!!!!!!!!!!!
         prev_lb = lb;
     }
     const double final_lb = mp.lower_bound();

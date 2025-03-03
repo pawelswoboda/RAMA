@@ -6,6 +6,10 @@
 #include "multicut_solver_options.h"
 #include "multicut_text_parser.h"
 
+#include "multicut_message_passing.h"
+#include "dCOO.h"
+
+
 #ifdef WITH_TORCH
 #include <torch/extension.h>
 #include <torch/torch.h>
@@ -102,7 +106,7 @@ PYBIND11_MODULE(rama_py, m) {
             return a.get_string();
         });
 
-    m.def("rama_cuda", [](const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& edge_costs, const multicut_solver_options& opts) {
+    m.def("rama_cuda", [](const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& edge_costs, const multicut_solver_options& opts) {    
             return rama_cuda(i, j, edge_costs, opts);
             });
 
@@ -122,5 +126,24 @@ PYBIND11_MODULE(rama_py, m) {
 	#ifdef WITH_TORCH
 		m.def("rama_torch", &rama_torch, "RAMA CUDA solver with torch interface.");
 	#endif
+
+
+    py::class_<dCOO>(m, "dCOO")
+        .def(py::init<>())
+        .def("rows", &dCOO::rows)
+        .def("cols", &dCOO::cols)
+        .def("nnz", &dCOO::nnz)
+        .def("sum", &dCOO::sum)
+        .def("min", &dCOO::min)
+        .def("max", &dCOO::max)
+        .def("get_row_ids", &dCOO::get_row_ids)
+        .def("get_col_ids", &dCOO::get_col_ids)
+        .def("get_data", &dCOO::get_data);
+
+    py::class_<multicut_message_passing>(m, "MulticutMessagePassing")
+        .def(py::init<const dCOO&, std::vector<int>, std::vector<int>, std::vector<int>, bool>())
+        .def("get_triangles", &multicut_message_passing::get_triangles)
+        .def("get_lagrange_multipliers", &multicut_message_passing::get_lagrange_multipliers)
+        .def("get_edges", &multicut_message_passing::get_edges);
 }
 

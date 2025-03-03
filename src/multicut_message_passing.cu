@@ -347,14 +347,92 @@ void multicut_message_passing::send_messages_to_edges()
     thrust::for_each(first, last, decrease_triangle_costs_func({thrust::raw_pointer_cast(edge_costs.data())})); 
 }
 
-void multicut_message_passing::iteration()
-{
-    send_messages_to_triplets();
-    send_messages_to_edges();
-}
-
 std::tuple<const thrust::device_vector<int>&, const thrust::device_vector<int>&, const thrust::device_vector<float>&>
 multicut_message_passing::reparametrized_edge_costs() const
 {
     return {i, j, edge_costs};
 }
+
+
+void multicut_message_passing::iteration(const bool use_nn) {
+    if (use_nn) {
+        update_lagrange_via_nn();
+    } else {
+        send_messages_to_triplets();
+        send_messages_to_edges();
+    }
+}
+
+#include <pybind11/pybind11.h>
+#include <pybind11/embed.h>
+#include <pybind11/numpy.h> 
+
+namespace py = pybind11;
+
+void multicut_message_passing::update_lagrange_via_nn() {
+
+    static bool python_initialized = false;
+    if (!python_initialized) {
+        static py::scoped_interpreter guard{};
+        python_initialized = true;
+    }
+    py::gil_scoped_acquire acquire;
+    auto sys = py::module_::import("sys");
+    sys.attr("path").attr("append")("/home/houraghene/RAMA/src/message_passing_nn");
+
+
+    auto mod = py::module_::import("nn_message_passing");
+    auto nn_func = mod.attr("nn_update_lagrange");
+
+    long edge_costs_ptr = reinterpret_cast<long>(thrust::raw_pointer_cast(edge_costs.data()));
+    long t1_ptr = reinterpret_cast<long>(thrust::raw_pointer_cast(t1.data()));
+    long t2_ptr = reinterpret_cast<long>(thrust::raw_pointer_cast(t2.data()));
+    long t3_ptr = reinterpret_cast<long>(thrust::raw_pointer_cast(t3.data()));
+    long i_ptr = reinterpret_cast<long>(thrust::raw_pointer_cast(i.data()));
+    long j_ptr = reinterpret_cast<long>(thrust::raw_pointer_cast(j.data()));
+    long t12_costs_ptr = reinterpret_cast<long>(thrust::raw_pointer_cast(t12_costs.data()));
+    long t13_costs_ptr = reinterpret_cast<long>(thrust::raw_pointer_cast(t13_costs.data()));
+    long t23_costs_ptr = reinterpret_cast<long>(thrust::raw_pointer_cast(t23_costs.data()));
+
+    py::object result_obj = nn_func(
+        edge_costs_ptr, t1_ptr, t2_ptr, t3_ptr, i_ptr, j_ptr,
+        t12_costs_ptr, t13_costs_ptr, t23_costs_ptr,
+        edge_costs.size(), t1.size(), i.size()
+    );
+
+    py::tuple result = result_obj.cast<py::tuple>();
+
+    py::array_t<float> updated_edge_costs = result[0].cast<py::array_t<float>>();
+    py::array_t<float> updated_t12_costs = result[1].cast<py::array_t<float>>();
+    py::array_t<float> updated_t13_costs = result[2].cast<py::array_t<float>>();
+    py::array_t<float> updated_t23_costs = result[3].cast<py::array_t<float>>();
+
+    auto buffer_edge = updated_edge_costs.request();
+    float* edge_ptr = static_cast<float*>(buffer_edge.ptr);
+
+    auto buffer_t12 = updated_t12_costs.request();
+    float* t12_ptr_host = static_cast<float*>(buffer_t12.ptr);
+
+    auto buffer_t13 = updated_t13_costs.request();
+    float* t13_ptr_host = static_cast<float*>(buffer_t13.ptr);
+
+    auto buffer_t23 = updated_t23_costs.request();
+    float* t23_ptr_host = static_cast<float*>(buffer_t23.ptr);
+
+    cudaMemcpy(thrust::raw_pointer_cast(edge_costs.data()), edge_ptr,
+            sizeof(float) * edge_costs.size(), cudaMemcpyHostToDevice);
+
+    cudaMemcpy(thrust::raw_pointer_cast(t12_costs.data()), t12_ptr_host,
+            sizeof(float) * t12_costs.size(), cudaMemcpyHostToDevice);
+
+    cudaMemcpy(thrust::raw_pointer_cast(t13_costs.data()), t13_ptr_host,
+            sizeof(float) * t13_costs.size(), cudaMemcpyHostToDevice);
+
+    cudaMemcpy(thrust::raw_pointer_cast(t23_costs.data()), t23_ptr_host,
+            sizeof(float) * t23_costs.size(), cudaMemcpyHostToDevice);
+}
+
+
+
+
+

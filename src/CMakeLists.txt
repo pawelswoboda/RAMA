@@ -1,10 +1,18 @@
+find_package(Python3 COMPONENTS Interpreter Development.Module Development.Embed REQUIRED)
+CPMAddPackage("gh:pybind/pybind11@master")
+
 add_library(multicut_text_parser multicut_text_parser.cpp)
 
 add_library(dCOO dCOO.cu)
 target_link_libraries(dCOO ECL-CC_11 RAMA)
 
+#add_library(multicut_message_passing multicut_message_passing.cu)
+#target_link_libraries(multicut_message_passing RAMA)
 add_library(multicut_message_passing multicut_message_passing.cu)
-target_link_libraries(multicut_message_passing RAMA)
+target_link_libraries(multicut_message_passing PRIVATE RAMA Python3::Python)
+target_include_directories(multicut_message_passing PRIVATE ${Python3_INCLUDE_DIRS})
+target_include_directories(multicut_message_passing PRIVATE ${CMAKE_SOURCE_DIR}/build/_deps/pybind11-src/include)
+
 
 add_library(conflicted_cycles_cuda conflicted_cycles_cuda.cu)
 target_link_libraries(conflicted_cycles_cuda dCOO RAMA)

@@ -17,10 +17,36 @@ class multicut_message_passing {
 
         double lower_bound();
 
-        void iteration();
+        void iteration(const bool use_nn);
 
         std::tuple<const thrust::device_vector<int>&, const thrust::device_vector<int>&, const thrust::device_vector<float>&>
             reparametrized_edge_costs() const;
+
+        std::tuple<std::vector<int>, std::vector<int>, std::vector<int>> get_triangles() const {
+            std::vector<int> h_t1(t1.size()), h_t2(t2.size()), h_t3(t3.size());
+            thrust::copy(t1.begin(), t1.end(), h_t1.begin());
+            thrust::copy(t2.begin(), t2.end(), h_t2.begin());
+            thrust::copy(t3.begin(), t3.end(), h_t3.begin());
+            return {h_t1, h_t2, h_t3};
+        }
+
+        std::vector<float> get_lagrange_multipliers() const {
+            std::vector<float> h_lagrange(edge_costs.size());
+            thrust::copy(edge_costs.begin(), edge_costs.end(), h_lagrange.begin());
+            return h_lagrange;
+        }
+
+        std::tuple<std::vector<int>, std::vector<int>, std::vector<float>> get_edges() const {
+            std::vector<int> h_i(i.size()), h_j(j.size());
+            std::vector<float> h_cost(edge_costs.size());
+            thrust::copy(i.begin(), i.end(), h_i.begin());
+            thrust::copy(j.begin(), j.end(), h_j.begin());
+            thrust::copy(edge_costs.begin(), edge_costs.end(), h_cost.begin());
+            return {h_i, h_j, h_cost};
+        }
+
+        void update_lagrange_via_nn();  
+
 
     private:
         void compute_triangle_edge_correspondence(const thrust::device_vector<int>&, const thrust::device_vector<int>&, 

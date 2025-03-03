@@ -1,0 +1,2 @@
+./build/src/rama_text_input -f ./test_instance.txt -o ./solution2.txt
+python3 setup.py clean
