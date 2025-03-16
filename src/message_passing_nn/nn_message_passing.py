@@ -1,6 +1,11 @@
 import torch
 import cupy as cp
 import numpy as np
+from mp.dbca_message_passing import ClassicalMessagePassing
+from torch.utils.data import DataLoader, Dataset
+from mp.mlp_message_passing import MLPMessagePassing
+import os
+
 
 TORCH_DTYPE_TO_NUMPY = {
     torch.float32: np.float32,
@@ -10,21 +15,27 @@ TORCH_DTYPE_TO_NUMPY = {
 }
 
 def ptr_to_tensor(ptr, num_elements, dtype, device='cuda'):
-
+   
     if dtype not in TORCH_DTYPE_TO_NUMPY:
         raise TypeError(f"Unsupported dtype: {dtype}")
     np_dtype = TORCH_DTYPE_TO_NUMPY[dtype]
 
-    cp_array = cp.ndarray((num_elements,), dtype=np_dtype, memptr=cp.cuda.MemoryPointer(cp.cuda.UnownedMemory(ptr, num_elements * np_dtype().itemsize, None), 0))
-    torch_tensor = torch.as_tensor(cp_array).to(device)
-  
+    cp_array = cp.ndarray(
+        (num_elements,),
+        dtype=np_dtype,
+        memptr=cp.cuda.MemoryPointer(cp.cuda.UnownedMemory(ptr, num_elements * np_dtype().itemsize, None), 0)
+    )
+    torch_tensor = torch.as_tensor(cp_array).to(device).clone()
     return torch_tensor
 
-def nn_update_lagrange(edge_costs_ptr, t1_ptr, t2_ptr, t3_ptr, i_ptr, j_ptr, 
-                       t12_costs_ptr, t13_costs_ptr, t23_costs_ptr, 
-                       num_edges, num_triangles, num_nodes):
-    print("=== Python ===")
 
+def nn_update(edge_costs_ptr, t1_ptr, t2_ptr, t3_ptr, i_ptr, j_ptr, 
+                       t12_costs_ptr, t13_costs_ptr, t23_costs_ptr,
+                       triangle_corr_12_ptr, triangle_corr_13_ptr, triangle_corr_23_ptr,
+                       edge_counter_ptr, num_edges, num_triangles, num_nodes):
+    
+    print("=== Python ===")
+    
     edge_costs = ptr_to_tensor(edge_costs_ptr, num_edges, torch.float32)
 
     t1 = ptr_to_tensor(t1_ptr, num_triangles, torch.int32)
@@ -38,23 +49,93 @@ def nn_update_lagrange(edge_costs_ptr, t1_ptr, t2_ptr, t3_ptr, i_ptr, j_ptr,
     t13_costs = ptr_to_tensor(t13_costs_ptr, num_triangles, torch.float32)
     t23_costs = ptr_to_tensor(t23_costs_ptr, num_triangles, torch.float32)
 
-    print("[PYTHON] Edge Costs:", edge_costs)
-    print("[PYTHON] Triangles:", t1, t2, t3)
-    print("[PYTHON] Edges:", i, j)
+    tri_corr_12 = ptr_to_tensor(triangle_corr_12_ptr, num_triangles, torch.int32).long()
+    tri_corr_13 = ptr_to_tensor(triangle_corr_13_ptr, num_triangles, torch.int32).long()
+    tri_corr_23 = ptr_to_tensor(triangle_corr_23_ptr, num_triangles, torch.int32).long()
+    edge_counter   = ptr_to_tensor(edge_counter_ptr, num_edges, torch.int32)
 
-    updated_t12_costs = t12_costs + 0.1
-    updated_t13_costs = t13_costs + 0.1
-    updated_t23_costs = t23_costs + 0.1
+    updated_edge_costs, updated_t12_costs, updated_t13_costs, updated_t23_costs = via_mlp(
+        edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
+        t12_costs, t13_costs, t23_costs,edge_counter
+    )
 
-    updated_edge_costs = edge_costs + 0.1
+    return (
+        updated_edge_costs.cpu().numpy(),
+        updated_t12_costs.cpu().numpy(),
+        updated_t13_costs.cpu().numpy(),
+        updated_t23_costs.cpu().numpy()
+    )
 
-    print("[PYTHON] Updated Edge Costs:", updated_edge_costs)
-    print("[PYTHON] Updated Lagrange Multipliers:")
-    print("[PYTHON] t12:", updated_t12_costs)
-    print("[PYTHON] t13:", updated_t13_costs)
-    print("[PYTHON] t23:", updated_t23_costs)
 
-    return (updated_edge_costs.cpu().numpy(),
-            updated_t12_costs.cpu().numpy(),
-            updated_t13_costs.cpu().numpy(),
-            updated_t23_costs.cpu().numpy())
+
+
+def via_dbca(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
+             t12_costs, t13_costs, t23_costs, edge_counter):
+
+    mp = ClassicalMessagePassing(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
+                                   t12_costs, t13_costs, t23_costs, edge_counter)
+    mp.iteration()  
+    print("[PYTHON] Lower bound:", mp.compute_lower_bound())
+    return mp.edge_costs, mp.t12_costs, mp.t13_costs, mp.t23_costs
+
+
+
+def via_mlp(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
+            t12_costs, t13_costs, t23_costs, edge_counter,
+            num_epochs=1, lr=1e-3):
+
+    def compute_lower_bound(data):
+        edge_lb = torch.sum(torch.where(data["edge_costs"] < 0, data["edge_costs"], torch.zeros_like(data["edge_costs"])))
+        a, b, c = data["t12_costs"], data["t13_costs"], data["t23_costs"]
+        tri_lb = torch.min(torch.stack([torch.zeros_like(a), a+b, a+c, b+c, a+b+c], dim=0), dim=0).values.sum()
+        return edge_lb + tri_lb
+
+    def loss_fn(data):
+        return -compute_lower_bound(data)
+
+    class SingleMulticutDataset(Dataset):
+        def __init__(self, data):
+            self.data = data  
+
+        def __len__(self):
+            return 1  
+
+        def __getitem__(self, idx):
+            return self.data
+    
+    device = edge_costs.device  
+    MODEL_PATH = "./mlp_model.pt"
+    
+    data_dict = {
+        "edge_costs": edge_costs.clone(),
+        "tri_corr_12": tri_corr_12.clone(),
+        "tri_corr_13": tri_corr_13.clone(),
+        "tri_corr_23": tri_corr_23.clone(),
+        "t12_costs": t12_costs.clone(),
+        "t13_costs": t13_costs.clone(),
+        "t23_costs": t23_costs.clone(),
+        "edge_counter": edge_counter.clone()
+    }
+
+    dataset = SingleMulticutDataset(data_dict)
+    loader = DataLoader(dataset, batch_size=1, shuffle=False)
+
+    model = MLPMessagePassing().to(device)
+    if os.path.exists(MODEL_PATH):
+        state_dict = torch.load(MODEL_PATH, map_location=device, weights_only=True)
+        model.load_state_dict(state_dict)
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    model.train()
+    for epoch in range(num_epochs):
+        for batch in loader:
+            batch = {k: v.squeeze(0) for k, v in batch.items()}
+            optimizer.zero_grad()
+            updated = model(batch)
+            loss = loss_fn(updated)
+            print("[PYTHON] Loss:", loss)
+            loss.backward()
+            optimizer.step()
+            torch.save(model.state_dict(), MODEL_PATH)
+
+    return updated["edge_costs"].detach(), updated["t12_costs"].detach(), updated["t13_costs"].detach(), updated["t23_costs"].detach()

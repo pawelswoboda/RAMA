@@ -11,7 +11,7 @@
 #include "rama_utils.h"
 #include "time_measure_util.h"
 #include "stdio.h"
-
+ 
 void multicut_message_passing::compute_triangle_edge_correspondence(
     const thrust::device_vector<int>& ta, const thrust::device_vector<int>& tb, 
     thrust::device_vector<int>& edge_counter, thrust::device_vector<int>& triangle_correspondence_ab)
@@ -360,6 +360,17 @@ void multicut_message_passing::iteration(const bool use_nn) {
     } else {
         send_messages_to_triplets();
         send_messages_to_edges();
+
+        thrust::host_vector<float> h_t12 = t12_costs;
+        thrust::host_vector<float> h_t13 = t13_costs;
+        thrust::host_vector<float> h_t23 = t23_costs;
+    /*  for (int t = 0; t < std::min(10, (int)h_t12.size()); ++t) {
+            std::cout << "[C++] Triangle " << t << ": "
+                    << "λ12 = " << -h_t12[t] << ", "
+                    << "λ13 = " << -h_t13[t] << ", "
+                    << "λ23 = " << -h_t23[t] << std::endl;
+        } */
+
     }
 }
 
@@ -382,7 +393,7 @@ void multicut_message_passing::update_lagrange_via_nn() {
 
 
     auto mod = py::module_::import("nn_message_passing");
-    auto nn_func = mod.attr("nn_update_lagrange");
+    auto nn_func = mod.attr("nn_update");
 
     long edge_costs_ptr = reinterpret_cast<long>(thrust::raw_pointer_cast(edge_costs.data()));
     long t1_ptr = reinterpret_cast<long>(thrust::raw_pointer_cast(t1.data()));
@@ -393,10 +404,16 @@ void multicut_message_passing::update_lagrange_via_nn() {
     long t12_costs_ptr = reinterpret_cast<long>(thrust::raw_pointer_cast(t12_costs.data()));
     long t13_costs_ptr = reinterpret_cast<long>(thrust::raw_pointer_cast(t13_costs.data()));
     long t23_costs_ptr = reinterpret_cast<long>(thrust::raw_pointer_cast(t23_costs.data()));
+    long triangle_corr_12_ptr = reinterpret_cast<long>(thrust::raw_pointer_cast(triangle_correspondence_12.data()));
+    long triangle_corr_13_ptr = reinterpret_cast<long>(thrust::raw_pointer_cast(triangle_correspondence_13.data()));
+    long triangle_corr_23_ptr = reinterpret_cast<long>(thrust::raw_pointer_cast(triangle_correspondence_23.data()));
+    long edge_counter_ptr = reinterpret_cast<long>(thrust::raw_pointer_cast(edge_counter.data()));
 
     py::object result_obj = nn_func(
         edge_costs_ptr, t1_ptr, t2_ptr, t3_ptr, i_ptr, j_ptr,
         t12_costs_ptr, t13_costs_ptr, t23_costs_ptr,
+        triangle_corr_12_ptr, triangle_corr_13_ptr, triangle_corr_23_ptr,
+        edge_counter_ptr,
         edge_costs.size(), t1.size(), i.size()
     );
 
