@@ -166,6 +166,7 @@ std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>> > r
 
 std::tuple<std::vector<int>, double, int, std::vector<std::vector<int>> > rama_cuda(const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& costs, const multicut_solver_options& opts)
 {
+
     initialize_gpu(opts.verbose);
     thrust::device_vector<int> i_gpu(i.begin(), i.end());
     thrust::device_vector<int> j_gpu(j.begin(), j.end());

@@ -382,10 +382,15 @@ namespace py = pybind11;
 
 void multicut_message_passing::update_lagrange_via_nn() {
 
-    static bool python_initialized = false;
+/*  static bool python_initialized = false;
     if (!python_initialized) {
         static py::scoped_interpreter guard{};
         python_initialized = true;
+    }
+
+    */
+    if (!Py_IsInitialized()) {
+        static py::scoped_interpreter guard{};  
     }
     py::gil_scoped_acquire acquire;
     auto sys = py::module_::import("sys");

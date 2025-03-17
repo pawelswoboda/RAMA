@@ -41,8 +41,6 @@ class ClassicalMessagePassing:
     def compute_lower_bound(self):
         return self.compute_edge_lower_bound() + self.compute_triangle_lower_bound()
 
-
-
     def send_messages_to_triplets(self):
         for tri_costs, tri_corr in zip(
             [self.t12_costs, self.t13_costs, self.t23_costs],

@@ -118,20 +118,22 @@ def via_mlp(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
     }
 
     dataset = SingleMulticutDataset(data_dict)
-    loader = DataLoader(dataset, batch_size=1, shuffle=False)
+    data_loader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=0)
 
     model = MLPMessagePassing().to(device)
+    
     if os.path.exists(MODEL_PATH):
         state_dict = torch.load(MODEL_PATH, map_location=device, weights_only=True)
         model.load_state_dict(state_dict)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     model.train()
+    
     for epoch in range(num_epochs):
-        for batch in loader:
-            batch = {k: v.squeeze(0) for k, v in batch.items()}
+        for dicts in data_loader:
+            dicts = {k: v.squeeze(0) for k, v in dicts.items()}
             optimizer.zero_grad()
-            updated = model(batch)
+            updated = model(dicts)
             loss = loss_fn(updated)
             print("[PYTHON] Loss:", loss)
             loss.backward()
