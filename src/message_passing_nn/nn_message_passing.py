@@ -6,7 +6,6 @@ from torch.utils.data import DataLoader, Dataset
 from mp.mlp_message_passing import MLPMessagePassing
 import os
 
-
 TORCH_DTYPE_TO_NUMPY = {
     torch.float32: np.float32,
     torch.float64: np.float64,
@@ -52,92 +51,97 @@ def nn_update(edge_costs_ptr, t1_ptr, t2_ptr, t3_ptr, i_ptr, j_ptr,
     tri_corr_12 = ptr_to_tensor(triangle_corr_12_ptr, num_triangles, torch.int32).long()
     tri_corr_13 = ptr_to_tensor(triangle_corr_13_ptr, num_triangles, torch.int32).long()
     tri_corr_23 = ptr_to_tensor(triangle_corr_23_ptr, num_triangles, torch.int32).long()
-    edge_counter   = ptr_to_tensor(edge_counter_ptr, num_edges, torch.int32)
+    
+    edge_counter = ptr_to_tensor(edge_counter_ptr, num_edges, torch.int32)
+
 
     updated_edge_costs, updated_t12_costs, updated_t13_costs, updated_t23_costs = via_mlp(
         edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
         t12_costs, t13_costs, t23_costs,edge_counter
     )
-
+  
+    print("[PYTHON] updated edge costs:", updated_edge_costs)
+    
     return (
-        updated_edge_costs.cpu().numpy(),
-        updated_t12_costs.cpu().numpy(),
-        updated_t13_costs.cpu().numpy(),
-        updated_t23_costs.cpu().numpy()
+        updated_edge_costs,
+        updated_t12_costs,
+        updated_t13_costs,
+        updated_t23_costs
     )
+
+
 
 
 
 
 def via_dbca(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
              t12_costs, t13_costs, t23_costs, edge_counter):
+    
+    print("[DEBUG] Initial edge costs:", edge_costs)
+    print("[DEBUG] Initial t12/t13/t23:", t12_costs, t13_costs, t23_costs)
 
     mp = ClassicalMessagePassing(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
                                    t12_costs, t13_costs, t23_costs, edge_counter)
     mp.iteration()  
+
     print("[PYTHON] Lower bound:", mp.compute_lower_bound())
-    return mp.edge_costs, mp.t12_costs, mp.t13_costs, mp.t23_costs
+
+    return mp.edge_costs.cpu().numpy(), mp.t12_costs.cpu().numpy(), mp.t13_costs.cpu().numpy(), mp.t23_costs.cpu().numpy()
 
 
 
 def via_mlp(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
-            t12_costs, t13_costs, t23_costs, edge_counter,
-            num_epochs=1, lr=1e-3):
+            t12_costs, t13_costs, t23_costs, edge_counter, lr=1e-3):
+    
+    print("[DEBUG] Initial edge costs:", edge_costs)
+    print("[DEBUG] Initial t12/t13/t23:", t12_costs, t13_costs, t23_costs)
 
     def compute_lower_bound(data):
         edge_lb = torch.sum(torch.where(data["edge_costs"] < 0, data["edge_costs"], torch.zeros_like(data["edge_costs"])))
         a, b, c = data["t12_costs"], data["t13_costs"], data["t23_costs"]
-        tri_lb = torch.min(torch.stack([torch.zeros_like(a), a+b, a+c, b+c, a+b+c], dim=0), dim=0).values.sum()
+        tri_lb = torch.min(torch.stack([torch.zeros_like(a), a + b, a + c, b + c, a + b + c], dim=0), dim=0).values.sum()
         return edge_lb + tri_lb
 
     def loss_fn(data):
         return -compute_lower_bound(data)
 
-    class SingleMulticutDataset(Dataset):
-        def __init__(self, data):
-            self.data = data  
-
-        def __len__(self):
-            return 1  
-
-        def __getitem__(self, idx):
-            return self.data
-    
-    device = edge_costs.device  
+    device = edge_costs.device
     MODEL_PATH = "./mlp_model.pt"
-    
-    data_dict = {
-        "edge_costs": edge_costs.clone(),
-        "tri_corr_12": tri_corr_12.clone(),
-        "tri_corr_13": tri_corr_13.clone(),
-        "tri_corr_23": tri_corr_23.clone(),
-        "t12_costs": t12_costs.clone(),
-        "t13_costs": t13_costs.clone(),
-        "t23_costs": t23_costs.clone(),
-        "edge_counter": edge_counter.clone()
+
+    data = {
+        "edge_costs": edge_costs,
+        "tri_corr_12": tri_corr_12,
+        "tri_corr_13": tri_corr_13,
+        "tri_corr_23": tri_corr_23,
+        "t12_costs": t12_costs,
+        "t13_costs": t13_costs,
+        "t23_costs": t23_costs,
+        "edge_counter": edge_counter
     }
-
-    dataset = SingleMulticutDataset(data_dict)
-    data_loader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=0)
-
+    
     model = MLPMessagePassing().to(device)
     
     if os.path.exists(MODEL_PATH):
         state_dict = torch.load(MODEL_PATH, map_location=device, weights_only=True)
+       # print("[DEBUG] Loaded MLP model weights")
         model.load_state_dict(state_dict)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     model.train()
-    
-    for epoch in range(num_epochs):
-        for dicts in data_loader:
-            dicts = {k: v.squeeze(0) for k, v in dicts.items()}
-            optimizer.zero_grad()
-            updated = model(dicts)
-            loss = loss_fn(updated)
-            print("[PYTHON] Loss:", loss)
-            loss.backward()
-            optimizer.step()
-            torch.save(model.state_dict(), MODEL_PATH)
 
-    return updated["edge_costs"].detach(), updated["t12_costs"].detach(), updated["t13_costs"].detach(), updated["t23_costs"].detach()
+    optimizer.zero_grad()
+    updated_data = model(data)  
+    loss = loss_fn(updated_data)
+    print("[PYTHON] Loss:", loss.item())
+    loss.backward()
+    optimizer.step()
+    
+    torch.save(model.state_dict(), MODEL_PATH)
+ 
+
+    return (
+        updated_data["edge_costs"].detach().cpu().clone().numpy(),  # soll später: [PYTHON] updated edge costs: tensor([ 0.2333, -1.0333, -0.4667], device='cuda:0')
+        updated_data["t12_costs"].detach().cpu().clone().numpy(),
+        updated_data["t13_costs"].detach().cpu().clone().numpy(),
+        updated_data["t23_costs"].detach().cpu().clone().numpy()
+    )

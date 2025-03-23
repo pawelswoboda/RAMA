@@ -31,14 +31,22 @@ class MLPMessagePassing(nn.Module):
         delta = self.mlp(tri_features)
 
         edge_updates = torch.zeros_like(data["edge_costs"])
-        edge_updates = edge_updates.scatter_add(0, data["tri_corr_12"], delta[:, 0])
-        edge_updates = edge_updates.scatter_add(0, data["tri_corr_13"], delta[:, 1])
-        edge_updates = edge_updates.scatter_add(0, data["tri_corr_23"], delta[:, 2])
+        edge_updates.scatter_add_(0, data["tri_corr_12"], delta[:, 0])
+        edge_updates.scatter_add_(0, data["tri_corr_13"], delta[:, 1])
+        edge_updates.scatter_add_(0, data["tri_corr_23"], delta[:, 2])
 
-        data["edge_costs"] = data["edge_costs"] + edge_updates
+        data["edge_costs"] += edge_updates
+        
+        data["t12_costs"] -= delta[:,0]
+        data["t13_costs"] -= delta[:,1]
+        data["t23_costs"] -= delta[:,2]
+
         return data
 
     def forward(self, data):
         data = self.send_messages_to_triplets(data)
+        print("[DEBUG] After triplet messages - edge costs:", data["edge_costs"])
+        print("[DEBUG] After triplet messages - t12/t13/t23:", data["t12_costs"], data["t13_costs"], data["t23_costs"])
+
         data = self.send_messages_to_edges_mlp(data)
         return data
