@@ -24,29 +24,33 @@ class MLPMessagePassing(nn.Module):
         mask = data["edge_counter"] > 0
         data["edge_costs"] = data["edge_costs"].masked_fill(mask, 0.0)
         return data
+   
 
     def send_messages_to_edges_mlp(self, data):
         tri_features = torch.stack([data["t12_costs"], data["t13_costs"], data["t23_costs"]], dim=1)
-        
         delta = self.mlp(tri_features)
 
-        edge_updates = torch.zeros_like(data["edge_costs"])
-        edge_updates.scatter_add_(0, data["tri_corr_12"], delta[:, 0])
-        edge_updates.scatter_add_(0, data["tri_corr_13"], delta[:, 1])
-        edge_updates.scatter_add_(0, data["tri_corr_23"], delta[:, 2])
+        t12_old = data["t12_costs"].clone()
+        t13_old = data["t13_costs"].clone()
+        t23_old = data["t23_costs"].clone()
 
-        data["edge_costs"] += edge_updates
-        
-        data["t12_costs"] -= delta[:,0]
-        data["t13_costs"] -= delta[:,1]
-        data["t23_costs"] -= delta[:,2]
+        data["t12_costs"] -= delta[:, 0]
+        data["t13_costs"] -= delta[:, 1]
+        data["t23_costs"] -= delta[:, 2]
+
+        for key, tri_vals, corr_key in zip(
+            ["t12_costs", "t13_costs", "t23_costs"],
+            [t12_old, t13_old, t23_old],
+            ["tri_corr_12", "tri_corr_13", "tri_corr_23"]
+        ):
+            tri_corr = data[corr_key]
+            counts = data["edge_counter"][tri_corr].float().clamp(min=1)
+            data["edge_costs"].index_add_(0, tri_corr, tri_vals / counts)
+            data[key].zero_()  
 
         return data
 
     def forward(self, data):
         data = self.send_messages_to_triplets(data)
-        print("[DEBUG] After triplet messages - edge costs:", data["edge_costs"])
-        print("[DEBUG] After triplet messages - t12/t13/t23:", data["t12_costs"], data["t13_costs"], data["t23_costs"])
-
         data = self.send_messages_to_edges_mlp(data)
         return data

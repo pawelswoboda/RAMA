@@ -60,5 +60,6 @@ double dual_solver(dCOO& A, const int max_cycle_length, const int num_iter, cons
         std::cerr<<"Dual solver out of memory, returning trivial lower bound\n";
         final_lb = get_lb(A.get_data());
     }
+
     return final_lb;
 }

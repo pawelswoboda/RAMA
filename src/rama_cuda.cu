@@ -68,8 +68,8 @@ std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>> > r
 
     assert(A.is_directed());
 
-    const double final_lb = dual_solver(A, opts.max_cycle_length_lb, opts.num_dual_itr_lb, opts.tri_memory_factor, opts.num_outer_itr_dual, 1e-4, opts.verbose);
-
+    double final_lb = dual_solver(A, opts.max_cycle_length_lb, opts.num_dual_itr_lb, opts.tri_memory_factor, opts.num_outer_itr_dual, 1e-4, opts.verbose);
+    
     if (opts.verbose)
         std::cout << "initial energy = " << A.sum() << "\n";
 
@@ -88,9 +88,8 @@ std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>> > r
     for(size_t iter=0; A.nnz() > 0; ++iter)
     {
         if (iter > 0)
-        {        //!!!!!!!!!!!!!!!!!!
-
-            dual_solver(A, opts.max_cycle_length_primal, opts.num_dual_itr_primal, 1.0, 1, 1e-4, opts.verbose);
+        {      
+            final_lb = dual_solver(A, opts.max_cycle_length_primal, opts.num_dual_itr_primal, 1.0, 1, 1e-4, opts.verbose);
         }
         thrust::device_vector<int> cur_node_mapping;
         int nr_edges_to_contract;

@@ -102,7 +102,4 @@ class ClassicalMessagePassing:
 
     def iteration(self):
         self.send_messages_to_triplets()
-        print("[DEBUG] After triplet messages - edge costs:", self.edge_costs)
-        print("[DEBUG] After triplet messages - t12/t13/t23:", self.t12_costs, self.t13_costs, self.t23_costs)
-
         self.send_messages_to_edges()

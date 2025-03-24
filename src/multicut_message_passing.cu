@@ -360,17 +360,6 @@ void multicut_message_passing::iteration(const bool use_nn) {
     } else {
         send_messages_to_triplets();
         send_messages_to_edges();
-
-        thrust::host_vector<float> h_t12 = t12_costs;
-        thrust::host_vector<float> h_t13 = t13_costs;
-        thrust::host_vector<float> h_t23 = t23_costs;
-    /*  for (int t = 0; t < std::min(10, (int)h_t12.size()); ++t) {
-            std::cout << "[C++] Triangle " << t << ": "
-                    << "λ12 = " << -h_t12[t] << ", "
-                    << "λ13 = " << -h_t13[t] << ", "
-                    << "λ23 = " << -h_t23[t] << std::endl;
-        } */
-
     }
 }
 

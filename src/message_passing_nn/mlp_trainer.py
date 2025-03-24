@@ -39,7 +39,7 @@ def train_all_graphs_with_loader():
 
     print(f"[INFO] Found {len(dataset)} Multicut instances.")
 
-    for epoch in range(5):
+    for epoch in range(1):
         for sample in loader:
             i = sample["i"]
             j = sample["j"]
