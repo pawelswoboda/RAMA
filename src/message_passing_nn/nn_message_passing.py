@@ -83,7 +83,7 @@ def via_dbca(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
 def via_mlp(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
             t12_costs, t13_costs, t23_costs, edge_counter, lr=1e-3):
 
-    def compute_lower_bound(data):
+    def lower_bound(data):
         edge_lb = torch.sum(torch.where(data["edge_costs"] < 0, data["edge_costs"], torch.zeros_like(data["edge_costs"])))
         a = data["t12_costs"]
         b = data["t13_costs"]
@@ -101,7 +101,7 @@ def via_mlp(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
         return edge_lb + tri_lb
 
     def loss_fn(data):
-        return -compute_lower_bound(data)
+        return -lower_bound(data)/data["edge_costs"].numel()
 
     device = edge_costs.device
     MODEL_PATH = "./mlp_model.pt"
@@ -131,6 +131,7 @@ def via_mlp(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
     updated_data = model(data)  
     loss = loss_fn(updated_data)
     print("[PYTHON] Loss:", loss.item())
+    print("[PYTHON] Lowerbound:", lower_bound(updated_data))
     loss.backward()
     optimizer.step()
     
