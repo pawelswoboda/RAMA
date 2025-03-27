@@ -1,5 +1,0 @@
-./build/src/rama_text_input -f ./test/nn_message_passing_test/test0_instance.txt -o ./test/nn_message_passing_test/solution0.txt
-
-python3 setup.py clean 
-
-python3 -m pip install .
