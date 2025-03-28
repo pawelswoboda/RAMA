@@ -11,20 +11,26 @@ class MulticutGraphDataset(Dataset):
 
     def __getitem__(self, idx):
         filepath = self.files[idx]
-        with open(filepath, "r") as f:
-            lines = f.readlines()
+        try:
+            with open(filepath, "r") as f:
+                lines = f.readlines()
 
-        assert lines[0].strip() == "MULTICUT"
-        i, j, costs = [], [], []
-        for line in lines[1:]:
-            u, v, c = line.strip().split()
-            i.append(int(u))
-            j.append(int(v))
-            costs.append(float(c))
+            assert lines[0].strip() == "MULTICUT", f"{filepath.name} missing MULTICUT header"
+            i, j, costs = [], [], []
+            for line in lines[1:]:
+                parts = line.strip().split()
+                if len(parts) != 3:
+                    raise ValueError(f"Malformed line in {filepath.name}: {line.strip()}")
+                u, v, c = parts
+                i.append(int(u))
+                j.append(int(v))
+                costs.append(float(c))
 
-        return {
-            "i": i,
-            "j": j,
-            "costs": costs,
-            "name": filepath.name
-        }
+            return {
+                "i": i,
+                "j": j,
+                "costs": costs,
+                "name": filepath.name
+            }
+        except Exception as e:
+            raise RuntimeError(f"[DATASET ERROR] Failed to load file {filepath.name}: {e}")

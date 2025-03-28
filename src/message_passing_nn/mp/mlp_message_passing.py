@@ -19,7 +19,7 @@ class MLPMessagePassing(nn.Module):
         ):
             edge_vals = data["edge_costs"].gather(0, data[corr_key])
             counts = data["edge_counter"].gather(0, data[corr_key]).float().clamp(min=1)
-            data[key] += edge_vals / counts
+            data[key] = data[key] + edge_vals / counts
 
         mask = data["edge_counter"] > 0
         data["edge_costs"] = data["edge_costs"].masked_fill(mask, 0.0)

@@ -2,7 +2,6 @@ import torch
 import cupy as cp
 import numpy as np
 from mp.dbca_message_passing import ClassicalMessagePassing
-from torch.utils.data import DataLoader, Dataset
 from mp.mlp_message_passing import MLPMessagePassing
 import os
 
@@ -32,9 +31,7 @@ def nn_update(edge_costs_ptr, t1_ptr, t2_ptr, t3_ptr, i_ptr, j_ptr,
                        t12_costs_ptr, t13_costs_ptr, t23_costs_ptr,
                        triangle_corr_12_ptr, triangle_corr_13_ptr, triangle_corr_23_ptr,
                        edge_counter_ptr, num_edges, num_triangles, num_nodes):
-    
-    print("=== Python ===")
-    
+        
     edge_costs = ptr_to_tensor(edge_costs_ptr, num_edges, torch.float32)
 
     t1 = ptr_to_tensor(t1_ptr, num_triangles, torch.int32)
@@ -74,14 +71,14 @@ def via_dbca(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
                                    t12_costs, t13_costs, t23_costs, edge_counter)
     mp.iteration()  
 
-    print("[PYTHON] Lower bound:", mp.compute_lower_bound())
+  #  print("[PYTHON] Lower bound:", mp.compute_lower_bound())
 
     return mp.edge_costs.cpu().numpy(), mp.t12_costs.cpu().numpy(), mp.t13_costs.cpu().numpy(), mp.t23_costs.cpu().numpy()
 
 
 
 def via_mlp(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
-            t12_costs, t13_costs, t23_costs, edge_counter, lr=1e-3):
+            t12_costs, t13_costs, t23_costs, edge_counter):
 
     def lower_bound(data):
         edge_lb = torch.sum(torch.where(data["edge_costs"] < 0, data["edge_costs"], torch.zeros_like(data["edge_costs"])))
@@ -118,24 +115,29 @@ def via_mlp(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
     }
     
     model = MLPMessagePassing().to(device)
-    
+
     if os.path.exists(MODEL_PATH):
         state_dict = torch.load(MODEL_PATH, map_location=device, weights_only=True)
-      # print("[DEBUG] Loaded MLP model weights")
         model.load_state_dict(state_dict)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    model.train()
-
-    optimizer.zero_grad()
-    updated_data = model(data)  
-    loss = loss_fn(updated_data)
-    print("[PYTHON] Loss:", loss.item())
-    print("[PYTHON] Lowerbound:", lower_bound(updated_data))
-    loss.backward()
-    optimizer.step()
+    train = False
     
-    torch.save(model.state_dict(), MODEL_PATH)
+    if train:
+        print("[PYTHON] training...")
+        model.train()
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+        optimizer.zero_grad()
+        updated_data = model(data)  
+        loss = loss_fn(updated_data)
+        loss.backward()
+        optimizer.step()
+        torch.save(model.state_dict(), MODEL_PATH)
+    else:
+        print("[PYTHON] testing...")
+        model.eval()
+        with torch.no_grad():
+            updated_data = model(data)
+    
 
  
     return (
