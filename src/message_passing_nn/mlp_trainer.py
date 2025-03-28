@@ -11,14 +11,14 @@ def train():
     opts.verbose = False
     print(f"[INFO] Found {len(dataset)} Multicut instances.")
     fails = set()
-    for epoch in range(10):
-        print(f"epoch: {epoch+1}")
+    for epoch in range(5):
         for sample in loader:
+            name = sample["name"][0]
+            print(f"[LOADING] {name}...")
             try:
                 i = sample["i"]
                 j = sample["j"]
                 costs = sample["costs"]
-                name = sample["name"][0]
                 mapping, lb, _, _ = rama_py.rama_cuda(i, j, costs, opts)
                 print(f"[SUCCESS] {name}") #: Clusters: {mapping}, LB: {lb}")
             except Exception as e:

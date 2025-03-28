@@ -3,7 +3,7 @@ from torch.utils.data import DataLoader
 from multicut_dataset import MulticutGraphDataset
 import rama_py
 
-mlp = False # DISABLE_MLP=1 /bin/python3 /home/houraghene/RAMA/src/message_passing_nn/mlp_tester.py  
+mlp = True # DISABLE_MLP=1 /bin/python3 /home/houraghene/RAMA/src/message_passing_nn/mlp_tester.py  
 # # dont forget to put train = false in nn_message_passing.py
 
 data_dir = "src/message_passing_nn/data"
