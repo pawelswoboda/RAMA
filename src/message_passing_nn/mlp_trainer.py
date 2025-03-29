@@ -5,13 +5,13 @@ from multicut_dataset import MulticutGraphDataset
 # DISABLE_MLP=1 /bin/python3 /home/houraghene/RAMA/src/message_passing_nn/mlp_trainer.py 
 # dont forget to put train = true in nn_message_passing.py
 def train():
-    dataset = MulticutGraphDataset("src/message_passing_nn/data/train")
+    dataset = MulticutGraphDataset("src/message_passing_nn/data2/train")
     loader = DataLoader(dataset, batch_size=1, shuffle=True)  
     opts = rama_py.multicut_solver_options("PD")
     opts.verbose = False
     print(f"[INFO] Found {len(dataset)} Multicut instances.")
     fails = set()
-    for epoch in range(5):
+    for epoch in range(1):
         for sample in loader:
             name = sample["name"][0]
             print(f"[LOADING] {name}...")
@@ -20,7 +20,7 @@ def train():
                 j = sample["j"]
                 costs = sample["costs"]
                 mapping, lb, _, _ = rama_py.rama_cuda(i, j, costs, opts)
-                print(f"[SUCCESS] {name}") #: Clusters: {mapping}, LB: {lb}")
+                print(f"[SUCCESS] {name}: Clusters: {mapping}, LB: {lb}")
             except Exception as e:
                 print(f"[ERROR] Failed on file {name}: {e}")
                 fails.add(name)

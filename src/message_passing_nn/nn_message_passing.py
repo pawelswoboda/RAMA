@@ -23,7 +23,7 @@ def ptr_to_tensor(ptr, num_elements, dtype, device='cuda'):
         dtype=np_dtype,
         memptr=cp.cuda.MemoryPointer(cp.cuda.UnownedMemory(ptr, num_elements * np_dtype().itemsize, None), 0)
     )
-    torch_tensor = torch.as_tensor(cp_array).to(device).clone()
+    torch_tensor = torch.as_tensor(cp_array).to(device) #.clone()
     return torch_tensor
 
 
@@ -32,7 +32,6 @@ def nn_update(edge_costs_ptr, t1_ptr, t2_ptr, t3_ptr, i_ptr, j_ptr,
                        triangle_corr_12_ptr, triangle_corr_13_ptr, triangle_corr_23_ptr,
                        edge_counter_ptr, num_edges, num_triangles, num_nodes):
         
-    edge_costs = ptr_to_tensor(edge_costs_ptr, num_edges, torch.float32)
 
     t1 = ptr_to_tensor(t1_ptr, num_triangles, torch.int32)
     t2 = ptr_to_tensor(t2_ptr, num_triangles, torch.int32)
@@ -41,20 +40,28 @@ def nn_update(edge_costs_ptr, t1_ptr, t2_ptr, t3_ptr, i_ptr, j_ptr,
     i = ptr_to_tensor(i_ptr, num_nodes, torch.int32)
     j = ptr_to_tensor(j_ptr, num_nodes, torch.int32)
 
-    t12_costs = ptr_to_tensor(t12_costs_ptr, num_triangles, torch.float32)
-    t13_costs = ptr_to_tensor(t13_costs_ptr, num_triangles, torch.float32)
-    t23_costs = ptr_to_tensor(t23_costs_ptr, num_triangles, torch.float32)
-
     tri_corr_12 = ptr_to_tensor(triangle_corr_12_ptr, num_triangles, torch.int32).long()
     tri_corr_13 = ptr_to_tensor(triangle_corr_13_ptr, num_triangles, torch.int32).long()
     tri_corr_23 = ptr_to_tensor(triangle_corr_23_ptr, num_triangles, torch.int32).long()
-    
+
     edge_counter = ptr_to_tensor(edge_counter_ptr, num_edges, torch.int32)
+
+    #edge_costs = ptr_to_tensor(edge_costs_ptr, num_edges, torch.float32)
+    #t12_costs = ptr_to_tensor(t12_costs_ptr, num_triangles, torch.float32)
+    #t13_costs = ptr_to_tensor(t13_costs_ptr, num_triangles, torch.float32)
+    #t23_costs = ptr_to_tensor(t23_costs_ptr, num_triangles, torch.float32)
+
+
+    edge_costs = ptr_to_tensor(edge_costs_ptr, num_edges, torch.float32).requires_grad_()
+    t12_costs = ptr_to_tensor(t12_costs_ptr, num_triangles, torch.float32).requires_grad_()
+    t13_costs = ptr_to_tensor(t13_costs_ptr, num_triangles, torch.float32).requires_grad_()
+    t23_costs = ptr_to_tensor(t23_costs_ptr, num_triangles, torch.float32).requires_grad_()
+
 
 
     updated_edge_costs, updated_t12_costs, updated_t13_costs, updated_t23_costs = via_mlp(
         edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
-        t12_costs, t13_costs, t23_costs,edge_counter
+        t12_costs, t13_costs, t23_costs,edge_counter, train=True
     )
       
     return (
@@ -78,7 +85,7 @@ def via_dbca(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
 
 
 def via_mlp(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
-            t12_costs, t13_costs, t23_costs, edge_counter):
+            t12_costs, t13_costs, t23_costs, edge_counter, train=True):
 
     def lower_bound(data):
         edge_lb = torch.sum(torch.where(data["edge_costs"] < 0, data["edge_costs"], torch.zeros_like(data["edge_costs"])))
@@ -119,21 +126,26 @@ def via_mlp(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
     if os.path.exists(MODEL_PATH):
         state_dict = torch.load(MODEL_PATH, map_location=device, weights_only=True)
         model.load_state_dict(state_dict)
-
-    train = False
     
     if train:
-        print("[PYTHON] training...")
+    #    print("[PYTHON] training...")
         model.train()
         optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
         optimizer.zero_grad()
         updated_data = model(data)  
         loss = loss_fn(updated_data)
         loss.backward()
+        print(f"Loss: {loss.item():.6f}")
+        for name, param in model.named_parameters():
+            if param.grad is not None:
+                print(name, "grad norm", param.grad.norm().item())
+            else:
+                print(name, "grad is None")
+
         optimizer.step()
         torch.save(model.state_dict(), MODEL_PATH)
     else:
-        print("[PYTHON] testing...")
+       # print("[PYTHON] testing...")
         model.eval()
         with torch.no_grad():
             updated_data = model(data)

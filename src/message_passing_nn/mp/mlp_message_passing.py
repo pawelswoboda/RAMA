@@ -3,7 +3,6 @@ import torch.nn as nn
 
 class MLPMessagePassing(nn.Module):
     def __init__(self, input_dim=3, hidden_dim=16, output_dim=3):
-      
         super(MLPMessagePassing, self).__init__()
         
         self.mlp = nn.Sequential(
@@ -22,9 +21,9 @@ class MLPMessagePassing(nn.Module):
             data[key] = data[key] + edge_vals / counts
 
         mask = data["edge_counter"] > 0
-        data["edge_costs"] = data["edge_costs"].masked_fill(mask, 0.0)
+        data["edge_costs"] = torch.where(mask, torch.zeros_like(data["edge_costs"]), data["edge_costs"])
+        
         return data
-   
 
     def send_messages_to_edges_mlp(self, data):
         tri_features = torch.stack([data["t12_costs"], data["t13_costs"], data["t23_costs"]], dim=1)
@@ -38,15 +37,20 @@ class MLPMessagePassing(nn.Module):
         data["t13_costs"] -= delta[:, 1]
         data["t23_costs"] -= delta[:, 2]
 
-        for key, tri_vals, corr_key in zip(
-            ["t12_costs", "t13_costs", "t23_costs"],
-            [t12_old, t13_old, t23_old],
-            ["tri_corr_12", "tri_corr_13", "tri_corr_23"]
-        ):
-            tri_corr = data[corr_key]
-            counts = data["edge_counter"][tri_corr].float().clamp(min=1)
-            data["edge_costs"].index_add_(0, tri_corr, tri_vals / counts)
-            data[key].zero_()  
+        edge_updates = torch.zeros_like(data["edge_costs"])
+        counts_12 = data["edge_counter"][data["tri_corr_12"]].float().clamp(min=1)
+        counts_13 = data["edge_counter"][data["tri_corr_13"]].float().clamp(min=1)
+        counts_23 = data["edge_counter"][data["tri_corr_23"]].float().clamp(min=1)
+
+        edge_updates = edge_updates.scatter_add(0, data["tri_corr_12"], t12_old / counts_12)
+        edge_updates = edge_updates.scatter_add(0, data["tri_corr_13"], t13_old / counts_13)
+        edge_updates = edge_updates.scatter_add(0, data["tri_corr_23"], t23_old / counts_23)
+
+        data["edge_costs"] = data["edge_costs"] + edge_updates
+        
+        data["t12_costs"] = torch.zeros_like(t12_old)
+        data["t13_costs"] = torch.zeros_like(t13_old)
+        data["t23_costs"] = torch.zeros_like(t23_old)
 
         return data
 
