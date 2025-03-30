@@ -11,7 +11,6 @@ def evaluate():
     matches = 0
     total_ari = 0.0
     count = 0
-
     cpp_lbs = []
     mlp_lbs = []
     instance_names = []

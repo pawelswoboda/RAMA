@@ -23,7 +23,7 @@ def ptr_to_tensor(ptr, num_elements, dtype, device='cuda'):
         dtype=np_dtype,
         memptr=cp.cuda.MemoryPointer(cp.cuda.UnownedMemory(ptr, num_elements * np_dtype().itemsize, None), 0)
     )
-    torch_tensor = torch.as_tensor(cp_array).to(device) #.clone()
+    torch_tensor = torch.as_tensor(cp_array).to(device)
     return torch_tensor
 
 
@@ -46,22 +46,14 @@ def nn_update(edge_costs_ptr, t1_ptr, t2_ptr, t3_ptr, i_ptr, j_ptr,
 
     edge_counter = ptr_to_tensor(edge_counter_ptr, num_edges, torch.int32)
 
-    #edge_costs = ptr_to_tensor(edge_costs_ptr, num_edges, torch.float32)
-    #t12_costs = ptr_to_tensor(t12_costs_ptr, num_triangles, torch.float32)
-    #t13_costs = ptr_to_tensor(t13_costs_ptr, num_triangles, torch.float32)
-    #t23_costs = ptr_to_tensor(t23_costs_ptr, num_triangles, torch.float32)
-
-
-    edge_costs = ptr_to_tensor(edge_costs_ptr, num_edges, torch.float32).requires_grad_()
-    t12_costs = ptr_to_tensor(t12_costs_ptr, num_triangles, torch.float32).requires_grad_()
-    t13_costs = ptr_to_tensor(t13_costs_ptr, num_triangles, torch.float32).requires_grad_()
-    t23_costs = ptr_to_tensor(t23_costs_ptr, num_triangles, torch.float32).requires_grad_()
-
-
+    edge_costs = ptr_to_tensor(edge_costs_ptr, num_edges, torch.float32)
+    t12_costs = ptr_to_tensor(t12_costs_ptr, num_triangles, torch.float32)
+    t13_costs = ptr_to_tensor(t13_costs_ptr, num_triangles, torch.float32)
+    t23_costs = ptr_to_tensor(t23_costs_ptr, num_triangles, torch.float32)
 
     updated_edge_costs, updated_t12_costs, updated_t13_costs, updated_t23_costs = via_mlp(
         edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
-        t12_costs, t13_costs, t23_costs,edge_counter, train=True
+        t12_costs, t13_costs, t23_costs,edge_counter
     )
       
     return (
@@ -83,15 +75,13 @@ def via_dbca(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
     return mp.edge_costs.cpu().numpy(), mp.t12_costs.cpu().numpy(), mp.t13_costs.cpu().numpy(), mp.t23_costs.cpu().numpy()
 
 
-
 def via_mlp(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
             t12_costs, t13_costs, t23_costs, edge_counter, train=True):
-
-    def lower_bound(data):
-        edge_lb = torch.sum(torch.where(data["edge_costs"] < 0, data["edge_costs"], torch.zeros_like(data["edge_costs"])))
-        a = data["t12_costs"]
-        b = data["t13_costs"]
-        c = data["t23_costs"]
+    
+    def lower_bound(edge_costs, t12, t13, t23):
+        edge_lb = torch.sum(torch.where(edge_costs < 0, edge_costs, torch.zeros_like(edge_costs)))
+        
+        a, b, c = t12, t13, t23
         zero = torch.zeros_like(a)
 
         lb = torch.stack([
@@ -101,60 +91,55 @@ def via_mlp(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
             b + c,
             a + b + c
         ])
-        tri_lb =  torch.min(lb, dim=0).values.sum()
+        tri_lb = torch.min(lb, dim=0).values.sum()
         return edge_lb + tri_lb
 
-    def loss_fn(data):
-        return -lower_bound(data)/data["edge_costs"].numel()
+    def loss_fn(edge_costs, t12, t13, t23):
+        return -lower_bound(edge_costs, t12, t13, t23) / edge_costs.numel()
 
     device = edge_costs.device
-    MODEL_PATH = "./mlp_model.pt"
-
-    data = {
-        "edge_costs": edge_costs,
-        "tri_corr_12": tri_corr_12,
-        "tri_corr_13": tri_corr_13,
-        "tri_corr_23": tri_corr_23,
-        "t12_costs": t12_costs,
-        "t13_costs": t13_costs,
-        "t23_costs": t23_costs,
-        "edge_counter": edge_counter
-    }
-    
     model = MLPMessagePassing().to(device)
 
+    MODEL_PATH = "./mlp_model.pt"
     if os.path.exists(MODEL_PATH):
-        state_dict = torch.load(MODEL_PATH, map_location=device, weights_only=True)
-        model.load_state_dict(state_dict)
-    
+        model.load_state_dict(torch.load(MODEL_PATH, map_location=device, weights_only=True))
+
     if train:
-    #    print("[PYTHON] training...")
         model.train()
         optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
         optimizer.zero_grad()
-        updated_data = model(data)  
-        loss = loss_fn(updated_data)
+
+        updated_edge_costs, updated_t12, updated_t13, updated_t23 = model(
+            edge_costs, t12_costs, t13_costs, t23_costs,
+            tri_corr_12, tri_corr_13, tri_corr_23, edge_counter
+        )
+
+        loss = loss_fn(updated_edge_costs, updated_t12, updated_t13, updated_t23)
         loss.backward()
         print(f"Loss: {loss.item():.6f}")
+        #print(f"lb: {lower_bound(updated_edge_costs, updated_t12, updated_t13, updated_t23)}")
+
         for name, param in model.named_parameters():
             if param.grad is not None:
-                print(name, "grad norm", param.grad.norm().item())
+               # print(name, "grad norm", param.grad.norm().item())
+               x = 0
             else:
                 print(name, "grad is None")
 
         optimizer.step()
         torch.save(model.state_dict(), MODEL_PATH)
+
     else:
-       # print("[PYTHON] testing...")
         model.eval()
         with torch.no_grad():
-            updated_data = model(data)
-    
+            updated_edge_costs, updated_t12, updated_t13, updated_t23 = model(
+                edge_costs, t12_costs, t13_costs, t23_costs,
+                tri_corr_12, tri_corr_13, tri_corr_23, edge_counter
+            )
 
- 
     return (
-        updated_data["edge_costs"].detach().cpu().clone().numpy(),  
-        updated_data["t12_costs"].detach().cpu().clone().numpy(),
-        updated_data["t13_costs"].detach().cpu().clone().numpy(),
-        updated_data["t23_costs"].detach().cpu().clone().numpy()
+        updated_edge_costs.detach().cpu().numpy(),
+        updated_t12.detach().cpu().numpy(),
+        updated_t13.detach().cpu().numpy(),
+        updated_t23.detach().cpu().numpy()
     )

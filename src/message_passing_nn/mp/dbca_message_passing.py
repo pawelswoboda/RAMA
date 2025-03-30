@@ -85,7 +85,7 @@ class ClassicalMessagePassing:
             e12_diff += (1.0 / 2.0) * mm
 
             mm = self.min_marginal(c13, c12, c23)
-            c13 -= mm
+            c13 -= mm 
             e13_diff += mm
 
             mm = self.min_marginal(c12, c13, c23)

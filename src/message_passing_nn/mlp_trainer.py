@@ -6,7 +6,7 @@ from multicut_dataset import MulticutGraphDataset
 # dont forget to put train = true in nn_message_passing.py
 def train():
     dataset = MulticutGraphDataset("src/message_passing_nn/data2/train")
-    loader = DataLoader(dataset, batch_size=1, shuffle=True)  
+    loader = DataLoader(dataset, batch_size=1, shuffle=False)  
     opts = rama_py.multicut_solver_options("PD")
     opts.verbose = False
     print(f"[INFO] Found {len(dataset)} Multicut instances.")
@@ -21,6 +21,7 @@ def train():
                 costs = sample["costs"]
                 mapping, lb, _, _ = rama_py.rama_cuda(i, j, costs, opts)
                 print(f"[SUCCESS] {name}: Clusters: {mapping}, LB: {lb}")
+                return
             except Exception as e:
                 print(f"[ERROR] Failed on file {name}: {e}")
                 fails.add(name)
