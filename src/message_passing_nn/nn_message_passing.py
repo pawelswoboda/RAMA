@@ -121,8 +121,8 @@ def via_mlp(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
 
         for name, param in model.named_parameters():
             if param.grad is not None:
-               # print(name, "grad norm", param.grad.norm().item())
-               x = 0
+                print(name, "grad norm", param.grad.norm().item())
+                x = 0
             else:
                 print(name, "grad is None")
 

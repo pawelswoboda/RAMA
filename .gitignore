@@ -3,3 +3,5 @@ build/*
 /src/message_passing_nn/delete_later/
 
 commands.txt
+
+/src/message_passing_nn/data2/

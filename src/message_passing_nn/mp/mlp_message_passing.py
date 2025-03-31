@@ -31,7 +31,6 @@ class MLPMessagePassing(nn.Module):
 
         return edge_costs, t12, t13, t23
 
-
     def send_messages_to_edges_mlp(self, edge_costs, t12, t13, t23,
                                           corr_12, corr_13, corr_23):
 
@@ -52,7 +51,7 @@ class MLPMessagePassing(nn.Module):
         #edge_updates[corr_23] = edge_updates[corr_23] + delta[:, 2]
 
         edge_costs = edge_costs + edge_updates
-
+        
         return edge_costs, t12, t13, t23
     
     def forward(self, edge_costs, t12_costs, t13_costs, t23_costs,
