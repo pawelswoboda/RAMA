@@ -22,8 +22,10 @@ std::tuple<dCOO, double, int> dual_update_cycle_length(const dCOO& A, const int 
             std::cout << "dual updates cycle length: " << cycle_length << ", iteration: " << iter << ", lower bound: " << lb << "\n";
         if (iter > 0 && (lb - prev_lb) < 1e-3)
             break;
+        
         bool use_mlp = std::getenv("DISABLE_MLP") == nullptr;
         mp.iteration(use_mlp); //!!!!!!!!!!!!
+        
         prev_lb = lb;
     }
     const double final_lb = mp.lower_bound();

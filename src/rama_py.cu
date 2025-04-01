@@ -8,6 +8,7 @@
 
 #include "multicut_message_passing.h"
 #include "dCOO.h"
+#include "conflicted_cycles_cuda.h"
 
 
 #ifdef WITH_TORCH
@@ -20,6 +21,7 @@
 #endif
 
 namespace py=pybind11;
+using namespace pybind11::literals;
 
 #ifdef WITH_TORCH
 std::vector<torch::Tensor> rama_torch(
@@ -144,6 +146,36 @@ PYBIND11_MODULE(rama_py, m) {
         .def(py::init<const dCOO&, std::vector<int>, std::vector<int>, std::vector<int>, bool>())
         .def("get_triangles", &multicut_message_passing::get_triangles)
         .def("get_lagrange_multipliers", &multicut_message_passing::get_lagrange_multipliers)
-        .def("get_edges", &multicut_message_passing::get_edges);
+        .def("get_edges", &multicut_message_passing::get_edges)
+        .def("get_i", &multicut_message_passing::get_i)
+        .def("get_j", &multicut_message_passing::get_j)
+        .def("get_edge_costs", &multicut_message_passing::get_edge_costs)
+        .def("get_t12_costs", &multicut_message_passing::get_t12_costs)
+        .def("get_t13_costs", &multicut_message_passing::get_t13_costs)
+        .def("get_t23_costs", &multicut_message_passing::get_t23_costs)
+        .def("get_tri_corr_12", &multicut_message_passing::get_tri_corr_12)
+        .def("get_tri_corr_13", &multicut_message_passing::get_tri_corr_13)
+        .def("get_tri_corr_23", &multicut_message_passing::get_tri_corr_23)
+        .def("get_edge_counter", &multicut_message_passing::get_edge_counter);
+
+        m.def("get_message_passing_data", [](const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& edge_costs, int cycle_length) {
+            dCOO A(i, j, edge_costs, true);
+            auto [t1, t2, t3] = conflicted_cycles_cuda(A, cycle_length, 1.0, 1e-4, false);
+            multicut_message_passing mp(A, std::move(t1), std::move(t2), std::move(t3), false);
+
+            return py::dict(
+                "i"_a = mp.get_i(),
+                "j"_a = mp.get_j(),
+                "edge_costs"_a = mp.get_edge_costs(),
+                "t12_costs"_a = mp.get_t12_costs(),
+                "t13_costs"_a = mp.get_t13_costs(),
+                "t23_costs"_a = mp.get_t23_costs(),
+                "tri_corr_12"_a = mp.get_tri_corr_12(),
+                "tri_corr_13"_a = mp.get_tri_corr_13(),
+                "tri_corr_23"_a = mp.get_tri_corr_23(),
+                "edge_counter"_a = mp.get_edge_counter()
+            );
+        });
+
 }
 

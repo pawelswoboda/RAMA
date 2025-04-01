@@ -44,6 +44,61 @@ class multicut_message_passing {
             thrust::copy(edge_costs.begin(), edge_costs.end(), h_cost.begin());
             return {h_i, h_j, h_cost};
         }
+        std::vector<int> get_i() const {
+            std::vector<int> h_i(i.size());
+            thrust::copy(i.begin(), i.end(), h_i.begin());
+            return h_i;
+        }
+
+        std::vector<int> get_j() const {
+            std::vector<int> h_j(j.size());
+            thrust::copy(j.begin(), j.end(), h_j.begin());
+            return h_j;
+        }
+
+        std::vector<float> get_edge_costs() const {
+            std::vector<float> h_edge(edge_costs.size());
+            thrust::copy(edge_costs.begin(), edge_costs.end(), h_edge.begin());
+            return h_edge;
+        }
+
+        std::vector<float> get_t12_costs() const {
+            std::vector<float> h(t12_costs.size());
+            thrust::copy(t12_costs.begin(), t12_costs.end(), h.begin());
+            return h;
+        }
+        std::vector<float> get_t13_costs() const {
+            std::vector<float> h(t13_costs.size());
+            thrust::copy(t13_costs.begin(), t13_costs.end(), h.begin());
+            return h;
+        }
+        std::vector<float> get_t23_costs() const {
+            std::vector<float> h(t23_costs.size());
+            thrust::copy(t23_costs.begin(), t23_costs.end(), h.begin());
+            return h;
+        }
+
+        std::vector<int> get_tri_corr_12() const {
+            std::vector<int> h(triangle_correspondence_12.size());
+            thrust::copy(triangle_correspondence_12.begin(), triangle_correspondence_12.end(), h.begin());
+            return h;
+        }
+        std::vector<int> get_tri_corr_13() const {
+            std::vector<int> h(triangle_correspondence_13.size());
+            thrust::copy(triangle_correspondence_13.begin(), triangle_correspondence_13.end(), h.begin());
+            return h;
+        }
+        std::vector<int> get_tri_corr_23() const {
+            std::vector<int> h(triangle_correspondence_23.size());
+            thrust::copy(triangle_correspondence_23.begin(), triangle_correspondence_23.end(), h.begin());
+            return h;
+        }
+
+        std::vector<int> get_edge_counter() const {
+            std::vector<int> h(edge_counter.size());
+            thrust::copy(edge_counter.begin(), edge_counter.end(), h.begin());
+            return h;
+        }
 
         void update_lagrange_via_nn();  
 
