@@ -30,7 +30,8 @@ def save_results(name, lb, eval_dir):
 
 
 def test(mlp=False):
-    data_dir = "src/message_passing_nn/data2"
+    
+    data_dir = "src/message_passing_nn/data"
     test_dir = os.path.join(data_dir, "test")
     cpp_dir = os.path.join(data_dir, "eval/cpp")
     mlp_dir = os.path.join(data_dir, "eval/mlp")
@@ -71,6 +72,7 @@ def test(mlp=False):
                         corr_23 = torch.tensor(mp_data["tri_corr_23"], dtype=torch.long).to(device)
                         edge_counter = torch.tensor(mp_data["edge_counter"], dtype=torch.int32).to(device)
                         
+         # SPÄTER das if else weg machen und einfach dual solver aufgerufen mit/ohne DISABLE_MLP = 1               
                         for k in range(10):
                             updated_edge_costs, updated_t12, updated_t13, updated_t23 = model(
                                 edge_costs, t12_costs, t13_costs, t23_costs,

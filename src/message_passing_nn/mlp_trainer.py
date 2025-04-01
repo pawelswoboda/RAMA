@@ -29,7 +29,7 @@ def loss_fn(edge_costs, t12, t13, t23):
 
 def train():
 
-    dataset = MulticutGraphDataset("src/message_passing_nn/data2/train")
+    dataset = MulticutGraphDataset("src/message_passing_nn/data/train")
     loader = DataLoader(dataset, batch_size=1, shuffle=True)  
     opts = rama_py.multicut_solver_options("PD")
     opts.verbose = False
@@ -98,7 +98,7 @@ def train():
             print(f" - {f}")
 
     print("Training finished.")
-   # print("LOSSES:",losses)
+    print("LOSSES:",losses)
    # print("LBs:", lbs)
 
 if __name__ == "__main__":
