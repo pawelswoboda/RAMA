@@ -55,7 +55,7 @@ def nn_update(edge_costs_ptr, t1_ptr, t2_ptr, t3_ptr, i_ptr, j_ptr,
         edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
         t12_costs, t13_costs, t23_costs,edge_counter
     )
-      
+    
     return (
         updated_edge_costs,
         updated_t12_costs,
@@ -76,66 +76,20 @@ def via_dbca(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
 
 
 def via_mlp(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
-            t12_costs, t13_costs, t23_costs, edge_counter, train=True):
+            t12_costs, t13_costs, t23_costs, edge_counter):
     
-    def lower_bound(edge_costs, t12, t13, t23):
-        edge_lb = torch.sum(torch.where(edge_costs < 0, edge_costs, torch.zeros_like(edge_costs)))
-        
-        a, b, c = t12, t13, t23
-        zero = torch.zeros_like(a)
-
-        lb = torch.stack([
-            zero,
-            a + b,
-            a + c,
-            b + c,
-            a + b + c
-        ])
-        tri_lb = torch.min(lb, dim=0).values.sum()
-        return edge_lb + tri_lb
-
-    def loss_fn(edge_costs, t12, t13, t23):
-        return -lower_bound(edge_costs, t12, t13, t23) / edge_costs.numel()
-
-    device = edge_costs.device
+    device = "cuda" if torch.cuda.is_available else "cpu"
     model = MLPMessagePassing().to(device)
 
     MODEL_PATH = "./mlp_model.pt"
     if os.path.exists(MODEL_PATH):
         model.load_state_dict(torch.load(MODEL_PATH, map_location=device, weights_only=True))
-
-    if train:
-        model.train()
-        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-        optimizer.zero_grad()
-
+   
+    with torch.no_grad():
         updated_edge_costs, updated_t12, updated_t13, updated_t23 = model(
             edge_costs, t12_costs, t13_costs, t23_costs,
             tri_corr_12, tri_corr_13, tri_corr_23, edge_counter
         )
-
-        loss = loss_fn(updated_edge_costs, updated_t12, updated_t13, updated_t23)
-        loss.backward()
-        print(f"Loss: {loss.item():.6f}")
-        #print(f"lb: {lower_bound(updated_edge_costs, updated_t12, updated_t13, updated_t23)}")
-
-        for name, param in model.named_parameters():
-            if param.grad is not None:
-                print(name, "grad norm", param.grad.norm().item())
-                x = 0
-            else:
-                print(name, "grad is None")
-
-        optimizer.step()
-        torch.save(model.state_dict(), MODEL_PATH)
-
-    else:
-        model.eval()
-        with torch.no_grad():
-            updated_edge_costs, updated_t12, updated_t13, updated_t23 = model(
-                edge_costs, t12_costs, t13_costs, t23_costs,
-                tri_corr_12, tri_corr_13, tri_corr_23, edge_counter
-            )
 
     return (
         updated_edge_costs.detach().cpu().numpy(),

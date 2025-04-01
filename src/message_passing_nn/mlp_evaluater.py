@@ -9,21 +9,19 @@ mlp_dir = os.path.join(data_dir, "eval/mlp")
 output_summary_path = os.path.join(data_dir, "eval/results/summary.txt")
 output_plot_path = os.path.join(data_dir, "eval/results/lb_comparison.png")
 
-def plot_lower_bounds(instance_names, cpp_lbs, mlp_lbs, output_path):
+def plot_lower_bounds(instance_names, cpp_lbs, mlp_lbs, diff_lb, output_path):
     plt.figure(figsize=(12, 6))
-    plt.plot(instance_names, cpp_lbs, label="CPP Lower Bound", marker='o')
-    plt.plot(instance_names, mlp_lbs, label="MLP Lower Bound", marker='x')
+    plt.plot(instance_names, diff_lb, marker='x')
     plt.xticks(rotation=45, ha='right')
     plt.xlabel("Multicut Test Instances")
-    plt.ylabel("Lower Bound")
-    plt.title("Comparison of Lower Bounds (CPP vs MLP)")
+    plt.ylabel("Lower Bound Difference")
+    plt.title("Comparison of Lower Bounds Differences (MLP LB - CPP LB)")
     plt.legend()
     plt.tight_layout()
     plt.grid(True)
     plt.savefig(output_path)
 
-def write_summary(count, total_ari, cpp_lbs, mlp_lbs, compare_lines, output_path):
-    avg_ari = total_ari / count if count else 0.0
+def write_summary(count, cpp_lbs, mlp_lbs, compare_lines, output_path):
     avg_diff_pct = 0.0
     for cpp, mlp in zip(cpp_lbs, mlp_lbs):
         if cpp != 0:
@@ -36,18 +34,16 @@ def write_summary(count, total_ari, cpp_lbs, mlp_lbs, compare_lines, output_path
     summary.extend(compare_lines)
     summary.append("\n===== SUMMARY =====")
     summary.append(f"[SUMMARY] Compared {count} graphs.")
-    summary.append(f"[SUMMARY] Avg ARI: {avg_ari:.4f}")
     summary.append(f"[SUMMARY] On avg MLP-Lowerbound is {avg_diff_pct:.2f}% {'worse' if avg_diff_pct > 0 else 'better'}")
 
     with open(output_path, "w") as f:
         f.write("\n".join(summary))
 
 def evaluate():
-    matches = 0
-    total_ari = 0.0
     count = 0
     cpp_lbs = []
     mlp_lbs = []
+    diff_lbs = []
     instance_names = []
     compare_lines = []
 
@@ -63,26 +59,20 @@ def evaluate():
             cpp_lines = f1.readlines()
             mlp_lines = f2.readlines()
 
-        cpp_cluster = list(map(int, cpp_lines[0].split()))
-        mlp_cluster = list(map(int, mlp_lines[0].split()))
         cpp_lb = float(cpp_lines[1])
         mlp_lb = float(mlp_lines[1])
 
-        ari = adjusted_rand_score(cpp_cluster, mlp_cluster)
-        compare_line = f"[COMPARE] {f.name}: ARI={ari:.4f}, LB_CPP={cpp_lb:.2f}, LB_MLP={mlp_lb:.2f}"
+        compare_line = f"[COMPARE] {f.name}: LB_CPP={cpp_lb:.2f}, LB_MLP={mlp_lb:.2f}"
         compare_lines.append(compare_line)
-
-        total_ari += ari
-        count += 1
-        if ari >= 0.8:
-            matches += 1
 
         cpp_lbs.append(cpp_lb)
         mlp_lbs.append(mlp_lb)
+        diff_lbs.append(mlp_lb-cpp_lb)
+
         instance_names.append(f.name)
 
-    plot_lower_bounds(instance_names, cpp_lbs, mlp_lbs, output_plot_path)
-    write_summary(count, total_ari, cpp_lbs, mlp_lbs, compare_lines, output_summary_path)
+    plot_lower_bounds(instance_names, cpp_lbs, mlp_lbs, diff_lbs, output_plot_path)
+    write_summary(count, cpp_lbs, mlp_lbs, compare_lines, output_summary_path)
 
 if __name__ == "__main__":
     evaluate()
