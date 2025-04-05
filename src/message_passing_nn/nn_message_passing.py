@@ -74,7 +74,21 @@ def via_dbca(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
 
     return mp.edge_costs.cpu().numpy(), mp.t12_costs.cpu().numpy(), mp.t13_costs.cpu().numpy(), mp.t23_costs.cpu().numpy()
 
+def lower_bound(edge_costs, t12, t13, t23):
+    edge_lb = torch.sum(torch.where(edge_costs < 0, edge_costs, torch.zeros_like(edge_costs)))
+        
+    a, b, c = t12, t13, t23
+    zero = torch.zeros_like(a)
 
+    lb = torch.stack([
+        zero,
+        a + b,
+        a + c,
+        b + c,
+        a + b + c
+    ])
+    tri_lb = torch.min(lb, dim=0).values.sum()
+    return edge_lb + tri_lb
 def via_mlp(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
             t12_costs, t13_costs, t23_costs, edge_counter):
 
@@ -91,7 +105,7 @@ def via_mlp(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
             edge_costs, t12_costs, t13_costs, t23_costs,
             tri_corr_12, tri_corr_13, tri_corr_23, edge_counter
         )
-
+    print(lower_bound(updated_edge_costs, updated_t12, updated_t13, updated_t23))
     return (
         updated_edge_costs.detach().cpu().numpy(),
         updated_t12.detach().cpu().numpy(),
