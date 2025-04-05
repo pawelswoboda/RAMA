@@ -77,14 +77,15 @@ def via_dbca(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
 
 def via_mlp(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
             t12_costs, t13_costs, t23_costs, edge_counter):
-    
+
     device = "cuda" if torch.cuda.is_available else "cpu"
     model = MLPMessagePassing().to(device)
+    model.eval()
 
     MODEL_PATH = "./mlp_model.pt"
     if os.path.exists(MODEL_PATH):
         model.load_state_dict(torch.load(MODEL_PATH, map_location=device, weights_only=True))
-   
+    
     with torch.no_grad():
         updated_edge_costs, updated_t12, updated_t13, updated_t23 = model(
             edge_costs, t12_costs, t13_costs, t23_costs,

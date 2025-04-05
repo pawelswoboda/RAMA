@@ -7,6 +7,18 @@ from mp.mlp_message_passing import MLPMessagePassing
 
 # DISABLE_MLP=1 /bin/python3 /home/houraghene/RAMA/src/message_passing_nn/mlp_tester.py  
 
+def extract_data(mp_data, device):
+    edge_costs = torch.tensor(mp_data["edge_costs"], dtype=torch.float32).to(device)
+    t12_costs = torch.tensor(mp_data["t12_costs"], dtype=torch.float32).to(device)
+    t13_costs = torch.tensor(mp_data["t13_costs"], dtype=torch.float32).to(device)
+    t23_costs = torch.tensor(mp_data["t23_costs"], dtype=torch.float32).to(device)
+    corr_12 = torch.tensor(mp_data["tri_corr_12"], dtype=torch.long).to(device)
+    corr_13 = torch.tensor(mp_data["tri_corr_13"], dtype=torch.long).to(device)
+    corr_23 = torch.tensor(mp_data["tri_corr_23"], dtype=torch.long).to(device)
+    edge_counter = torch.tensor(mp_data["edge_counter"], dtype=torch.int32).to(device)
+
+    return edge_costs, t12_costs, t13_costs, t23_costs, corr_12, corr_13, corr_23, edge_counter
+
 def lower_bound(edge_costs, t12, t13, t23):
         edge_lb = torch.sum(torch.where(edge_costs < 0, edge_costs, torch.zeros_like(edge_costs)))
         
@@ -30,8 +42,8 @@ def save_results(name, lb, eval_dir):
 
 
 def test(mlp=False):
-    
-    data_dir = "src/message_passing_nn/data"
+        
+    data_dir = "src/message_passing_nn/data2"
     test_dir = os.path.join(data_dir, "test")
     cpp_dir = os.path.join(data_dir, "eval/cpp")
     mlp_dir = os.path.join(data_dir, "eval/mlp")
@@ -48,7 +60,7 @@ def test(mlp=False):
 
     MODEL_PATH = "./mlp_model.pt"
     if os.path.exists(MODEL_PATH):
-        model.load_state_dict(torch.load(MODEL_PATH, map_location=device, weights_only=True))
+        model.load_state_dict(torch.load(MODEL_PATH, map_location=device, weights_only=True))  
 
     print(f"[INFO] Found {len(dataset)} Multicut instances.")
     
@@ -63,17 +75,10 @@ def test(mlp=False):
                 if mlp:
                         mp_data = rama_py.get_message_passing_data(i, j, costs, 3)
                        
-                        edge_costs = torch.tensor(mp_data["edge_costs"], dtype=torch.float32).to(device)
-                        t12_costs = torch.tensor(mp_data["t12_costs"], dtype=torch.float32).to(device)
-                        t13_costs = torch.tensor(mp_data["t13_costs"], dtype=torch.float32).to(device)
-                        t23_costs = torch.tensor(mp_data["t23_costs"], dtype=torch.float32).to(device)
-                        corr_12 = torch.tensor(mp_data["tri_corr_12"], dtype=torch.long).to(device)
-                        corr_13 = torch.tensor(mp_data["tri_corr_13"], dtype=torch.long).to(device)
-                        corr_23 = torch.tensor(mp_data["tri_corr_23"], dtype=torch.long).to(device)
-                        edge_counter = torch.tensor(mp_data["edge_counter"], dtype=torch.int32).to(device)
-                        
+                        edge_costs, t12_costs, t13_costs, t23_costs, corr_12, corr_13, corr_23, edge_counter = extract_data(mp_data, device)
+
          # SPÄTER das if else weg machen und einfach dual solver aufgerufen mit/ohne DISABLE_MLP = 1               
-                        for k in range(10):
+                        for _ in range(10):
                             updated_edge_costs, updated_t12, updated_t13, updated_t23 = model(
                                 edge_costs, t12_costs, t13_costs, t23_costs,
                                 corr_12, corr_13, corr_23, edge_counter

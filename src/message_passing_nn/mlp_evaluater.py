@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 from pathlib import Path
 import os
+import wandb
 
 data_dir = "src/message_passing_nn/data"
 cpp_dir = os.path.join(data_dir, "eval/cpp")
@@ -45,6 +46,8 @@ def write_summary(cpp_lbs, mlp_lbs, compare_lines, output_path):
 
 
 def evaluate():
+    wandb.init(project="rama-mlp", name="evaluate")
+
     cpp_lbs = []
     mlp_lbs = []
     diff_lbs = []
@@ -66,6 +69,7 @@ def evaluate():
         cpp_lb = float(cpp_lines[0])
         mlp_lb = float(mlp_lines[0])
         diff_lb = float(mlp_lb-cpp_lb)
+        wandb.log({f"lower bound difference (mlp - cpp)": diff_lb})
 
         compare_line = f"[COMPARE] {f.name}: LB_CPP={cpp_lb:.2f}, LB_MLP={mlp_lb:.2f}, DIFF={diff_lb}"
         compare_lines.append(compare_line)
