@@ -159,8 +159,10 @@ PYBIND11_MODULE(rama_py, m) {
         .def("get_edge_counter", &multicut_message_passing::get_edge_counter);
 
         m.def("get_message_passing_data", [](const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& edge_costs, int cycle_length) {
+            
             dCOO A(i, j, edge_costs, true);
             auto [t1, t2, t3] = conflicted_cycles_cuda(A, cycle_length, 1.0, 1e-4, false);
+           
             multicut_message_passing mp(A, std::move(t1), std::move(t2), std::move(t3), false);
 
             return py::dict(

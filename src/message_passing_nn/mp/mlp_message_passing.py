@@ -8,7 +8,16 @@ class MLPMessagePassing(nn.Module):
         self.mlp = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, output_dim)
+            nn.BatchNorm1d(hidden_dim),
+
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_dim),
+
+            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.ReLU(),
+
+            nn.Linear(hidden_dim // 2, output_dim)
         )
 
     def send_messages_to_triplets(self, edge_costs, t12, t13, t23,
@@ -57,7 +66,7 @@ class MLPMessagePassing(nn.Module):
     def forward(self, edge_costs, t12_costs, t13_costs, t23_costs,
                         tri_corr_12, tri_corr_13, tri_corr_23, edge_counter):
 
-        print("[INFO] USING PYTHON ")
+        #print("[INFO] USING PYTHON ")
         
         edge_costs, t12_costs, t13_costs, t23_costs = self.send_messages_to_triplets(
             edge_costs, t12_costs, t13_costs, t23_costs,

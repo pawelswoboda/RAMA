@@ -6,13 +6,11 @@ import os
 import torch
 import wandb
 
-# DISABLE_MLP=1 /bin/python3 /home/houraghene/RAMA/src/message_passing_nn/mlp_trainer.py 
-
 def set_seed(seed=42):
     torch.manual_seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
 
-    if torch.cuda.is_available():
+    if torch.cuda.is_available(): 
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
         torch.backends.cudnn.deterministic = True
@@ -53,23 +51,28 @@ def loss_fn(edge_costs, t12, t13, t23):
 def train():
     set_seed(42)
 
-    wandb.init(project="rama-mlp", name="train", config={
+    wandb.init(project="rama-mlp", name="train_v2", config={
         "epochs": 10,
         "lr": 1e-3,
-        "model": "MLPMessagePassing"
+        "model": "MLPMessagePassing",
+        "batch_norm": True,
+        "hidden_dim": 64,
     })
 
     num_epochs = wandb.config["epochs"]
     lr = wandb.config["lr"]
+    device = "cuda" if torch.cuda.is_available else "cpu"
 
     dataset = MulticutGraphDataset("src/message_passing_nn/data/train")
     loader = DataLoader(dataset, batch_size=1, shuffle=True)  
     opts = rama_py.multicut_solver_options("PD")
     opts.verbose = False
 
-    device = "cuda" if torch.cuda.is_available else "cpu"
     model = MLPMessagePassing().to(device)
     model.train()
+
+    wandb.watch(model, log="all", log_freq=100)
+    
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     MODEL_PATH = "./mlp_model.pt"
@@ -82,6 +85,7 @@ def train():
     losses = []
     lbs = []
     for epoch in range(num_epochs):
+        print(f"[INFO] EPOCH: {epoch+1}")
         epoch_loss = 0
         epoch_lb = 0
         for sample in loader:
@@ -96,18 +100,21 @@ def train():
 
                 edge_costs, t12_costs, t13_costs, t23_costs, corr_12, corr_13, corr_23, edge_counter = extract_data(mp_data, device)
 
-                updated_edge_costs, updated_t12, updated_t13, updated_t23 = model(
-                        edge_costs, t12_costs, t13_costs, t23_costs, corr_12, corr_13, corr_23, edge_counter
-                )
+                for _ in range(10):
+                    updated_edge_costs, updated_t12, updated_t13, updated_t23 = model(
+                        edge_costs, t12_costs, t13_costs, t23_costs,
+                        corr_12, corr_13, corr_23, edge_counter
+                    )
+                    edge_costs, t12_costs, t13_costs, t23_costs = updated_edge_costs, updated_t12, updated_t13, updated_t23
+                
                 loss = loss_fn(updated_edge_costs, updated_t12, updated_t13, updated_t23)
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
+                
                 epoch_loss += loss.item()
-
                 lb = lower_bound(updated_edge_costs, updated_t12, updated_t13, updated_t23)
                 epoch_lb += lb.item()
-
                 print(f"[SUCCESS] {name}")
             except Exception as e:
                 print(f"[ERROR] Failed on file {name}: {e}")

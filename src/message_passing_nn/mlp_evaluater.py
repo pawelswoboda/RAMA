@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 import os
 import wandb
+import numpy as np
 
 data_dir = "src/message_passing_nn/data"
 cpp_dir = os.path.join(data_dir, "eval/cpp")
@@ -14,25 +15,16 @@ def plot_lower_bounds(instance_names, cpp_lbs, mlp_lbs, diff_lb, output_path):
     plt.plot(instance_names, diff_lb, marker='x')
     plt.xticks(rotation=45, ha='right')
     plt.xlabel("Multicut Test Instances")
-    plt.ylabel("Lower Bound Difference")
-    plt.title("Comparison of Lower Bounds Differences (MLP LB - CPP LB)")
+    plt.ylabel("Lower Bound Difference in %")
+    plt.title("Comparison of Lower Bounds Differences (MLP LB - CPP LB) in %")
     plt.legend()
     plt.tight_layout()
     plt.grid(True)
     plt.savefig(output_path)
 
-def write_summary(cpp_lbs, mlp_lbs, compare_lines, output_path):
-    total_pct_diff = 0.0
-    total_abs_diff = 0.0
-    count = len(cpp_lbs)
-
-    for cpp, mlp in zip(cpp_lbs, mlp_lbs):
-        if cpp != 0:
-            diff_pct = 100 * (abs(cpp) - abs(mlp)) / abs(cpp)
-            total_pct_diff += diff_pct
-            total_abs_diff += (mlp - cpp)
-
-    avg_pct_diff = total_pct_diff / count if count > 0 else 0
+def write_summary(diff_lbs, compare_lines, output_path):
+    count = len(diff_lbs)
+    avg_pct_diff = np.mean(diff_lbs)
 
     summary = []
     summary.append("===== COMPARISON RESULTS =====")
@@ -46,7 +38,7 @@ def write_summary(cpp_lbs, mlp_lbs, compare_lines, output_path):
 
 
 def evaluate():
-    wandb.init(project="rama-mlp", name="evaluate")
+    wandb.init(project="rama-mlp", name="evaluate_v2")
 
     cpp_lbs = []
     mlp_lbs = []
@@ -68,10 +60,10 @@ def evaluate():
 
         cpp_lb = float(cpp_lines[0])
         mlp_lb = float(mlp_lines[0])
-        diff_lb = float(mlp_lb-cpp_lb)
-        wandb.log({f"lower bound difference (mlp - cpp)": diff_lb})
+        diff_lb = 100 * (mlp_lb - cpp_lb) / abs(cpp_lb)
+        wandb.log({f"lower bound difference (mlp - cpp) in %": diff_lb})
 
-        compare_line = f"[COMPARE] {f.name}: LB_CPP={cpp_lb:.2f}, LB_MLP={mlp_lb:.2f}, DIFF={diff_lb}"
+        compare_line = f"[COMPARE] {f.name}: LB_CPP={cpp_lb:.2f}, LB_MLP={mlp_lb:.2f}, DIFF_in_%={diff_lb}"
         compare_lines.append(compare_line)
 
         cpp_lbs.append(cpp_lb)
@@ -81,7 +73,7 @@ def evaluate():
         instance_names.append(f.name)
 
     plot_lower_bounds(instance_names, cpp_lbs, mlp_lbs, diff_lbs, output_plot_path)
-    write_summary(cpp_lbs, mlp_lbs, compare_lines, output_summary_path)
+    write_summary(diff_lbs, compare_lines, output_summary_path)
 
 if __name__ == "__main__":
     evaluate()

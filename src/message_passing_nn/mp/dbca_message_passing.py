@@ -103,3 +103,4 @@ class ClassicalMessagePassing:
     def iteration(self):
         self.send_messages_to_triplets()
         self.send_messages_to_edges()
+

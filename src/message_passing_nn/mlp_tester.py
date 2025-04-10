@@ -22,7 +22,7 @@ def extract_data(mp_data, device):
 def lower_bound(edge_costs, t12, t13, t23):
         edge_lb = torch.sum(torch.where(edge_costs < 0, edge_costs, torch.zeros_like(edge_costs)))
         
-        a, b, c = t12, t13, t23
+        a, b, c = t12, t13, t23 
         zero = torch.zeros_like(a)
 
         lb = torch.stack([
@@ -40,10 +40,9 @@ def save_results(name, lb, eval_dir):
     with open(out_path, "w") as f:
         f.write(f"{lb:.6f}\n")
 
-
-def test(mlp=False):
+def test(mlp=True):
         
-    data_dir = "src/message_passing_nn/data2"
+    data_dir = "src/message_passing_nn/data"
     test_dir = os.path.join(data_dir, "test")
     cpp_dir = os.path.join(data_dir, "eval/cpp")
     mlp_dir = os.path.join(data_dir, "eval/mlp")
@@ -73,19 +72,18 @@ def test(mlp=False):
             costs = sample["costs"]   
             with torch.no_grad():
                 if mlp:
-                        mp_data = rama_py.get_message_passing_data(i, j, costs, 3)
+                    mp_data = rama_py.get_message_passing_data(i, j, costs, 3)
                        
-                        edge_costs, t12_costs, t13_costs, t23_costs, corr_12, corr_13, corr_23, edge_counter = extract_data(mp_data, device)
+                    edge_costs, t12_costs, t13_costs, t23_costs, corr_12, corr_13, corr_23, edge_counter = extract_data(mp_data, device)
 
-         # SPÄTER das if else weg machen und einfach dual solver aufgerufen mit/ohne DISABLE_MLP = 1               
-                        for _ in range(10):
-                            updated_edge_costs, updated_t12, updated_t13, updated_t23 = model(
-                                edge_costs, t12_costs, t13_costs, t23_costs,
-                                corr_12, corr_13, corr_23, edge_counter
-                            )
-                            edge_costs, t12_costs, t13_costs, t23_costs = updated_edge_costs, updated_t12, updated_t13, updated_t23
+                    for _ in range(10):
+                        updated_edge_costs, updated_t12, updated_t13, updated_t23 = model(
+                            edge_costs, t12_costs, t13_costs, t23_costs,
+                            corr_12, corr_13, corr_23, edge_counter
+                        )
+                        edge_costs, t12_costs, t13_costs, t23_costs = updated_edge_costs, updated_t12, updated_t13, updated_t23
 
-                        lb = lower_bound(updated_edge_costs, updated_t12, updated_t13, updated_t23)
+                    lb = lower_bound(updated_edge_costs, updated_t12, updated_t13, updated_t23)
                 else:
                     _, lb, _, _ = rama_py.rama_cuda(i, j, costs, opts)
 
@@ -105,3 +103,6 @@ def test(mlp=False):
 
 if __name__ == "__main__":
     test()
+
+
+# SPÄTER das if else weg machen und einfach dual solver aufgerufen mit/ohne DISABLE_MLP = 1               
