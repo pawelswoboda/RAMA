@@ -2,22 +2,29 @@ import torch
 import torch.nn as nn
 
 class MLPMessagePassing(nn.Module):
-    def __init__(self, input_dim=3, hidden_dim=16, output_dim=3):
+    def __init__(self, input_dim=3, output_dim=3):
         super(MLPMessagePassing, self).__init__()
 
         self.mlp = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
-            nn.BatchNorm1d(hidden_dim),
-
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.BatchNorm1d(hidden_dim),
-
-            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.Linear(input_dim, 16),
             nn.ReLU(),
 
-            nn.Linear(hidden_dim // 2, output_dim)
+            nn.Linear(16, 32),
+            nn.ReLU(),
+            nn.BatchNorm1d(32),
+
+            nn.Linear(32, 64),
+            nn.ReLU(),
+            nn.BatchNorm1d(64),
+
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.BatchNorm1d(32),
+
+            nn.Linear(32, 16),
+            nn.ReLU(),
+
+            nn.Linear(16, output_dim)
         )
 
     def send_messages_to_triplets(self, edge_costs, t12, t13, t23,

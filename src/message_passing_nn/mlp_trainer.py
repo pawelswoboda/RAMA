@@ -54,8 +54,7 @@ def train():
     wandb.init(project="rama-mlp", name="train_v2", config={
         "epochs": 10,
         "lr": 1e-3,
-        "model": "MLPMessagePassing",
-        "batch_norm": True,
+        "model": "MediumMLPMessagePassing",
         "hidden_dim": 64,
     })
 
