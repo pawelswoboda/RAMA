@@ -1,8 +1,8 @@
 import torch
 import cupy as cp
 import numpy as np
-from mp.dbca_message_passing import ClassicalMessagePassing
-from mp.mlp_message_passing import MLPMessagePassing
+from dbca.dbca_message_passing import ClassicalMessagePassing
+from mlp.mlp_message_passing import MLPMessagePassing
 import os
 
 TORCH_DTYPE_TO_NUMPY = {

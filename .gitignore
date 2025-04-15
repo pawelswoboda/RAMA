@@ -7,3 +7,7 @@ commands.txt
 /src/message_passing_nn/data2/
 
 wandb/
+
+*.pt
+
+/src/message_passing_nn/data/
