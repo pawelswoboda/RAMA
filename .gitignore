@@ -10,4 +10,3 @@ wandb/
 
 *.pt
 
-/src/message_passing_nn/data/
