@@ -5,40 +5,8 @@ import rama_py
 import torch
 from mlp.mlp_message_passing import MLPMessagePassing
 from gnn.gnn_message_passing import GNNMessagePassing
+import nn_utils as utils
   
-def extract_data(mp_data, device):
-    edge_costs = torch.tensor(mp_data["edge_costs"], dtype=torch.float32).to(device)
-    t12_costs = torch.tensor(mp_data["t12_costs"], dtype=torch.float32).to(device)
-    t13_costs = torch.tensor(mp_data["t13_costs"], dtype=torch.float32).to(device)
-    t23_costs = torch.tensor(mp_data["t23_costs"], dtype=torch.float32).to(device)
-    corr_12 = torch.tensor(mp_data["tri_corr_12"], dtype=torch.long).to(device)
-    corr_13 = torch.tensor(mp_data["tri_corr_13"], dtype=torch.long).to(device)
-    corr_23 = torch.tensor(mp_data["tri_corr_23"], dtype=torch.long).to(device)
-    edge_counter = torch.tensor(mp_data["edge_counter"], dtype=torch.int32).to(device)
-    i = torch.tensor(mp_data["i"], dtype=torch.long).to(device)
-    j = torch.tensor(mp_data["j"], dtype=torch.long).to(device)
-    edge_index = torch.stack([i,j], dim=0)
-    edge_index = torch.cat([edge_index, edge_index.flip(0)], dim=1)  
-
-    return edge_costs, t12_costs, t13_costs, t23_costs, corr_12, corr_13, corr_23, edge_counter, edge_index
-
-
-def lower_bound(edge_costs, t12, t13, t23):
-        edge_lb = torch.sum(torch.where(edge_costs < 0, edge_costs, torch.zeros_like(edge_costs)))
-        
-        a, b, c = t12, t13, t23 
-        zero = torch.zeros_like(a)
-
-        lb = torch.stack([
-            zero,
-            a + b,
-            a + c,
-            b + c,
-            a + b + c
-        ])
-        tri_lb = torch.min(lb, dim=0).values.sum()
-        return edge_lb + tri_lb
-
 def save_results(name, lb, eval_dir):
     out_path = os.path.join(eval_dir, name.replace(".txt", ".out"))
     with open(out_path, "w") as f:
@@ -46,7 +14,8 @@ def save_results(name, lb, eval_dir):
 
 def test(model_type="mlp"): # use "mlp" or "gnn"
     #... or "cpp" with DISABLE_MLP=1 /bin/python3 /home/houraghene/RAMA/src/message_passing_nn/nn_tester.py
-        
+    utils.set_seed(42)
+
     data_dir = "src/message_passing_nn/data"
     test_dir = os.path.join(data_dir, "test")
     cpp_dir = os.path.join(data_dir, "eval/cpp")
@@ -95,16 +64,16 @@ def test(model_type="mlp"): # use "mlp" or "gnn"
                 elif model_type == "mlp":
                     mp_data = rama_py.get_message_passing_data(i, j, costs, 3)
                        
-                    edge_costs, t12_costs, t13_costs, t23_costs, corr_12, corr_13, corr_23, edge_counter, edge_index = extract_data(mp_data, device)
+                    edge_costs, t12_costs, t13_costs, t23_costs, corr_12, corr_13, corr_23, edge_counter = utils.extract_data(mp_data, device)
 
                     for _ in range(15):
                         updated_edge_costs, updated_t12, updated_t13, updated_t23 = model(
                             edge_costs, t12_costs, t13_costs, t23_costs,
-                            corr_12, corr_13, corr_23, edge_counter, edge_index
+                            corr_12, corr_13, corr_23, edge_counter
                         )
                         edge_costs, t12_costs, t13_costs, t23_costs = updated_edge_costs, updated_t12, updated_t13, updated_t23
 
-                    lb = lower_bound(updated_edge_costs, updated_t12, updated_t13, updated_t23)
+                    lb = utils.lower_bound(updated_edge_costs, updated_t12, updated_t13, updated_t23)
                 elif model_type == "gnn":
                     print("TODO")
                 else:

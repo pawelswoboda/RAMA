@@ -74,7 +74,7 @@ class MLPMessagePassing(nn.Module):
         return edge_costs, t12, t13, t23
     
     def forward(self, edge_costs, t12_costs, t13_costs, t23_costs,
-                        tri_corr_12, tri_corr_13, tri_corr_23, edge_counter, edge_index):
+                        tri_corr_12, tri_corr_13, tri_corr_23, edge_counter):
         
         edge_costs, t12_costs, t13_costs, t23_costs = self.send_messages_to_triplets(
             edge_costs, t12_costs, t13_costs, t23_costs,

@@ -6,55 +6,14 @@ from gnn.gnn_message_passing import GNNMessagePassing
 import os
 import torch
 import wandb
+import nn_utils as utils
 
-def set_seed(seed=42):
-    torch.manual_seed(seed)
-    os.environ["PYTHONHASHSEED"] = str(seed)
-
-    if torch.cuda.is_available(): 
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-
-def extract_data(mp_data, device):
-    edge_costs = torch.tensor(mp_data["edge_costs"], dtype=torch.float32).to(device)
-    t12_costs = torch.tensor(mp_data["t12_costs"], dtype=torch.float32).to(device)
-    t13_costs = torch.tensor(mp_data["t13_costs"], dtype=torch.float32).to(device)
-    t23_costs = torch.tensor(mp_data["t23_costs"], dtype=torch.float32).to(device)
-    corr_12 = torch.tensor(mp_data["tri_corr_12"], dtype=torch.long).to(device)
-    corr_13 = torch.tensor(mp_data["tri_corr_13"], dtype=torch.long).to(device)
-    corr_23 = torch.tensor(mp_data["tri_corr_23"], dtype=torch.long).to(device)
-    edge_counter = torch.tensor(mp_data["edge_counter"], dtype=torch.int32).to(device)
-    i = torch.tensor(mp_data["i"], dtype=torch.long).to(device)
-    j = torch.tensor(mp_data["j"], dtype=torch.long).to(device)
-    edge_index = torch.stack([i,j], dim=0)
-    edge_index = torch.cat([edge_index, edge_index.flip(0)], dim=1)  
-
-    return edge_costs, t12_costs, t13_costs, t23_costs, corr_12, corr_13, corr_23, edge_counter, edge_index
-
-def lower_bound(edge_costs, t12, t13, t23):
-    edge_lb = torch.sum(torch.where(edge_costs < 0, edge_costs, torch.zeros_like(edge_costs)))
-        
-    a, b, c = t12, t13, t23
-    zero = torch.zeros_like(a)
-
-    lb = torch.stack([
-        zero,
-        a + b,
-        a + c,
-        b + c,
-        a + b + c
-    ])
-    tri_lb = torch.min(lb, dim=0).values.sum()
-    return edge_lb + tri_lb
-   
 def loss_fn(edge_costs, t12, t13, t23):
-    neg_lb = -lower_bound(edge_costs, t12, t13, t23) 
+    neg_lb = -utils.lower_bound(edge_costs, t12, t13, t23) 
     return neg_lb / edge_costs.numel()
 
 def train(model_type="mlp"):  # use "mlp" or "gnn"
-    set_seed(42)
+    utils.set_seed(42)
 
     wandb.init(project="rama-learned-mp", name=f"train_{model_type}", config={
         "epochs": 20,
@@ -110,13 +69,13 @@ def train(model_type="mlp"):  # use "mlp" or "gnn"
                 
                 mp_data = rama_py.get_message_passing_data(i, j, costs, 3)
 
-                edge_costs, t12_costs, t13_costs, t23_costs, corr_12, corr_13, corr_23, edge_counter, edge_index = extract_data(mp_data, device)
+                edge_costs, t12_costs, t13_costs, t23_costs, corr_12, corr_13, corr_23, edge_counter = utils.extract_data(mp_data, device)
                 
                 if model_type == "mlp":
                     for _ in range(15):
                         updated_edge_costs, updated_t12, updated_t13, updated_t23 = model(
                             edge_costs, t12_costs, t13_costs, t23_costs,
-                            corr_12, corr_13, corr_23, edge_counter, edge_index
+                            corr_12, corr_13, corr_23, edge_counter
                         )
                         edge_costs, t12_costs, t13_costs, t23_costs = updated_edge_costs, updated_t12, updated_t13, updated_t23
                 elif model_type == "gnn":
@@ -131,7 +90,7 @@ def train(model_type="mlp"):  # use "mlp" or "gnn"
                 optimizer.zero_grad()
                 
                 epoch_loss += loss.item()
-                lb = lower_bound(updated_edge_costs, updated_t12, updated_t13, updated_t23)
+                lb = utils.lower_bound(updated_edge_costs, updated_t12, updated_t13, updated_t23)
                 epoch_lb += lb.item()
                 print(f"[SUCCESS] {name}")
             except Exception as e:
