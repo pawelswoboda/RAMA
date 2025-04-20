@@ -1,34 +1,40 @@
 import torch
 import torch.nn as nn
 
+class ResBlock(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.block = nn.Sequential(
+            nn.Linear(dim, dim),
+            nn.SiLU(),
+            nn.Linear(dim, dim),
+            nn.SiLU()
+        )
+    def forward(self, x):
+        return x + self.block(x)
+
 class MLPMessagePassing(nn.Module):
     def __init__(self, input_dim=3, output_dim=3):
         super(MLPMessagePassing, self).__init__()
 
         self.mlp = nn.Sequential(
             nn.Linear(input_dim, 16),
-            nn.ReLU(),
+            nn.LayerNorm(16),
+            nn.SiLU(),
+
+            ResBlock(16),
 
             nn.Linear(16, 32),
-            nn.ReLU(),
+            nn.LayerNorm(32),
+            nn.SiLU(),
 
-            nn.Linear(32, 64),
-            nn.ReLU(),
-
-            nn.Linear(64, 128),
-            nn.ReLU(),
-            
-            nn.Linear(128, 128),
-            nn.ReLU(),
-
-            nn.Linear(128, 64),
-            nn.ReLU(),
-
-            nn.Linear(64, 32),
-            nn.ReLU(),
+            ResBlock(32),
 
             nn.Linear(32, 16),
-            nn.ReLU(),
+            nn.LayerNorm(16),
+            nn.SiLU(),
+
+            ResBlock(16),
 
             nn.Linear(16, output_dim)
         )
