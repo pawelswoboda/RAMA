@@ -6,7 +6,6 @@ import torch
 from mlp.mlp_message_passing import MLPMessagePassing
 from gnn.gnn_message_passing import GNNMessagePassing
 import nn_utils as utils
-import numpy as np
 
 def save_results(name, lb, eval_dir):
     out_path = os.path.join(eval_dir, name.replace(".txt", ".out"))
@@ -62,15 +61,15 @@ def test(model_type="mlp"): # use "mlp" or "gnn"
             i = sample["i"]
             j = sample["j"]
             costs = sample["costs"] 
-            normed_costs, factor = utils.normalise_costs(costs)
+            #normed_costs, factor = utils.normalise_costs(costs) normed_costs.tolist()
 
             with torch.no_grad():
                 if model_type == "cpp":
-                    _, lb, _, _ = rama_py.rama_cuda(i, j, normed_costs.tolist(), opts)
+                    _, lb, _, _ = rama_py.rama_cuda(i, j, costs, opts)
                     
                 elif model_type == "mlp":
 
-                    mp_data = rama_py.get_message_passing_data(i, j, normed_costs.tolist(), 3)
+                    mp_data = rama_py.get_message_passing_data(i, j, costs, 3)
                        
                     edge_costs, t12_costs, t13_costs, t23_costs, corr_12, corr_13, corr_23, edge_counter = utils.extract_data(mp_data, device)
                     

@@ -1,12 +1,15 @@
 import torch
 import torch.nn as nn
+from torch_scatter import scatter_softmax
 
 class ResBlock(nn.Module):
     def __init__(self, dim):
         super().__init__()
         self.block = nn.Sequential(
             nn.Linear(dim, dim),
-            nn.SiLU()
+            nn.SiLU(),
+            nn.Linear(dim, dim),
+            nn.LayerNorm(dim)
         )
     def forward(self, x):
         return x + self.block(x)
@@ -14,18 +17,28 @@ class ResBlock(nn.Module):
 class MLPMessagePassing(nn.Module):
     def __init__(self, input_dim=3, output_dim=3):
         super(MLPMessagePassing, self).__init__()
+        
+        self.edge_to_tri_mlp = nn.Sequential(
+            nn.Linear(1, 16),
+            nn.LayerNorm(16),
+            nn.SiLU(),
+            ResBlock(16),
+            nn.Linear(16, 1),
+        )
 
-        self.mlp = nn.Sequential(
+        self.tri_to_edge_mlp = nn.Sequential(
             nn.Linear(input_dim, 16),
             nn.LayerNorm(16),
             nn.SiLU(),
+
+            ResBlock(16),
+            ResBlock(16),
 
             nn.Linear(16, 32),
             nn.LayerNorm(32),
             nn.SiLU(),
 
             ResBlock(32),
-            nn.LayerNorm(32),
             ResBlock(32),
 
             nn.Linear(32, 16),
@@ -37,11 +50,11 @@ class MLPMessagePassing(nn.Module):
 
     def send_messages_to_triplets(self, edge_costs, t12, t13, t23,
                                      corr_12, corr_13, corr_23, edge_counter):
-
+        
         edge_vals_12 = edge_costs[corr_12]
         counts_12 = edge_counter[corr_12]
         t12 = t12 + edge_vals_12 / counts_12
-
+        
         edge_vals_13 = edge_costs[corr_13]
         counts_13 = edge_counter[corr_13]
         t13 = t13 + edge_vals_13 / counts_13
@@ -54,13 +67,74 @@ class MLPMessagePassing(nn.Module):
         edge_costs[mask] = 0.0
 
         return edge_costs, t12, t13, t23
+    
+    def send_messages_to_triplets2(self, edge_costs, t12, t13, t23,
+                                   corr_12, corr_13, corr_23, edge_counter):
 
-    def send_messages_to_edges_mlp(self, edge_costs, t12, t13, t23,
+        # bspw: 2 triangles: [4,5,6], [4,9,10], corr_12 = [4,4] etc.
+
+        num_triangles = t12.shape[0] 
+        # 2
+        triangle_ids = torch.arange(num_triangles, device=edge_costs.device) 
+        # [0,1]
+        edge_ids_all = torch.cat([corr_12, corr_13, corr_23], dim=0) 
+        # [4,4,5,9,6,10]
+        triangle_ids_all = torch.cat([triangle_ids, triangle_ids, triangle_ids], dim=0)
+        # [0,1,0,1,0,1]
+        positions = torch.cat([
+            torch.full_like(corr_12, 0),  # t12
+            torch.full_like(corr_13, 1),  # t13
+            torch.full_like(corr_23, 2)   # t23
+        ])
+        # [0,0,1,1,2,2] 0 for t12, 1 for t13, 2 for t23
+        # mapping (lagrange_id in triangle_id) -> edge_id 
+
+        initial_weights = torch.ones_like(edge_ids_all, dtype=torch.float32).unsqueeze(-1)
+        # [1,1,1,1,1,1]
+        logits = self.edge_to_tri_mlp(initial_weights).squeeze(-1) 
+        # [10,-4,19,14,-9,-2]
+        weights = scatter_softmax(logits, edge_ids_all, dim=0) 
+        # Kante 4: softmax([10,-4]) = [0.8, 0.2]
+        # Kante 5: softmax([19]) = [1.0]
+        # Kante 9: softmax([14]) = [1.0]
+        # Kante 6: softmax([-9]) = [1.0]
+        # Kante 10: softmax([-2]) = [1.0]
+        # weights = [0.8, 0.2, 1.0, 1.0, 1.0, 1.0]
+
+        contrib = edge_costs[edge_ids_all] * weights  
+        # [edge_costs[4] * 0.8, edge_costs[4] * 0.2, edge_costs[5] * 1, ... ] 
+       
+        mask_12 = positions == 0 # [True, True, False, False, False, False]
+        mask_13 = positions == 1 # [False, False, True, True, False, False]
+        mask_23 = positions == 2 # [False, False, False, False, True, True]
+
+        t12.scatter_add_(0, triangle_ids_all[mask_12], contrib[mask_12])
+        # contrib[mask_12] = [edge_costs[4] * 0.8, edge_costs[4] * 0.2]
+        # triangle_ids_all[mask_12] = [0,1]  
+        # t12[0] += edge_costs[4] * 0.8  
+        # t12[1] += edge_costs[4] * 0.2 
+        t13.scatter_add_(0, triangle_ids_all[mask_13], contrib[mask_13])
+        # contrib[mask_13] = [edge_costs[5] * 1, edge_costs[9] * 1]
+        # triangle_ids_all[mask_13] = [0,1]  
+        # t13[0] += edge_costs[5] * 1  
+        # t13[1] += edge_costs[9] * 1 
+        t23.scatter_add_(0, triangle_ids_all[mask_23], contrib[mask_23])
+        # contrib[mask_23] = [edge_costs[6] * 1, edge_costs[10] * 1]
+        # triangle_ids_all[mask_23] = [0,1]  
+        # t23[0] += edge_costs[6] * 1  
+        # t23[1] += edge_costs[10] * 1 
+
+        mask = edge_counter > 0
+        edge_costs[mask] = 0.0
+
+        return edge_costs, t12, t13, t23
+
+    def send_messages_to_edges(self, edge_costs, t12, t13, t23,
                                           corr_12, corr_13, corr_23):
 
         tri_features = torch.stack([t12, t13, t23], dim=1)
 
-        delta = self.mlp(tri_features)
+        delta = self.tri_to_edge_mlp(tri_features)
 
         t12 = t12 - delta[:, 0] 
         t13 = t13 - delta[:, 1] 
@@ -78,12 +152,12 @@ class MLPMessagePassing(nn.Module):
     def forward(self, edge_costs, t12_costs, t13_costs, t23_costs,
                         tri_corr_12, tri_corr_13, tri_corr_23, edge_counter):
         
-        edge_costs, t12_costs, t13_costs, t23_costs = self.send_messages_to_triplets(
+        edge_costs, t12_costs, t13_costs, t23_costs = self.send_messages_to_triplets2(
             edge_costs, t12_costs, t13_costs, t23_costs,
             tri_corr_12, tri_corr_13, tri_corr_23, edge_counter
         )
 
-        edge_costs, t12_costs, t13_costs, t23_costs = self.send_messages_to_edges_mlp(
+        edge_costs, t12_costs, t13_costs, t23_costs = self.send_messages_to_edges(
             edge_costs, t12_costs, t13_costs, t23_costs,
             tri_corr_12, tri_corr_13, tri_corr_23
         )

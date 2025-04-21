@@ -66,9 +66,9 @@ def train(model_type="mlp"):  # use "mlp" or "gnn"
                 i = sample["i"]
                 j = sample["j"]
                 costs = sample["costs"] 
-                normed_costs, factor = utils.normalise_costs(costs)    
+                #normed_costs, factor = utils.normalise_costs(costs)   normed_costs.tolist() 
 
-                mp_data = rama_py.get_message_passing_data(i, j, normed_costs.tolist(), 3)
+                mp_data = rama_py.get_message_passing_data(i, j, costs , 3)
 
                 edge_costs, t12_costs, t13_costs, t23_costs, corr_12, corr_13, corr_23, edge_counter = utils.extract_data(mp_data, device)
                 
