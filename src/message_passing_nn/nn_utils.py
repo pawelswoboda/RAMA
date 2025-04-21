@@ -22,7 +22,7 @@ def extract_data(mp_data, device):
     edge_counter = torch.tensor(mp_data["edge_counter"], dtype=torch.int32).to(device)
     
     #i = torch.tensor(mp_data["i"], dtype=torch.long).to(device)
-    #j = torch.tensor(mp_data["j"], dtype=torch.long).to(device)
+    #j = torch.tensor(mp_data["j"], dtype=torch.long).to(device)              # FÜR GNN SPÄTER
     #edge_index = torch.stack([i,j], dim=0)
     #edge_index = torch.cat([edge_index, edge_index.flip(0)], dim=1)  
 
@@ -44,5 +44,9 @@ def lower_bound(edge_costs, t12, t13, t23):
     tri_lb = torch.min(lb, dim=0).values.sum()
     return edge_lb + tri_lb
    
-
+def normalise_costs(costs, eps=1e-6, device=None):
+    costs = torch.tensor(costs, dtype=torch.float32, device=device)
+    scale = costs.abs().max()
+    factor = scale + eps
+    return costs / factor, factor
 

@@ -6,8 +6,6 @@ class ResBlock(nn.Module):
         super().__init__()
         self.block = nn.Sequential(
             nn.Linear(dim, dim),
-            nn.SiLU(),
-            nn.Linear(dim, dim),
             nn.SiLU()
         )
     def forward(self, x):
@@ -22,19 +20,17 @@ class MLPMessagePassing(nn.Module):
             nn.LayerNorm(16),
             nn.SiLU(),
 
-            ResBlock(16),
-
             nn.Linear(16, 32),
             nn.LayerNorm(32),
             nn.SiLU(),
 
             ResBlock(32),
+            nn.LayerNorm(32),
+            ResBlock(32),
 
             nn.Linear(32, 16),
             nn.LayerNorm(16),
             nn.SiLU(),
-
-            ResBlock(16),
 
             nn.Linear(16, output_dim)
         )

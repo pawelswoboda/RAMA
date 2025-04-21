@@ -6,7 +6,8 @@ import torch
 from mlp.mlp_message_passing import MLPMessagePassing
 from gnn.gnn_message_passing import GNNMessagePassing
 import nn_utils as utils
-  
+import numpy as np
+
 def save_results(name, lb, eval_dir):
     out_path = os.path.join(eval_dir, name.replace(".txt", ".out"))
     with open(out_path, "w") as f:
@@ -33,14 +34,17 @@ def test(model_type="mlp"): # use "mlp" or "gnn"
         eval_dir = mlp_dir
         model = MLPMessagePassing().to(device)
         model.eval()
+        
     elif model_type == "gnn":
         eval_dir = gnn_dir
         model = GNNMessagePassing().to(device)
         model.eval()
+        
     elif model_type == "cpp":
         eval_dir = cpp_dir
+        
     else:
-        print("[ERROR] CANT FIND MODEL")
+        print("[ERROR] CANT FIND MODEL, USE mlp, gnn OR cpp")
         return    
 
     MODEL_PATH = f"./{model_type}_model.pt"
@@ -57,16 +61,21 @@ def test(model_type="mlp"): # use "mlp" or "gnn"
         try:
             i = sample["i"]
             j = sample["j"]
-            costs = sample["costs"]   
+            costs = sample["costs"] 
+            normed_costs, factor = utils.normalise_costs(costs)
+
             with torch.no_grad():
                 if model_type == "cpp":
-                    _, lb, _, _ = rama_py.rama_cuda(i, j, costs, opts)
+                    _, lb, _, _ = rama_py.rama_cuda(i, j, normed_costs.tolist(), opts)
+                    
                 elif model_type == "mlp":
-                    mp_data = rama_py.get_message_passing_data(i, j, costs, 3)
+
+                    mp_data = rama_py.get_message_passing_data(i, j, normed_costs.tolist(), 3)
                        
                     edge_costs, t12_costs, t13_costs, t23_costs, corr_12, corr_13, corr_23, edge_counter = utils.extract_data(mp_data, device)
+                    
 
-                    for _ in range(15):
+                    for _ in range(10):
                         updated_edge_costs, updated_t12, updated_t13, updated_t23 = model(
                             edge_costs, t12_costs, t13_costs, t23_costs,
                             corr_12, corr_13, corr_23, edge_counter
@@ -74,8 +83,11 @@ def test(model_type="mlp"): # use "mlp" or "gnn"
                         edge_costs, t12_costs, t13_costs, t23_costs = updated_edge_costs, updated_t12, updated_t13, updated_t23
 
                     lb = utils.lower_bound(updated_edge_costs, updated_t12, updated_t13, updated_t23)
+                    #lb *= factor
+                    
                 elif model_type == "gnn":
                     print("TODO")
+                    
                 else:
                     print("[ERROR] CANT FIND MODEL")
                     return

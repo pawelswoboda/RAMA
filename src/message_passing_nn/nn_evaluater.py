@@ -42,7 +42,7 @@ def write_summary(diff_mlp, diff_gnn, compare_lines, output_path):
 
 
 def evaluate():
-    wandb.init(project="rama-learned-mp", name="evaluate_models")
+    wandb.init(project="rama-learned-mp", name="evaluate_models_v2")
 
     cpp_lbs, mlp_lbs, gnn_lbs = [], [], []
     diff_mlp, diff_gnn = [], []
