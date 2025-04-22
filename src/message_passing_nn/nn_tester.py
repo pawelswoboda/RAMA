@@ -61,20 +61,20 @@ def test(model_type="mlp"): # use "mlp" or "gnn"
             i = sample["i"]
             j = sample["j"]
             costs = sample["costs"] 
-            #normed_costs, factor = utils.normalise_costs(costs) normed_costs.tolist()
+            normed_costs, factor = utils.normalise_costs(costs) 
 
             with torch.no_grad():
                 if model_type == "cpp":
-                    _, lb, _, _ = rama_py.rama_cuda(i, j, costs, opts)
+                    _, lb, _, _ = rama_py.rama_cuda(i, j, normed_costs.tolist(), opts)
                     
                 elif model_type == "mlp":
 
-                    mp_data = rama_py.get_message_passing_data(i, j, costs, 3)
+                    mp_data = rama_py.get_message_passing_data(i, j, normed_costs.tolist(), 3)
                        
                     edge_costs, t12_costs, t13_costs, t23_costs, corr_12, corr_13, corr_23, edge_counter = utils.extract_data(mp_data, device)
                     
 
-                    for _ in range(10):
+                    for _ in range(15):
                         updated_edge_costs, updated_t12, updated_t13, updated_t23 = model(
                             edge_costs, t12_costs, t13_costs, t23_costs,
                             corr_12, corr_13, corr_23, edge_counter

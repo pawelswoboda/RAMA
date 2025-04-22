@@ -15,10 +15,10 @@ def loss_fn(edge_costs, t12, t13, t23):
 def train(model_type="mlp"):  # use "mlp" or "gnn"
     utils.set_seed(42)
 
-    wandb.init(project="rama-learned-mp", name=f"train_{model_type}_v3", config={
-        "epochs": 15,
+    wandb.init(project="rama-learned-mp", name=f"train_{model_type}", config={
+        "epochs": 20,
         "lr": 1e-3,
-        "model": f"{model_type}_v3",
+        "model": f"{model_type}",
     })
 
     num_epochs = wandb.config["epochs"]
@@ -61,14 +61,13 @@ def train(model_type="mlp"):  # use "mlp" or "gnn"
         epoch_lb = 0
         for sample in loader:
             name = sample["name"][0]
-           # print(f"[LOADING] {name}...")
             try:
                 i = sample["i"]
                 j = sample["j"]
                 costs = sample["costs"] 
-                #normed_costs, factor = utils.normalise_costs(costs)   normed_costs.tolist() 
+                normed_costs, factor = utils.normalise_costs(costs)  
 
-                mp_data = rama_py.get_message_passing_data(i, j, costs , 3)
+                mp_data = rama_py.get_message_passing_data(i, j, normed_costs.tolist(), 3)
 
                 edge_costs, t12_costs, t13_costs, t23_costs, corr_12, corr_13, corr_23, edge_counter = utils.extract_data(mp_data, device)
                 
@@ -82,7 +81,6 @@ def train(model_type="mlp"):  # use "mlp" or "gnn"
                         loss += loss_fn(updated_edge_costs, updated_t12, updated_t13, updated_t23)
                         edge_costs, t12_costs, t13_costs, t23_costs = updated_edge_costs, updated_t12, updated_t13, updated_t23
                         
-
                 elif model_type == "gnn":
                     print("TODO")
                     

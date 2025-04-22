@@ -3,49 +3,52 @@ import torch.nn as nn
 from torch_scatter import scatter_softmax
 
 class ResBlock(nn.Module):
-    def __init__(self, dim):
+    def __init__(self, dim, dropout=0.1):
         super().__init__()
         self.block = nn.Sequential(
             nn.Linear(dim, dim),
-            nn.SiLU(),
-            nn.Linear(dim, dim),
-            nn.LayerNorm(dim)
+            nn.GELU(),
+            nn.Dropout(dropout)
         )
     def forward(self, x):
         return x + self.block(x)
 
 class MLPMessagePassing(nn.Module):
-    def __init__(self, input_dim=3, output_dim=3):
+    def __init__(self):
         super(MLPMessagePassing, self).__init__()
         
         self.edge_to_tri_mlp = nn.Sequential(
             nn.Linear(1, 16),
             nn.LayerNorm(16),
-            nn.SiLU(),
-            ResBlock(16),
-            nn.Linear(16, 1),
+            nn.GELU(),
+            nn.Dropout(0.1),
+            nn.Linear(16, 32),
+            nn.GELU(),
+            ResBlock(32),
+            nn.LayerNorm(32),
+            ResBlock(32),
+            nn.Linear(32, 16),
+            nn.GELU(),
+            nn.LayerNorm(16),
+            nn.Dropout(0.1),
+            nn.Linear(16, 1)
         )
 
         self.tri_to_edge_mlp = nn.Sequential(
-            nn.Linear(input_dim, 16),
+            nn.Linear(3, 16),
             nn.LayerNorm(16),
-            nn.SiLU(),
-
-            ResBlock(16),
-            ResBlock(16),
-
+            nn.GELU(),
+            nn.Dropout(0.1),
             nn.Linear(16, 32),
+            nn.GELU(),
+            ResBlock(32),
             nn.LayerNorm(32),
-            nn.SiLU(),
-
             ResBlock(32),
-            ResBlock(32),
-
             nn.Linear(32, 16),
+            nn.GELU(),
             nn.LayerNorm(16),
-            nn.SiLU(),
-
-            nn.Linear(16, output_dim)
+            nn.Dropout(0.1),
+            nn.Linear(16, 3)
         )
 
     def send_messages_to_triplets(self, edge_costs, t12, t13, t23,
@@ -67,8 +70,8 @@ class MLPMessagePassing(nn.Module):
         edge_costs[mask] = 0.0
 
         return edge_costs, t12, t13, t23
-    
-    def send_messages_to_triplets2(self, edge_costs, t12, t13, t23,
+
+    def send_messages_to_triplets_mlp(self, edge_costs, t12, t13, t23,
                                    corr_12, corr_13, corr_23, edge_counter):
 
         # bspw: 2 triangles: [4,5,6], [4,9,10], corr_12 = [4,4] etc.
@@ -89,9 +92,8 @@ class MLPMessagePassing(nn.Module):
         # [0,0,1,1,2,2] 0 for t12, 1 for t13, 2 for t23
         # mapping (lagrange_id in triangle_id) -> edge_id 
 
-        initial_weights = torch.ones_like(edge_ids_all, dtype=torch.float32).unsqueeze(-1)
-        # [1,1,1,1,1,1]
-        logits = self.edge_to_tri_mlp(initial_weights).squeeze(-1) 
+        edge_costs_input = edge_costs[edge_ids_all].unsqueeze(-1)      
+        logits = self.edge_to_tri_mlp(edge_costs_input).squeeze(-1) 
         # [10,-4,19,14,-9,-2]
         weights = scatter_softmax(logits, edge_ids_all, dim=0) 
         # Kante 4: softmax([10,-4]) = [0.8, 0.2]
@@ -104,21 +106,25 @@ class MLPMessagePassing(nn.Module):
         contrib = edge_costs[edge_ids_all] * weights  
         # [edge_costs[4] * 0.8, edge_costs[4] * 0.2, edge_costs[5] * 1, ... ] 
        
+        t12_updated = t12.clone()
+        t13_updated = t13.clone()
+        t23_updated = t23.clone()
+
         mask_12 = positions == 0 # [True, True, False, False, False, False]
         mask_13 = positions == 1 # [False, False, True, True, False, False]
         mask_23 = positions == 2 # [False, False, False, False, True, True]
 
-        t12.scatter_add_(0, triangle_ids_all[mask_12], contrib[mask_12])
+        t12_updated.scatter_add_(0, triangle_ids_all[mask_12], contrib[mask_12])
         # contrib[mask_12] = [edge_costs[4] * 0.8, edge_costs[4] * 0.2]
         # triangle_ids_all[mask_12] = [0,1]  
         # t12[0] += edge_costs[4] * 0.8  
         # t12[1] += edge_costs[4] * 0.2 
-        t13.scatter_add_(0, triangle_ids_all[mask_13], contrib[mask_13])
+        t13_updated.scatter_add_(0, triangle_ids_all[mask_13], contrib[mask_13])
         # contrib[mask_13] = [edge_costs[5] * 1, edge_costs[9] * 1]
         # triangle_ids_all[mask_13] = [0,1]  
         # t13[0] += edge_costs[5] * 1  
         # t13[1] += edge_costs[9] * 1 
-        t23.scatter_add_(0, triangle_ids_all[mask_23], contrib[mask_23])
+        t23_updated.scatter_add_(0, triangle_ids_all[mask_23], contrib[mask_23])
         # contrib[mask_23] = [edge_costs[6] * 1, edge_costs[10] * 1]
         # triangle_ids_all[mask_23] = [0,1]  
         # t23[0] += edge_costs[6] * 1  
@@ -127,9 +133,9 @@ class MLPMessagePassing(nn.Module):
         mask = edge_counter > 0
         edge_costs[mask] = 0.0
 
-        return edge_costs, t12, t13, t23
+        return edge_costs, t12_updated, t13_updated, t23_updated
 
-    def send_messages_to_edges(self, edge_costs, t12, t13, t23,
+    def send_messages_to_edges_mlp(self, edge_costs, t12, t13, t23,
                                           corr_12, corr_13, corr_23):
 
         tri_features = torch.stack([t12, t13, t23], dim=1)
@@ -152,12 +158,12 @@ class MLPMessagePassing(nn.Module):
     def forward(self, edge_costs, t12_costs, t13_costs, t23_costs,
                         tri_corr_12, tri_corr_13, tri_corr_23, edge_counter):
         
-        edge_costs, t12_costs, t13_costs, t23_costs = self.send_messages_to_triplets2(
+        edge_costs, t12_costs, t13_costs, t23_costs = self.send_messages_to_triplets(
             edge_costs, t12_costs, t13_costs, t23_costs,
             tri_corr_12, tri_corr_13, tri_corr_23, edge_counter
         )
 
-        edge_costs, t12_costs, t13_costs, t23_costs = self.send_messages_to_edges(
+        edge_costs, t12_costs, t13_costs, t23_costs = self.send_messages_to_edges_mlp(
             edge_costs, t12_costs, t13_costs, t23_costs,
             tri_corr_12, tri_corr_13, tri_corr_23
         )
