@@ -136,6 +136,33 @@ std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>> > r
         if(has_bad_contractions(new_A))
             throw std::runtime_error("Found bad contractions");
 
+        // start 
+        /*if (iter == 1) {
+            static int file_counter = 0;  // Static counter preserved across calls
+            const thrust::device_vector<int> contracted_i = new_A.get_row_ids();
+            const thrust::device_vector<int> contracted_j = new_A.get_col_ids();
+            const thrust::device_vector<float> contracted_costs = new_A.get_data();
+            
+            std::vector<int> h_contracted_i(contracted_i.size());
+            std::vector<int> h_contracted_j(contracted_j.size());
+            std::vector<float> h_contracted_costs(contracted_costs.size());
+            
+            thrust::copy(contracted_i.begin(), contracted_i.end(), h_contracted_i.begin());
+            thrust::copy(contracted_j.begin(), contracted_j.end(), h_contracted_j.begin());
+            thrust::copy(contracted_costs.begin(), contracted_costs.end(), h_contracted_costs.begin());
+            
+            std::string filename = "src/message_passing_nn/data/new/" + std::to_string(file_counter++) + ".txt";
+            std::ofstream f(filename);
+            f << "MULTICUT\n";
+            for (size_t idx = 0; idx < h_contracted_i.size(); ++idx) {
+                if (h_contracted_i[idx] != h_contracted_j[idx] && h_contracted_i[idx] < h_contracted_j[idx]) {
+                    f << h_contracted_i[idx] << " " << h_contracted_j[idx] << " " << h_contracted_costs[idx] << "\n";
+                }
+            }
+            f.close();
+        } */
+        //end
+
         thrust::swap(A, new_A);
         A.remove_diagonal();
         if (opts.verbose)

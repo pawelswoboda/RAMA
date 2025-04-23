@@ -32,7 +32,7 @@ def nn_update(edge_costs_ptr, t1_ptr, t2_ptr, t3_ptr, i_ptr, j_ptr,
                        t12_costs_ptr, t13_costs_ptr, t23_costs_ptr,
                        triangle_corr_12_ptr, triangle_corr_13_ptr, triangle_corr_23_ptr,
                        edge_counter_ptr, num_edges, num_triangles, num_nodes):
-        
+    print("PYTHON")
 
     t1 = ptr_to_tensor(t1_ptr, num_triangles, torch.int32)
     t2 = ptr_to_tensor(t2_ptr, num_triangles, torch.int32)
@@ -92,7 +92,7 @@ def via_mlp(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
             tri_corr_12, tri_corr_13, tri_corr_23, edge_counter
         )
 
-    print("[PYTHON] Lower bound: ", utils.lower_bound(updated_edge_costs, updated_t12, updated_t13, updated_t23))
+    print("[PYTHON] Lower bound: ", utils.lower_bound(updated_edge_costs, updated_t12, updated_t13, updated_t23).item())
     return (
         updated_edge_costs.detach().cpu().numpy(),
         updated_t12.detach().cpu().numpy(),

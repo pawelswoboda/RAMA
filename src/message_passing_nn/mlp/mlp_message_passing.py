@@ -18,20 +18,19 @@ class MLPMessagePassing(nn.Module):
         super(MLPMessagePassing, self).__init__()
         
         self.edge_to_tri_mlp = nn.Sequential(
-            nn.Linear(1, 16),
-            nn.LayerNorm(16),
+            nn.Linear(1, 8),
+            nn.LayerNorm(8),
             nn.GELU(),
             nn.Dropout(0.1),
-            nn.Linear(16, 32),
+            nn.Linear(8, 16),
             nn.GELU(),
-            ResBlock(32),
-            nn.LayerNorm(32),
-            ResBlock(32),
-            nn.Linear(32, 16),
-            nn.GELU(),
+            ResBlock(16),
             nn.LayerNorm(16),
-            nn.Dropout(0.1),
-            nn.Linear(16, 1)
+            ResBlock(16),
+            nn.Linear(16, 8),
+            nn.GELU(),
+            nn.LayerNorm(8),
+            nn.Linear(8, 1)
         )
 
         self.tri_to_edge_mlp = nn.Sequential(
@@ -47,7 +46,6 @@ class MLPMessagePassing(nn.Module):
             nn.Linear(32, 16),
             nn.GELU(),
             nn.LayerNorm(16),
-            nn.Dropout(0.1),
             nn.Linear(16, 3)
         )
 
