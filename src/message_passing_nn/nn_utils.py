@@ -49,4 +49,3 @@ def normalise_costs(costs, eps=1e-6, device=None):
     scale = costs.abs().max()
     factor = scale + eps
     return costs / factor, factor
-

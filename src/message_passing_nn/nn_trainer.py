@@ -17,11 +17,11 @@ def train(model_type="mlp"):  # use "mlp" or "gnn"
 
     wandb.init(project="rama-learned-mp", name=f"train_{model_type}", config={
         "epochs": 20,
-        "lr": 1e-3,
+        "lr": 1e-4,
         "model": f"{model_type}",
     })
 
-    num_epochs = wandb.config["epochs"]
+    num_epochs = wandb.config["epochs"]  
     lr = wandb.config["lr"]
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -42,7 +42,8 @@ def train(model_type="mlp"):  # use "mlp" or "gnn"
 
     wandb.watch(model, log="all", log_freq=100)
     
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.3)  
 
     MODEL_PATH = f"./{model_type}_model.pt"   
     if os.path.exists(MODEL_PATH):
@@ -73,7 +74,7 @@ def train(model_type="mlp"):  # use "mlp" or "gnn"
                 
                 loss = 0
                 if model_type == "mlp":
-                    for _ in range(5):
+                    for _ in range(15):
                         updated_edge_costs, updated_t12, updated_t13, updated_t23 = model(
                             edge_costs, t12_costs, t13_costs, t23_costs,
                             corr_12, corr_13, corr_23, edge_counter
@@ -105,6 +106,8 @@ def train(model_type="mlp"):  # use "mlp" or "gnn"
             "avg_loss": losses[-1],
             "avg_lower_bound": lbs[-1]
         }, step=epoch)
+        
+        scheduler.step()  # Update learning rate
 
     torch.save(model.state_dict(), MODEL_PATH)
     wandb.save(MODEL_PATH)
@@ -120,18 +123,3 @@ def train(model_type="mlp"):  # use "mlp" or "gnn"
 if __name__ == "__main__":
     train()
 
-
-
-#mapping, lb, _, _ = rama_py.rama_cuda(i, j, costs, opts)
-#print(f"[SUCCESS] {name}: Clusters: {mapping}, LB: {lb}")
-
-                
-# k = random.randint(0,10)
-# with torch.no_grad():
-#    for _ in range(k):
-#        costs,triangle_costs = rama_py.message_passing(i, j, costs, triangles, triangle_costs)
-
-
-
-# rama_py.message_passing(model,i,j,costs,triangles,triangle_costs)
-# lb = rama_py.solve_dual(i,j,costs, opts)
