@@ -2,14 +2,25 @@ import torch
 import torch.nn as nn
 from torch_scatter import scatter_softmax
 
-class ResBlock(nn.Module):
-    def __init__(self, dim, dropout=0.1):
+class RMSNorm(nn.Module):
+    def __init__(self, dim, eps=1e-6):
         super().__init__()
-        self.block = nn.Sequential(
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(dim))
+
+    def forward(self, x):
+        rms = torch.sqrt(torch.mean(x ** 2, dim=-1, keepdim=True))
+        return x / (rms + self.eps) * self.weight
+
+class ResBlock(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.block = nn.Sequential( 
+            RMSNorm(dim),
             nn.Linear(dim, dim),
-            nn.GELU(),
-            nn.Dropout(dropout)
+            nn.ReLU(),
         )
+
     def forward(self, x):
         return x + self.block(x)
 
@@ -83,26 +94,28 @@ class TriToEdgeMLP(nn.Module):
     def __init__(self, input_dim=3, output_dim=3):
         super().__init__()
         self.mlp = nn.Sequential(
-            nn.Linear(input_dim, 16),
-            nn.LayerNorm(16),
-            nn.GELU(),
-            nn.Dropout(0.1),
-            nn.Linear(16, 32),
-            nn.GELU(),
+            nn.Linear(input_dim, 32),
+            nn.ReLU(),
             ResBlock(32),
-            nn.LayerNorm(32),
             ResBlock(32),
-            nn.Linear(32, 16),
-            nn.GELU(),
-            nn.LayerNorm(16),
-            nn.Linear(16, output_dim)
+            ResBlock(32),
+            ResBlock(32),
+            ResBlock(32),
+            ResBlock(32),
+            nn.Linear(32, output_dim)
         )
+        self._init_weights()
+
+    def _init_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, mean=0.0, std=0.01)
+                nn.init.zeros_(m.bias)
 
     def forward(self, x):
         return self.mlp(x)
 
 class MLPMessagePassing(nn.Module):
-    
     def __init__(self):
         super(MLPMessagePassing, self).__init__()
         self.edge_to_tri_mlp = EdgeToTriMLP(input_dim=1, output_dim=1) # input = edge_cost, output = weights
@@ -245,7 +258,7 @@ class MLPMessagePassing(nn.Module):
     def forward(self, edge_costs, t12_costs, t13_costs, t23_costs,
                         tri_corr_12, tri_corr_13, tri_corr_23, edge_counter):
         
-        edge_costs, t12_costs, t13_costs, t23_costs = self.send_messages_to_triplets_attention(
+        edge_costs, t12_costs, t13_costs, t23_costs = self.send_messages_to_triplets(
             edge_costs, t12_costs, t13_costs, t23_costs,
             tri_corr_12, tri_corr_13, tri_corr_23, edge_counter
         )
