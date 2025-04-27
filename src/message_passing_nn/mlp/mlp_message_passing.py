@@ -109,7 +109,7 @@ class TriToEdgeMLP(nn.Module):
     def _init_weights(self):
         for m in self.modules():
             if isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, mean=0.0, std=0.01)
+                nn.init.normal_(m.weight, mean=0.0, std=0.02)
                 nn.init.zeros_(m.bias)
 
     def forward(self, x):
