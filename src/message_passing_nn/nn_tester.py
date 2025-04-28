@@ -101,10 +101,10 @@ def test(model_type):
         for f in sorted(fails):
             print(f" - {f}")
     
-    print("Testing finished.")
+    print("TESTING FINISHED")
 
 if __name__ == "__main__":
     test(model_type="mlp")
     # use "mlp" or "gnn"
-    #... or "cpp": DISABLE_MLP=1 /bin/python3 /home/houraghene/RAMA/src/message_passing_nn/nn_tester.py
+    # or "cpp": DISABLE_MLP=1 /bin/python3 /home/houraghene/RAMA/src/message_passing_nn/nn_tester.py
 

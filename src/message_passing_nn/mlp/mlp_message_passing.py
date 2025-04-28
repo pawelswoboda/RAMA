@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 from torch_scatter import scatter_softmax
 
-
 class ResBlock(nn.Module):
     def __init__(self, dim):
         super().__init__()
@@ -11,7 +10,6 @@ class ResBlock(nn.Module):
             nn.Linear(dim, dim),
             nn.ReLU()
             )
-
     def forward(self, x):
         return x + self.block(x)
 
@@ -19,19 +17,15 @@ class EdgeToTriMLP(nn.Module):
     def __init__(self, input_dim=1, output_dim=1):
         super().__init__()
         self.mlp = nn.Sequential(
-            nn.Linear(input_dim, 8),
-            nn.LayerNorm(8),
-            nn.GELU(),
-            nn.Dropout(0.1),
-            nn.Linear(8, 16),
-            nn.GELU(),
-            ResBlock(16),
-            nn.LayerNorm(16),
-            ResBlock(16),
-            nn.Linear(16, 8),
-            nn.GELU(),
-            nn.LayerNorm(8),
-            nn.Linear(8, output_dim)
+            nn.Linear(input_dim, 16),
+            nn.ReLU(),
+            ResBlock(32),
+            ResBlock(32),
+            ResBlock(32),
+            ResBlock(32),
+            ResBlock(32),
+            ResBlock(32),
+            nn.Linear(16, output_dim)
         )
 
     def forward(self, edge_costs, edge_ids_all):
@@ -55,13 +49,14 @@ class EdgeToTriAttention(nn.Module):
         self.value = nn.Linear(input_dim, d_k)
         self.attention_mlp = nn.Sequential(
             nn.Linear(d_k, 32),
-            nn.LayerNorm(32),
-            nn.GELU(),
+            nn.ReLU(),
             ResBlock(32),
-            nn.LayerNorm(32),
-            nn.Linear(32, 16),
-            nn.GELU(),
-            nn.Linear(16, output_dim)   # output = weights
+            ResBlock(32),
+            ResBlock(32),
+            ResBlock(32),
+            ResBlock(32),
+            ResBlock(32),
+            nn.Linear(32, output_dim)   # output = weights
         )
 
     def forward(self, edge_features, edge_ids_all, triangle_ids_all):
@@ -73,8 +68,8 @@ class EdgeToTriAttention(nn.Module):
         attention_scores = torch.matmul(queries, keys.transpose(0, 1)) / (self.d_k ** 0.5)  # [num_edges, num_edges], aehnlichkeitsmatrix   
         attention_mask = (triangle_ids_all.unsqueeze(1) == triangle_ids_all.unsqueeze(0)) # nur kanten in gleichen triangles berücksichtigen
         attention_scores = attention_scores.masked_fill(~attention_mask, float('-inf')) # kanten aus verschiedenen triangles kriegen -inf score
-        attention_weights = torch.softmax(attention_scores, dim=1)  # [num_edges, num_edges]
-        attended_values = torch.matmul(attention_weights, values)  # [num_edges, 8]
+        attention_weights = torch.softmax(attention_scores, dim=1)  
+        attended_values = torch.matmul(attention_weights, values)  # [num_edges, d_k]
         
         logits = self.attention_mlp(attended_values).squeeze(-1)  # [num_edges]
         weights = scatter_softmax(logits, edge_ids_all, dim=0)
@@ -136,7 +131,7 @@ class MLPMessagePassing(nn.Module):
     def send_messages_to_triplets_mlp(self, edge_costs, t12, t13, t23,
                                    corr_12, corr_13, corr_23, edge_counter):
 
-        # bspw: 2 triangles: [4,5,6], [4,9,10], corr_12 = [4,4] etc.
+        # bspw: 2 triangles: [4,5,6], [4,9,10], corr_12 = [4,4], corr_13 = [5,9], corr_23 = [6,10]
         num_triangles = t12.shape[0] 
         # 2
         triangle_ids = torch.arange(num_triangles, device=edge_costs.device) 
@@ -157,7 +152,6 @@ class MLPMessagePassing(nn.Module):
 
         weights = self.edge_to_tri_mlp(edge_costs_input, edge_ids_all).squeeze(-1) 
         contrib = edge_costs[edge_ids_all] * weights  
-
         # [edge_costs[4] * 0.8, edge_costs[4] * 0.2, edge_costs[5] * 1, ... ] 
  
         t12_updated = t12.clone()

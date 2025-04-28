@@ -68,8 +68,7 @@ def train(cfg: Config):
         print(f"[INFO] EPOCH: {epoch+1}")
         epoch_loss = 0
         epoch_lb = 0
-        step_counter = 0
-        for sample in loader:
+        for step_counter, sample in enumerate(loader, 1):
             name = sample["name"][0]
             try:
                 i = sample["i"]
@@ -99,12 +98,12 @@ def train(cfg: Config):
                     return
  
                 loss.backward()
-                step_counter += 1
                 
-                if step_counter % cfg.train.gradient_acc_steps == 0:
+                if step_counter % cfg.train.gradient_acc_steps == 0: # k=4
                     norm = torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.train.gradient_clip_norm)
                     optimizer.step()
                     optimizer.zero_grad()
+                    #wandb.log({"grad_norm": norm})
                 
                 epoch_loss += loss.item()
                 lb = utils.lower_bound(updated_edge_costs, updated_t12, updated_t13, updated_t23)
