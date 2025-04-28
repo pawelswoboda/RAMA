@@ -12,8 +12,7 @@ def save_results(name, lb, eval_dir):
     with open(out_path, "w") as f:
         f.write(f"{lb:.6f}\n")
 
-def test(model_type="mlp"): # use "mlp" or "gnn"
-    #... or "cpp" with DISABLE_MLP=1 /bin/python3 /home/houraghene/RAMA/src/message_passing_nn/nn_tester.py
+def test(model_type): 
     utils.set_seed(42)
 
     data_dir = "src/message_passing_nn/data"
@@ -66,7 +65,6 @@ def test(model_type="mlp"): # use "mlp" or "gnn"
             with torch.no_grad():
                 if model_type == "cpp":
                     _, lb, _, _ = rama_py.rama_cuda(i, j, normed_costs.tolist(), opts)
-                    
                 elif model_type == "mlp":
 
                     mp_data = rama_py.get_message_passing_data(i, j, normed_costs.tolist(), 3)
@@ -106,7 +104,7 @@ def test(model_type="mlp"): # use "mlp" or "gnn"
     print("Testing finished.")
 
 if __name__ == "__main__":
-    test()
+    test(model_type="mlp")
+    # use "mlp" or "gnn"
+    #... or "cpp": DISABLE_MLP=1 /bin/python3 /home/houraghene/RAMA/src/message_passing_nn/nn_tester.py
 
-
-# SPÄTER das if else weg machen und einfach dual solver aufgerufen mit/ohne DISABLE_MLP = 1               

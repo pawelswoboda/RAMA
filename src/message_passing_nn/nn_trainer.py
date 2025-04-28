@@ -19,10 +19,10 @@ def train(cfg: Config):
     
     utils.set_seed(cfg.seed)
 
-    wandb.init(project="rama-learned-mp", name=f"train_{cfg.training.model_type}", config={
-        "epochs": cfg.training.epochs,
-        "lr": cfg.training.lr,
-        "model_type": cfg.training.model_type,
+    wandb.init(project="rama-learned-mp", name=f"train_{cfg.train.model_type}", config={
+        "epochs": cfg.train.epochs,
+        "lr": cfg.train.lr,
+        "model_type": cfg.train.model_type,
     })
 
     num_epochs = wandb.config["epochs"]  
@@ -34,9 +34,9 @@ def train(cfg: Config):
     opts = rama_py.multicut_solver_options("PD")
     opts.verbose = False
 
-    if cfg.training.model_type == "mlp":
+    if cfg.train.model_type == "mlp":
         model = MLPMessagePassing().to(device)
-    elif cfg.training.model_type == "gnn":
+    elif cfg.train.model_type == "gnn":
         model = GNNMessagePassing().to(device)
     else:
         print("[ERROR] CANT FIND MODEL, USE mlp OR gnn")
@@ -49,15 +49,15 @@ def train(cfg: Config):
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
     scheduler = torch.optim.lr_scheduler.StepLR(
         optimizer, 
-        step_size=cfg.training.scheduler_step_size, 
-        gamma=cfg.training.scheduler_gamma
+        step_size=cfg.train.scheduler_step_size, 
+        gamma=cfg.train.scheduler_gamma
     )
 
-    model_path = cfg.model_save_path.format(model_type=cfg.training.model_type)
+    model_path = cfg.model_save_path.format(model_type=cfg.train.model_type)
     if os.path.exists(model_path):
         model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
     
-    print(f"[INFO] MODEL: {cfg.training.model_type}")
+    print(f"[INFO] MODEL: {cfg.train.model_type}")
     print(f"[INFO] DEVICE: {next(model.parameters()).device}")
     print(f"[INFO] Found {len(dataset)} Multicut instances.")
 
@@ -82,8 +82,8 @@ def train(cfg: Config):
                 edge_costs, t12_costs, t13_costs, t23_costs, corr_12, corr_13, corr_23, edge_counter = utils.extract_data(mp_data, device)
                 
                 loss = 0
-                if cfg.training.model_type == "mlp":
-                    for _ in range(15):
+                if cfg.train.model_type == "mlp":
+                    for _ in range(cfg.train.num_mp_iter):
                         updated_edge_costs, updated_t12, updated_t13, updated_t23 = model(
                             edge_costs, t12_costs, t13_costs, t23_costs,
                             corr_12, corr_13, corr_23, edge_counter
@@ -91,7 +91,7 @@ def train(cfg: Config):
                         loss += loss_fn(updated_edge_costs, updated_t12, updated_t13, updated_t23)
                         edge_costs, t12_costs, t13_costs, t23_costs = updated_edge_costs, updated_t12, updated_t13, updated_t23
                         
-                elif cfg.training.model_type == "gnn":
+                elif cfg.train.model_type == "gnn":
                     print("TODO")
                     
                 else:
@@ -101,8 +101,8 @@ def train(cfg: Config):
                 loss.backward()
                 step_counter += 1
                 
-                if step_counter % cfg.training.gradient_accumulation_steps == 0:
-                    norm = torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.training.gradient_clip_norm)
+                if step_counter % cfg.train.gradient_acc_steps == 0:
+                    norm = torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.train.gradient_clip_norm)
                     optimizer.step()
                     optimizer.zero_grad()
                 
@@ -131,7 +131,7 @@ def train(cfg: Config):
         for f in sorted(fails):
             print(f" - {f}")
 
-    print("Training finished.")
+    print("TRAINING FINISHED")
 
 if __name__ == "__main__":
     train()

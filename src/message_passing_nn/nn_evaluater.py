@@ -31,11 +31,13 @@ def write_summary(diff_mlp, diff_gnn, compare_lines, output_path):
 
     summary = []
     summary.append("===== COMPARISON RESULTS =====")
+    summary.append(f"{'Instance':<28} {'CPP':<21} {'MLP':<18} {'GNN':<20} {'Diff MLP (%)':<26} {'Diff GNN (%)':<15}")
+    summary.append("=" * 133)
     summary.extend(compare_lines)
     summary.append("\n===== SUMMARY =====")
     summary.append(f"[SUMMARY] Compared {count} graphs.")
     summary.append(f"[SUMMARY] On average, MLP LB is {abs(avg_diff_mlp):.2f}% {'better' if avg_diff_mlp > 0 else 'worse'} than CPP")
-    summary.append(f"[SUMMARY] On average, GNN LB is {abs(avg_diff_gnn):.2f}% {'better' if avg_diff_gnn > 0 else 'worse'} than CPP")
+   # summary.append(f"[SUMMARY] On average, GNN LB is {abs(avg_diff_gnn):.2f}% {'better' if avg_diff_gnn > 0 else 'worse'} than CPP")
 
     with open(output_path, "w") as f:
         f.write("\n".join(summary))
@@ -70,7 +72,7 @@ def evaluate():
            # "GNN vs CPP (%)": diff_gnn_lb
         })
 
-        compare_line = f"[COMPARE] {f.name}: CPP={cpp_lb:.2f}, MLP={mlp_lb:.2f}, GNN={0:.2f}, DIFF_MLP={diff_mlp_lb:.2f}%, DIFF_GNN={0:.2f}%"
+        compare_line = f"[COMPARE] {f.name:<15} CPP: {cpp_lb:<15.2f} MLP: {mlp_lb:<15.2f} GNN: {0:<15.2f} %_DIFF_MLP: {diff_mlp_lb:<15.2f} %_DIFF_GNN: {0:<15.2f}"
         compare_lines.append(compare_line)
 
         cpp_lbs.append(cpp_lb)
