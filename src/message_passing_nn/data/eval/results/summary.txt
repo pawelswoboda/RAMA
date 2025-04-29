@@ -1,51 +1,51 @@
 ===== COMPARISON RESULTS =====
 Instance                     CPP                   MLP                GNN                  Diff MLP (%)               Diff GNN (%)   
 =====================================================================================================================================
-[COMPARE] 148026.out      CPP: -1357.11        MLP: -1376.22        GNN: 0.00            %_DIFF_MLP: -1.41           %_DIFF_GNN: 0.00           
-[COMPARE] 15.out          CPP: -223.83         MLP: -224.07         GNN: 0.00            %_DIFF_MLP: -0.11           %_DIFF_GNN: 0.00           
-[COMPARE] 156065.out      CPP: -435.91         MLP: -456.41         GNN: 0.00            %_DIFF_MLP: -4.70           %_DIFF_GNN: 0.00           
-[COMPARE] 159008.out      CPP: -851.97         MLP: -868.11         GNN: 0.00            %_DIFF_MLP: -1.89           %_DIFF_GNN: 0.00           
-[COMPARE] 16.out          CPP: -96.05          MLP: -96.25          GNN: 0.00            %_DIFF_MLP: -0.21           %_DIFF_GNN: 0.00           
-[COMPARE] 160068.out      CPP: -530.64         MLP: -542.51         GNN: 0.00            %_DIFF_MLP: -2.24           %_DIFF_GNN: 0.00           
-[COMPARE] 163085.out      CPP: -441.70         MLP: -459.57         GNN: 0.00            %_DIFF_MLP: -4.04           %_DIFF_GNN: 0.00           
-[COMPARE] 167062.out      CPP: -97.28          MLP: -98.15          GNN: 0.00            %_DIFF_MLP: -0.90           %_DIFF_GNN: 0.00           
-[COMPARE] 167083.out      CPP: -792.30         MLP: -812.69         GNN: 0.00            %_DIFF_MLP: -2.57           %_DIFF_GNN: 0.00           
-[COMPARE] 17.out          CPP: -124.10         MLP: -124.29         GNN: 0.00            %_DIFF_MLP: -0.15           %_DIFF_GNN: 0.00           
-[COMPARE] 170057.out      CPP: -271.09         MLP: -284.33         GNN: 0.00            %_DIFF_MLP: -4.88           %_DIFF_GNN: 0.00           
-[COMPARE] 175032.out      CPP: -807.71         MLP: -859.91         GNN: 0.00            %_DIFF_MLP: -6.46           %_DIFF_GNN: 0.00           
-[COMPARE] 175043.out      CPP: -1193.15        MLP: -1230.54        GNN: 0.00            %_DIFF_MLP: -3.13           %_DIFF_GNN: 0.00           
-[COMPARE] 18.out          CPP: -53.85          MLP: -54.22          GNN: 0.00            %_DIFF_MLP: -0.69           %_DIFF_GNN: 0.00           
-[COMPARE] 189080.out      CPP: -165.45         MLP: -172.62         GNN: 0.00            %_DIFF_MLP: -4.33           %_DIFF_GNN: 0.00           
-[COMPARE] 19.out          CPP: -111.85         MLP: -112.82         GNN: 0.00            %_DIFF_MLP: -0.86           %_DIFF_GNN: 0.00           
-[COMPARE] 196073.out      CPP: -48.80          MLP: -49.74          GNN: 0.00            %_DIFF_MLP: -1.93           %_DIFF_GNN: 0.00           
-[COMPARE] 197017.out      CPP: -444.07         MLP: -450.06         GNN: 0.00            %_DIFF_MLP: -1.35           %_DIFF_GNN: 0.00           
-[COMPARE] 20.out          CPP: -73.09          MLP: -73.55          GNN: 0.00            %_DIFF_MLP: -0.63           %_DIFF_GNN: 0.00           
-[COMPARE] 208001.out      CPP: -553.62         MLP: -578.58         GNN: 0.00            %_DIFF_MLP: -4.51           %_DIFF_GNN: 0.00           
-[COMPARE] 21.out          CPP: -43.71          MLP: -44.55          GNN: 0.00            %_DIFF_MLP: -1.92           %_DIFF_GNN: 0.00           
-[COMPARE] 210088.out      CPP: -418.56         MLP: -425.43         GNN: 0.00            %_DIFF_MLP: -1.64           %_DIFF_GNN: 0.00           
-[COMPARE] 216081.out      CPP: -781.14         MLP: -791.73         GNN: 0.00            %_DIFF_MLP: -1.36           %_DIFF_GNN: 0.00           
-[COMPARE] 219090.out      CPP: -416.58         MLP: -422.49         GNN: 0.00            %_DIFF_MLP: -1.42           %_DIFF_GNN: 0.00           
+[COMPARE] 148026.out      CPP: -1376.51        MLP: -1376.66        GNN: 0.00            %_DIFF_MLP: -0.01           %_DIFF_GNN: 0.00           
+[COMPARE] 15.out          CPP: -224.06         MLP: -224.06         GNN: 0.00            %_DIFF_MLP: -0.00           %_DIFF_GNN: 0.00           
+[COMPARE] 156065.out      CPP: -457.24         MLP: -457.22         GNN: 0.00            %_DIFF_MLP: 0.01            %_DIFF_GNN: 0.00           
+[COMPARE] 159008.out      CPP: -868.74         MLP: -868.64         GNN: 0.00            %_DIFF_MLP: 0.01            %_DIFF_GNN: 0.00           
+[COMPARE] 16.out          CPP: -96.23          MLP: -96.24          GNN: 0.00            %_DIFF_MLP: -0.01           %_DIFF_GNN: 0.00           
+[COMPARE] 160068.out      CPP: -542.80         MLP: -542.86         GNN: 0.00            %_DIFF_MLP: -0.01           %_DIFF_GNN: 0.00           
+[COMPARE] 163085.out      CPP: -460.68         MLP: -460.56         GNN: 0.00            %_DIFF_MLP: 0.03            %_DIFF_GNN: 0.00           
+[COMPARE] 167062.out      CPP: -98.24          MLP: -98.18          GNN: 0.00            %_DIFF_MLP: 0.06            %_DIFF_GNN: 0.00           
+[COMPARE] 167083.out      CPP: -813.57         MLP: -813.45         GNN: 0.00            %_DIFF_MLP: 0.01            %_DIFF_GNN: 0.00           
+[COMPARE] 17.out          CPP: -124.28         MLP: -124.28         GNN: 0.00            %_DIFF_MLP: -0.00           %_DIFF_GNN: 0.00           
+[COMPARE] 170057.out      CPP: -284.54         MLP: -284.63         GNN: 0.00            %_DIFF_MLP: -0.03           %_DIFF_GNN: 0.00           
+[COMPARE] 175032.out      CPP: -861.84         MLP: -861.55         GNN: 0.00            %_DIFF_MLP: 0.03            %_DIFF_GNN: 0.00           
+[COMPARE] 175043.out      CPP: -1231.44        MLP: -1231.66        GNN: 0.00            %_DIFF_MLP: -0.02           %_DIFF_GNN: 0.00           
+[COMPARE] 18.out          CPP: -54.20          MLP: -54.21          GNN: 0.00            %_DIFF_MLP: -0.02           %_DIFF_GNN: 0.00           
+[COMPARE] 189080.out      CPP: -172.91         MLP: -173.00         GNN: 0.00            %_DIFF_MLP: -0.05           %_DIFF_GNN: 0.00           
+[COMPARE] 19.out          CPP: -112.79         MLP: -112.80         GNN: 0.00            %_DIFF_MLP: -0.01           %_DIFF_GNN: 0.00           
+[COMPARE] 196073.out      CPP: -49.80          MLP: -49.81          GNN: 0.00            %_DIFF_MLP: -0.02           %_DIFF_GNN: 0.00           
+[COMPARE] 197017.out      CPP: -450.44         MLP: -450.34         GNN: 0.00            %_DIFF_MLP: 0.02            %_DIFF_GNN: 0.00           
+[COMPARE] 20.out          CPP: -73.54          MLP: -73.55          GNN: 0.00            %_DIFF_MLP: -0.01           %_DIFF_GNN: 0.00           
+[COMPARE] 208001.out      CPP: -579.20         MLP: -579.16         GNN: 0.00            %_DIFF_MLP: 0.01            %_DIFF_GNN: 0.00           
+[COMPARE] 21.out          CPP: -44.54          MLP: -44.54          GNN: 0.00            %_DIFF_MLP: -0.01           %_DIFF_GNN: 0.00           
+[COMPARE] 210088.out      CPP: -425.84         MLP: -425.99         GNN: 0.00            %_DIFF_MLP: -0.04           %_DIFF_GNN: 0.00           
+[COMPARE] 216081.out      CPP: -791.81         MLP: -791.79         GNN: 0.00            %_DIFF_MLP: 0.00            %_DIFF_GNN: 0.00           
+[COMPARE] 219090.out      CPP: -422.93         MLP: -422.87         GNN: 0.00            %_DIFF_MLP: 0.02            %_DIFF_GNN: 0.00           
 [COMPARE] 22.out          CPP: -21.45          MLP: -21.45          GNN: 0.00            %_DIFF_MLP: 0.00            %_DIFF_GNN: 0.00           
-[COMPARE] 220075.out      CPP: -762.53         MLP: -770.17         GNN: 0.00            %_DIFF_MLP: -1.00           %_DIFF_GNN: 0.00           
-[COMPARE] 223061.out      CPP: -397.50         MLP: -427.38         GNN: 0.00            %_DIFF_MLP: -7.52           %_DIFF_GNN: 0.00           
-[COMPARE] 23.out          CPP: -95.42          MLP: -96.41          GNN: 0.00            %_DIFF_MLP: -1.04           %_DIFF_GNN: 0.00           
-[COMPARE] 236037.out      CPP: -826.15         MLP: -868.27         GNN: 0.00            %_DIFF_MLP: -5.10           %_DIFF_GNN: 0.00           
-[COMPARE] 24.out          CPP: -195.31         MLP: -197.69         GNN: 0.00            %_DIFF_MLP: -1.22           %_DIFF_GNN: 0.00           
-[COMPARE] 241004.out      CPP: -125.49         MLP: -130.24         GNN: 0.00            %_DIFF_MLP: -3.78           %_DIFF_GNN: 0.00           
-[COMPARE] 241048.out      CPP: -547.88         MLP: -568.61         GNN: 0.00            %_DIFF_MLP: -3.78           %_DIFF_GNN: 0.00           
-[COMPARE] 25.out          CPP: -109.31         MLP: -110.39         GNN: 0.00            %_DIFF_MLP: -0.99           %_DIFF_GNN: 0.00           
-[COMPARE] 26.out          CPP: -26.94          MLP: -27.07          GNN: 0.00            %_DIFF_MLP: -0.52           %_DIFF_GNN: 0.00           
-[COMPARE] 27.out          CPP: -45.07          MLP: -45.33          GNN: 0.00            %_DIFF_MLP: -0.58           %_DIFF_GNN: 0.00           
-[COMPARE] 28.out          CPP: -143.10         MLP: -143.43         GNN: 0.00            %_DIFF_MLP: -0.23           %_DIFF_GNN: 0.00           
-[COMPARE] 29.out          CPP: -138.38         MLP: -139.08         GNN: 0.00            %_DIFF_MLP: -0.51           %_DIFF_GNN: 0.00           
-[COMPARE] 30.out          CPP: -130.45         MLP: -130.80         GNN: 0.00            %_DIFF_MLP: -0.27           %_DIFF_GNN: 0.00           
-[COMPARE] 31.out          CPP: -95.92          MLP: -96.16          GNN: 0.00            %_DIFF_MLP: -0.26           %_DIFF_GNN: 0.00           
-[COMPARE] 32.out          CPP: -239.89         MLP: -241.11         GNN: 0.00            %_DIFF_MLP: -0.51           %_DIFF_GNN: 0.00           
-[COMPARE] 33.out          CPP: -161.15         MLP: -162.06         GNN: 0.00            %_DIFF_MLP: -0.56           %_DIFF_GNN: 0.00           
-[COMPARE] 34.out          CPP: -37.38          MLP: -37.82          GNN: 0.00            %_DIFF_MLP: -1.16           %_DIFF_GNN: 0.00           
-[COMPARE] 35.out          CPP: -218.23         MLP: -218.94         GNN: 0.00            %_DIFF_MLP: -0.32           %_DIFF_GNN: 0.00           
-[COMPARE] 36.out          CPP: -83.11          MLP: -83.18          GNN: 0.00            %_DIFF_MLP: -0.09           %_DIFF_GNN: 0.00           
+[COMPARE] 220075.out      CPP: -770.55         MLP: -770.56         GNN: 0.00            %_DIFF_MLP: -0.00           %_DIFF_GNN: 0.00           
+[COMPARE] 223061.out      CPP: -428.55         MLP: -428.35         GNN: 0.00            %_DIFF_MLP: 0.05            %_DIFF_GNN: 0.00           
+[COMPARE] 23.out          CPP: -96.39          MLP: -96.41          GNN: 0.00            %_DIFF_MLP: -0.02           %_DIFF_GNN: 0.00           
+[COMPARE] 236037.out      CPP: -870.00         MLP: -870.00         GNN: 0.00            %_DIFF_MLP: -0.00           %_DIFF_GNN: 0.00           
+[COMPARE] 24.out          CPP: -197.63         MLP: -197.67         GNN: 0.00            %_DIFF_MLP: -0.02           %_DIFF_GNN: 0.00           
+[COMPARE] 241004.out      CPP: -130.36         MLP: -130.33         GNN: 0.00            %_DIFF_MLP: 0.02            %_DIFF_GNN: 0.00           
+[COMPARE] 241048.out      CPP: -569.01         MLP: -569.08         GNN: 0.00            %_DIFF_MLP: -0.01           %_DIFF_GNN: 0.00           
+[COMPARE] 25.out          CPP: -110.34         MLP: -110.36         GNN: 0.00            %_DIFF_MLP: -0.02           %_DIFF_GNN: 0.00           
+[COMPARE] 26.out          CPP: -27.07          MLP: -27.07          GNN: 0.00            %_DIFF_MLP: -0.00           %_DIFF_GNN: 0.00           
+[COMPARE] 27.out          CPP: -45.32          MLP: -45.32          GNN: 0.00            %_DIFF_MLP: -0.01           %_DIFF_GNN: 0.00           
+[COMPARE] 28.out          CPP: -143.41         MLP: -143.42         GNN: 0.00            %_DIFF_MLP: -0.00           %_DIFF_GNN: 0.00           
+[COMPARE] 29.out          CPP: -139.04         MLP: -139.05         GNN: 0.00            %_DIFF_MLP: -0.01           %_DIFF_GNN: 0.00           
+[COMPARE] 30.out          CPP: -130.77         MLP: -130.78         GNN: 0.00            %_DIFF_MLP: -0.01           %_DIFF_GNN: 0.00           
+[COMPARE] 31.out          CPP: -96.15          MLP: -96.16          GNN: 0.00            %_DIFF_MLP: -0.00           %_DIFF_GNN: 0.00           
+[COMPARE] 32.out          CPP: -241.08         MLP: -241.10         GNN: 0.00            %_DIFF_MLP: -0.01           %_DIFF_GNN: 0.00           
+[COMPARE] 33.out          CPP: -162.02         MLP: -162.04         GNN: 0.00            %_DIFF_MLP: -0.01           %_DIFF_GNN: 0.00           
+[COMPARE] 34.out          CPP: -37.81          MLP: -37.82          GNN: 0.00            %_DIFF_MLP: -0.01           %_DIFF_GNN: 0.00           
+[COMPARE] 35.out          CPP: -218.89         MLP: -218.90         GNN: 0.00            %_DIFF_MLP: -0.01           %_DIFF_GNN: 0.00           
+[COMPARE] 36.out          CPP: -83.18          MLP: -83.18          GNN: 0.00            %_DIFF_MLP: -0.00           %_DIFF_GNN: 0.00           
 
 ===== SUMMARY =====
 [SUMMARY] Compared 44 graphs.
-[SUMMARY] On average, MLP LB is 1.88% worse than CPP
+[SUMMARY] On average, MLP LB is 0.00% worse than CPP

@@ -46,7 +46,7 @@ def train(cfg: Config):
 
     wandb.watch(model, log="all", log_freq=100)
     
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-8)
     scheduler = torch.optim.lr_scheduler.StepLR(
         optimizer, 
         step_size=cfg.train.scheduler_step_size, 
@@ -103,7 +103,6 @@ def train(cfg: Config):
                     norm = torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.train.gradient_clip_norm)
                     optimizer.step()
                     optimizer.zero_grad()
-                    #wandb.log({"grad_norm": norm})
                 
                 epoch_loss += loss.item()
                 lb = utils.lower_bound(updated_edge_costs, updated_t12, updated_t13, updated_t23)

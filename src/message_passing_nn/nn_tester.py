@@ -5,6 +5,7 @@ import rama_py
 import torch
 from mlp.mlp_message_passing import MLPMessagePassing
 from gnn.gnn_message_passing import GNNMessagePassing
+from dbca.dbca_message_passing import ClassicalMessagePassing
 import nn_utils as utils
 
 def save_results(name, lb, eval_dir):
@@ -14,7 +15,6 @@ def save_results(name, lb, eval_dir):
 
 def test(model_type): 
     utils.set_seed(42)
-
     data_dir = "src/message_passing_nn/data"
     test_dir = os.path.join(data_dir, "test")
     cpp_dir = os.path.join(data_dir, "eval/cpp")
@@ -54,6 +54,7 @@ def test(model_type):
     print(f"[INFO] Found {len(dataset)} Multicut instances.")
     
     fails = set()
+    k = 3
     for sample in loader:
         name = sample["name"][0]    
         try:
@@ -61,18 +62,23 @@ def test(model_type):
             j = sample["j"]
             costs = sample["costs"] 
             normed_costs, factor = utils.normalise_costs(costs) 
+            mp_data = rama_py.get_message_passing_data(i, j, normed_costs.tolist(), 3)
+            edge_costs, t12_costs, t13_costs, t23_costs, corr_12, corr_13, corr_23, edge_counter = utils.extract_data(mp_data, device)
 
             with torch.no_grad():
                 if model_type == "cpp":
-                    _, lb, _, _ = rama_py.rama_cuda(i, j, normed_costs.tolist(), opts)
+                    #_, lb, _, _ = rama_py.rama_cuda(i, j, normed_costs.tolist(), opts)
+                    mp = ClassicalMessagePassing(edge_costs, corr_12, corr_13, corr_23,
+                                   t12_costs, t13_costs, t23_costs, edge_counter)
+                    for _ in range(k):
+                        mp.iteration()  
+                    lb = mp.compute_lower_bound()
                 elif model_type == "mlp":
 
-                    mp_data = rama_py.get_message_passing_data(i, j, normed_costs.tolist(), 3)
-                       
-                    edge_costs, t12_costs, t13_costs, t23_costs, corr_12, corr_13, corr_23, edge_counter = utils.extract_data(mp_data, device)
-                    
-
-                    for _ in range(15):
+                    #mp_data = rama_py.get_message_passing_data(i, j, normed_costs.tolist(), 3)
+                    #edge_costs, t12_costs, t13_costs, t23_costs, corr_12, corr_13, corr_23, edge_counter = utils.extract_data(mp_data, device)
+                
+                    for _ in range(k):
                         updated_edge_costs, updated_t12, updated_t13, updated_t23 = model(
                             edge_costs, t12_costs, t13_costs, t23_costs,
                             corr_12, corr_13, corr_23, edge_counter
@@ -80,7 +86,6 @@ def test(model_type):
                         edge_costs, t12_costs, t13_costs, t23_costs = updated_edge_costs, updated_t12, updated_t13, updated_t23
 
                     lb = utils.lower_bound(updated_edge_costs, updated_t12, updated_t13, updated_t23)
-                    #lb *= factor
                     
                 elif model_type == "gnn":
                     print("TODO")

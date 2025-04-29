@@ -3,14 +3,14 @@ from hydra.core.config_store import ConfigStore
 
 @dataclass
 class TrainConfig:
-    epochs: int = 20
-    lr: float = 1e-4
     model_type: str = "mlp"  # "mlp" or "gnn"
     gradient_clip_norm: float = 1.0
     gradient_acc_steps: int = 4
     scheduler_step_size: int = 5
     scheduler_gamma: float = 0.3
-    num_mp_iter: int = 15
+    epochs: int = 30
+    lr: float = 1e-3
+    num_mp_iter: int = 5
 
 @dataclass
 class Config:

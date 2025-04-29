@@ -14,22 +14,21 @@ class ResBlock(nn.Module):
         return x + self.block(x)
 
 class EdgeToTriMLP(nn.Module):
-    def __init__(self, input_dim=1, output_dim=1):
+    def __init__(self, input_dim=3, hidden_dim=32, output_dim=1):
         super().__init__()
         self.mlp = nn.Sequential(
-            nn.Linear(input_dim, 16),
-            nn.ReLU(),
-            ResBlock(32),
-            ResBlock(32),
-            ResBlock(32),
-            ResBlock(32),
-            ResBlock(32),
-            ResBlock(32),
-            nn.Linear(16, output_dim)
+            nn.Linear(input_dim, hidden_dim),
+            ResBlock(hidden_dim),
+            ResBlock(hidden_dim),
+            ResBlock(hidden_dim),
+            ResBlock(hidden_dim),
+            ResBlock(hidden_dim),
+            ResBlock(hidden_dim),
+            nn.Linear(hidden_dim, output_dim)
         )
 
-    def forward(self, edge_costs, edge_ids_all):
-        logits = self.mlp(edge_costs).squeeze(-1) 
+    def forward(self, edge_features, edge_ids_all):
+        logits = self.mlp(edge_features).squeeze(-1) 
         # [10,-4,19,14,-9,-2]
         weights = scatter_softmax(logits, edge_ids_all, dim=0) 
         # Kante 4: softmax([10,-4]) = [0.8, 0.2]
@@ -41,26 +40,25 @@ class EdgeToTriMLP(nn.Module):
         return weights
     
 class EdgeToTriAttention(nn.Module):
-    def __init__(self, input_dim=2, output_dim=1, d_k=8):
+    def __init__(self, input_dim=3, hidden_dim=32, output_dim=1, d_k=16):
         super().__init__()
         self.d_k = d_k
-        self.query = nn.Linear(input_dim, d_k)  # input: [edge_cost, edge_counter]
+        self.query = nn.Linear(input_dim, d_k)  # input: [edge_cost, edge_counter, lagrange_multiplier]
         self.key = nn.Linear(input_dim, d_k)
         self.value = nn.Linear(input_dim, d_k)
         self.attention_mlp = nn.Sequential(
-            nn.Linear(d_k, 32),
-            nn.ReLU(),
-            ResBlock(32),
-            ResBlock(32),
-            ResBlock(32),
-            ResBlock(32),
-            ResBlock(32),
-            ResBlock(32),
-            nn.Linear(32, output_dim)   # output = weights
+            nn.Linear(d_k, hidden_dim),
+            ResBlock(hidden_dim),
+            ResBlock(hidden_dim),
+            ResBlock(hidden_dim),
+            ResBlock(hidden_dim),
+            ResBlock(hidden_dim),
+            ResBlock(hidden_dim),
+            nn.Linear(hidden_dim, output_dim)   # output = weights
         )
 
     def forward(self, edge_features, edge_ids_all, triangle_ids_all):
-        queries = self.query(edge_features)  # [num_edges, 2] -> [num_edges, d_k = 8]
+        queries = self.query(edge_features)  # [num_edges, 2] -> [num_edges, d_k = 16]
         keys = self.key(edge_features)       
         values = self.value(edge_features)   
 
@@ -81,7 +79,6 @@ class TriToEdgeMLP(nn.Module):
         super().__init__()
         self.mlp = nn.Sequential(
             nn.Linear(input_dim, 32),
-            nn.ReLU(),
             ResBlock(32),
             ResBlock(32),
             ResBlock(32),
@@ -104,8 +101,8 @@ class TriToEdgeMLP(nn.Module):
 class MLPMessagePassing(nn.Module):
     def __init__(self):
         super(MLPMessagePassing, self).__init__()
-        self.edge_to_tri_mlp = EdgeToTriMLP(input_dim=1, output_dim=1) # input = edge_cost, output = weights
-        self.edge_to_tri_attention = EdgeToTriAttention(input_dim=2, output_dim=1, d_k=8) # input = [edge_cost, edge_counter], output = weights
+        self.edge_to_tri_mlp = EdgeToTriMLP(input_dim=3, output_dim=1) # input = [edge_cost, edge_counter, lagrange_multiplier], output = weights
+        self.edge_to_tri_attention = EdgeToTriAttention(input_dim=3, output_dim=1, d_k=8) # input = [edge_cost, edge_counter, lagrange_multiplier], output = weights
         self.tri_to_edge_mlp = TriToEdgeMLP(input_dim=3, output_dim=3) # input = [t12, t13, t23], output = [t12_updated, t13_updated, t23_updated]
     
     def send_messages_to_triplets(self, edge_costs, t12, t13, t23,
@@ -137,7 +134,7 @@ class MLPMessagePassing(nn.Module):
         triangle_ids = torch.arange(num_triangles, device=edge_costs.device) 
         # [0,1]
         edge_ids_all = torch.cat([corr_12, corr_13, corr_23], dim=0) 
-        # [4,4,5,9,6,10]
+        # [4,4,5,9,6,10]  
         triangle_ids_all = torch.cat([triangle_ids, triangle_ids, triangle_ids], dim=0)
         # [0,1,0,1,0,1]
         positions = torch.cat([
@@ -146,11 +143,20 @@ class MLPMessagePassing(nn.Module):
             torch.full_like(corr_23, 2)   # t23
         ])
         # [0,0,1,1,2,2] 0 for t12, 1 for t13, 2 for t23
-        # mapping (lagrange_id in triangle_id) -> edge_id 
+        
+        lagrange_multipliers_all = torch.cat([
+            t12[triangle_ids], 
+            t13[triangle_ids], 
+            t23[triangle_ids]
+        ])
+        
+        edge_features = torch.stack([
+            edge_costs[edge_ids_all],  
+            edge_counter[edge_ids_all].float(),
+            lagrange_multipliers_all   
+        ], dim=1)  
 
-        edge_costs_input = edge_costs[edge_ids_all].unsqueeze(-1)      
-
-        weights = self.edge_to_tri_mlp(edge_costs_input, edge_ids_all).squeeze(-1) 
+        weights = self.edge_to_tri_mlp(edge_features, edge_ids_all).squeeze(-1) 
         contrib = edge_costs[edge_ids_all] * weights  
         # [edge_costs[4] * 0.8, edge_costs[4] * 0.2, edge_costs[5] * 1, ... ] 
  
@@ -158,9 +164,9 @@ class MLPMessagePassing(nn.Module):
         t13_updated = t13.clone()
         t23_updated = t23.clone()
 
-        mask_12 = positions == 0 # [True, True, False, False, False, False]
-        mask_13 = positions == 1 # [False, False, True, True, False, False]
-        mask_23 = positions == 2 # [False, False, False, False, True, True]
+        mask_12 = positions == 0
+        mask_13 = positions == 1
+        mask_23 = positions == 2
 
         t12_updated.scatter_add_(0, triangle_ids_all[mask_12], contrib[mask_12])
         # contrib[mask_12] = [edge_costs[4] * 0.8, edge_costs[4] * 0.2]
@@ -195,10 +201,17 @@ class MLPMessagePassing(nn.Module):
             torch.full_like(corr_13, 1),  
             torch.full_like(corr_23, 2)   
         ])
-
+        
+        lagrange_multipliers_all = torch.cat([
+            t12[triangle_ids], 
+            t13[triangle_ids], 
+            t23[triangle_ids]
+        ])
+        
         edge_features = torch.stack([
             edge_costs[edge_ids_all],
-            edge_counter[edge_ids_all].float()
+            edge_counter[edge_ids_all].float(),
+            lagrange_multipliers_all
         ], dim=1)  
 
         weights = self.edge_to_tri_attention(edge_features, edge_ids_all, triangle_ids_all)
@@ -208,9 +221,9 @@ class MLPMessagePassing(nn.Module):
         t13_updated = t13.clone()
         t23_updated = t23.clone()
 
-        mask_12 = positions == 0 
-        mask_13 = positions == 1 
-        mask_23 = positions == 2 
+        mask_12 = positions == 0
+        mask_13 = positions == 1
+        mask_23 = positions == 2
 
         t12_updated.scatter_add_(0, triangle_ids_all[mask_12], contrib[mask_12])
         t13_updated.scatter_add_(0, triangle_ids_all[mask_13], contrib[mask_13])
@@ -243,7 +256,7 @@ class MLPMessagePassing(nn.Module):
     def forward(self, edge_costs, t12_costs, t13_costs, t23_costs,
                         tri_corr_12, tri_corr_13, tri_corr_23, edge_counter):
         
-        edge_costs, t12_costs, t13_costs, t23_costs = self.send_messages_to_triplets(
+        edge_costs, t12_costs, t13_costs, t23_costs = self.send_messages_to_triplets_mlp(
             edge_costs, t12_costs, t13_costs, t23_costs,
             tri_corr_12, tri_corr_13, tri_corr_23, edge_counter
         )
