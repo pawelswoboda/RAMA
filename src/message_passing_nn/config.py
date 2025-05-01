@@ -11,6 +11,7 @@ class TrainConfig:
     epochs: int = 30
     lr: float = 1e-3
     num_mp_iter: int = 5
+    dist: str = "uniform"  # "uniform" or "mlp" or "attention"
 
 @dataclass
 class Config:

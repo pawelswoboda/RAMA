@@ -107,7 +107,6 @@ class MLPMessagePassing(nn.Module):
     
     def send_messages_to_triplets(self, edge_costs, t12, t13, t23,
                                      corr_12, corr_13, corr_23, edge_counter):
-        
         edge_vals_12 = edge_costs[corr_12]
         counts_12 = edge_counter[corr_12]
         t12 = t12 + edge_vals_12 / counts_12
@@ -126,7 +125,7 @@ class MLPMessagePassing(nn.Module):
         return edge_costs, t12, t13, t23
 
     def send_messages_to_triplets_mlp(self, edge_costs, t12, t13, t23,
-                                   corr_12, corr_13, corr_23, edge_counter):
+                                   corr_12, corr_13, corr_23, edge_counter, use_attention=False):
 
         # bspw: 2 triangles: [4,5,6], [4,9,10], corr_12 = [4,4], corr_13 = [5,9], corr_23 = [6,10]
         num_triangles = t12.shape[0] 
@@ -156,7 +155,10 @@ class MLPMessagePassing(nn.Module):
             lagrange_multipliers_all   
         ], dim=1)  
 
-        weights = self.edge_to_tri_mlp(edge_features, edge_ids_all).squeeze(-1) 
+        if use_attention:
+            weights = self.edge_to_tri_attention(edge_features, edge_ids_all, triangle_ids_all)
+        else:
+            weights = self.edge_to_tri_mlp(edge_features, edge_ids_all).squeeze(-1) 
         contrib = edge_costs[edge_ids_all] * weights  
         # [edge_costs[4] * 0.8, edge_costs[4] * 0.2, edge_costs[5] * 1, ... ] 
  
@@ -189,50 +191,7 @@ class MLPMessagePassing(nn.Module):
 
         return edge_costs, t12_updated, t13_updated, t23_updated
     
-    def send_messages_to_triplets_attention(self, edge_costs, t12, t13, t23,
-                                         corr_12, corr_13, corr_23, edge_counter):
 
-        num_triangles = t12.shape[0] 
-        triangle_ids = torch.arange(num_triangles, device=edge_costs.device) 
-        edge_ids_all = torch.cat([corr_12, corr_13, corr_23], dim=0) 
-        triangle_ids_all = torch.cat([triangle_ids, triangle_ids, triangle_ids], dim=0)
-        positions = torch.cat([
-            torch.full_like(corr_12, 0),  
-            torch.full_like(corr_13, 1),  
-            torch.full_like(corr_23, 2)   
-        ])
-        
-        lagrange_multipliers_all = torch.cat([
-            t12[triangle_ids], 
-            t13[triangle_ids], 
-            t23[triangle_ids]
-        ])
-        
-        edge_features = torch.stack([
-            edge_costs[edge_ids_all],
-            edge_counter[edge_ids_all].float(),
-            lagrange_multipliers_all
-        ], dim=1)  
-
-        weights = self.edge_to_tri_attention(edge_features, edge_ids_all, triangle_ids_all)
-        contrib = edge_costs[edge_ids_all] * weights  
-       
-        t12_updated = t12.clone()
-        t13_updated = t13.clone()
-        t23_updated = t23.clone()
-
-        mask_12 = positions == 0
-        mask_13 = positions == 1
-        mask_23 = positions == 2
-
-        t12_updated.scatter_add_(0, triangle_ids_all[mask_12], contrib[mask_12])
-        t13_updated.scatter_add_(0, triangle_ids_all[mask_13], contrib[mask_13])
-        t23_updated.scatter_add_(0, triangle_ids_all[mask_23], contrib[mask_23])
-
-        mask = edge_counter > 0
-        edge_costs[mask] = 0.0
-
-        return edge_costs, t12_updated, t13_updated, t23_updated
 
     def send_messages_to_edges_mlp(self, edge_costs, t12, t13, t23,
                                           corr_12, corr_13, corr_23):
@@ -254,12 +213,22 @@ class MLPMessagePassing(nn.Module):
         return edge_costs, t12, t13, t23
 
     def forward(self, edge_costs, t12_costs, t13_costs, t23_costs,
-                        tri_corr_12, tri_corr_13, tri_corr_23, edge_counter):
-        
-        edge_costs, t12_costs, t13_costs, t23_costs = self.send_messages_to_triplets_mlp(
-            edge_costs, t12_costs, t13_costs, t23_costs,
-            tri_corr_12, tri_corr_13, tri_corr_23, edge_counter
-        )
+                        tri_corr_12, tri_corr_13, tri_corr_23, edge_counter, dist="uniform"):
+        if dist == "uniform":
+            edge_costs, t12_costs, t13_costs, t23_costs = self.send_messages_to_triplets(
+                edge_costs, t12_costs, t13_costs, t23_costs,
+                tri_corr_12, tri_corr_13, tri_corr_23, edge_counter
+            )
+        elif dist == "mlp":
+            edge_costs, t12_costs, t13_costs, t23_costs = self.send_messages_to_triplets_mlp(
+                edge_costs, t12_costs, t13_costs, t23_costs,
+                tri_corr_12, tri_corr_13, tri_corr_23, edge_counter, use_attention=False
+            )
+        elif dist == "attention":
+            edge_costs, t12_costs, t13_costs, t23_costs = self.send_messages_to_triplets_mlp(
+                edge_costs, t12_costs, t13_costs, t23_costs,
+                tri_corr_12, tri_corr_13, tri_corr_23, edge_counter, use_attention=True
+            )
 
         edge_costs, t12_costs, t13_costs, t23_costs = self.send_messages_to_edges_mlp(
             edge_costs, t12_costs, t13_costs, t23_costs,

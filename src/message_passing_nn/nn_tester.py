@@ -81,7 +81,7 @@ def test(model_type):
                     for _ in range(k):
                         updated_edge_costs, updated_t12, updated_t13, updated_t23 = model(
                             edge_costs, t12_costs, t13_costs, t23_costs,
-                            corr_12, corr_13, corr_23, edge_counter
+                            corr_12, corr_13, corr_23, edge_counter, dist="uniform"
                         )
                         edge_costs, t12_costs, t13_costs, t23_costs = updated_edge_costs, updated_t12, updated_t13, updated_t23
 

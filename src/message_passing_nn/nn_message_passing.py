@@ -71,9 +71,9 @@ def via_dbca(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
                                    t12_costs, t13_costs, t23_costs, edge_counter)
     mp.iteration()  
 
-    print("[PYTHON] Lower bound:", mp.compute_lower_bound())
+    #print("[PYTHON] Lower bound:", mp.compute_lower_bound())
 
-    return mp.edge_costs.cpu().numpy(), mp.t12_costs.cpu().numpy(), mp.t13_costs.cpu().numpy(), mp.t23_costs.cpu().numpy()
+    return mp.edge_costs.cpu().numpy(), mp.t12.cpu().numpy(), mp.t13.cpu().numpy(), mp.t23.cpu().numpy()
 
 def via_mlp(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
             t12_costs, t13_costs, t23_costs, edge_counter):
@@ -89,7 +89,7 @@ def via_mlp(edge_costs, tri_corr_12, tri_corr_13, tri_corr_23,
     with torch.no_grad():
         updated_edge_costs, updated_t12, updated_t13, updated_t23 = model(
             edge_costs, t12_costs, t13_costs, t23_costs,
-            tri_corr_12, tri_corr_13, tri_corr_23, edge_counter
+            tri_corr_12, tri_corr_13, tri_corr_23, edge_counter, dist="mlp"
         )
 
     print("[PYTHON] Lower bound: ", utils.lower_bound(updated_edge_costs, updated_t12, updated_t13, updated_t23).item())

@@ -85,7 +85,7 @@ def train(cfg: Config):
                     for _ in range(cfg.train.num_mp_iter):
                         updated_edge_costs, updated_t12, updated_t13, updated_t23 = model(
                             edge_costs, t12_costs, t13_costs, t23_costs,
-                            corr_12, corr_13, corr_23, edge_counter
+                            corr_12, corr_13, corr_23, edge_counter, dist=cfg.train.dist
                         )
                         loss += loss_fn(updated_edge_costs, updated_t12, updated_t13, updated_t23)
                         edge_costs, t12_costs, t13_costs, t23_costs = updated_edge_costs, updated_t12, updated_t13, updated_t23
