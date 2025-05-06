@@ -1,11 +1,11 @@
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "src"))
 
 import rama_py
 import torch
-from src.message_passing_nn.mlp.mlp_message_passing import MLPMessagePassing
-from src.message_passing_nn.nn_utils import extract_data, lower_bound
+from message_passing_nn.mlp.mlp_message_passing import MLPMessagePassing
+from message_passing_nn.nn_utils import extract_data, lower_bound
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 

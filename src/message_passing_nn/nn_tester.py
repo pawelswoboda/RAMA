@@ -1,3 +1,4 @@
+import sys
 import os
 from torch.utils.data import DataLoader
 from multicut_dataset import MulticutGraphDataset
@@ -7,54 +8,51 @@ from mlp.mlp_message_passing import MLPMessagePassing
 from gnn.gnn_message_passing import GNNMessagePassing
 from dbca.dbca_message_passing import ClassicalMessagePassing
 import nn_utils as utils
+import hydra
+from configuration.config import Config
 
 def save_results(name, lb, eval_dir):
     out_path = os.path.join(eval_dir, name.replace(".txt", ".out"))
     with open(out_path, "w") as f:
         f.write(f"{lb:.6f}\n")
 
-def test(model_type): 
-    utils.set_seed(42)
-    data_dir = "src/message_passing_nn/data"
-    test_dir = os.path.join(data_dir, "test")
-    cpp_dir = os.path.join(data_dir, "eval/cpp")
-    mlp_dir = os.path.join(data_dir, "eval/mlp")
-    gnn_dir = os.path.join(data_dir, "eval/gnn")
-    
+@hydra.main(version_base=None, config_name="config")
+def test(cfg: Config):
+    utils.set_seed(cfg.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    dataset = MulticutGraphDataset(test_dir)
-    loader = DataLoader(dataset, batch_size=1, shuffle=False)
+    
+    dataset = MulticutGraphDataset(cfg.data.test_dir)
+    loader = DataLoader(dataset, batch_size=cfg.test.batch_size, shuffle=False)
 
     opts = rama_py.multicut_solver_options("PD")
     opts.verbose = False
 
-    if model_type == "mlp":
-        eval_dir = mlp_dir
-        model = MLPMessagePassing().to(device)
+    if cfg.test.model_type == "mlp":
+        eval_dir = cfg.data.mlp_dir
+        model = MLPMessagePassing(cfg.model).to(device)
         model.eval()
         
-    elif model_type == "gnn":
-        eval_dir = gnn_dir
+    elif cfg.test.model_type == "gnn":
+        eval_dir = cfg.data.gnn_dir
         model = GNNMessagePassing().to(device)
         model.eval()
         
-    elif model_type == "cpp":
-        eval_dir = cpp_dir
+    elif cfg.test.model_type == "cpp":
+        eval_dir = cfg.data.cpp_dir
         
     else:
         print("[ERROR] CANT FIND MODEL, USE mlp, gnn OR cpp")
         return    
 
-    MODEL_PATH = f"./{model_type}_model.pt"
-    if model_type != "cpp" and os.path.exists(MODEL_PATH):
+    MODEL_PATH = f"./{cfg.test.model_type}_model.pt"
+    if cfg.test.model_type != "cpp" and os.path.exists(MODEL_PATH):
         model.load_state_dict(torch.load(MODEL_PATH, map_location=device, weights_only=True))  
 
-    print(f"[INFO] MODEL: {model_type}")
+    print(f"[INFO] MODEL: {cfg.test.model_type}")
     print(f"[INFO] DEVICE: {device}")
     print(f"[INFO] Found {len(dataset)} Multicut instances.")
     
     fails = set()
-    k = 3
     for sample in loader:
         name = sample["name"][0]    
         try:
@@ -66,28 +64,27 @@ def test(model_type):
             edge_costs, t12_costs, t13_costs, t23_costs, corr_12, corr_13, corr_23, edge_counter = utils.extract_data(mp_data, device)
 
             with torch.no_grad():
-                if model_type == "cpp":
+                if cfg.test.model_type == "cpp":                    
                     #_, lb, _, _ = rama_py.rama_cuda(i, j, normed_costs.tolist(), opts)
                     mp = ClassicalMessagePassing(edge_costs, corr_12, corr_13, corr_23,
                                    t12_costs, t13_costs, t23_costs, edge_counter)
-                    for _ in range(k):
+                    for _ in range(cfg.test.num_mp_iter):
                         mp.iteration()  
                     lb = mp.compute_lower_bound()
-                elif model_type == "mlp":
-
+                elif cfg.test.model_type == "mlp":
                     #mp_data = rama_py.get_message_passing_data(i, j, normed_costs.tolist(), 3)
                     #edge_costs, t12_costs, t13_costs, t23_costs, corr_12, corr_13, corr_23, edge_counter = utils.extract_data(mp_data, device)
                 
-                    for _ in range(k):
+                    for _ in range(cfg.test.num_mp_iter):
                         updated_edge_costs, updated_t12, updated_t13, updated_t23 = model(
                             edge_costs, t12_costs, t13_costs, t23_costs,
-                            corr_12, corr_13, corr_23, edge_counter, dist="uniform"
+                            corr_12, corr_13, corr_23, edge_counter, dist=cfg.test.dist
                         )
                         edge_costs, t12_costs, t13_costs, t23_costs = updated_edge_costs, updated_t12, updated_t13, updated_t23
 
                     lb = utils.lower_bound(updated_edge_costs, updated_t12, updated_t13, updated_t23)
                     
-                elif model_type == "gnn":
+                elif cfg.test.model_type == "gnn":
                     print("TODO")
                     
                 else:
@@ -95,7 +92,7 @@ def test(model_type):
                     return
                 
             save_results(name, lb, eval_dir)
-            print(f"[SUCCESS] {name}") #: Clusters: {mapping}, LB: {lb}")
+            print(f"[SUCCESS] {name}")
         except Exception as e:
             print(f"[ERROR] Failed on {name}: {e}")
             fails.add(name)
@@ -109,7 +106,5 @@ def test(model_type):
     print("TESTING FINISHED")
 
 if __name__ == "__main__":
-    test(model_type="mlp")
-    # use "mlp" or "gnn"
-    # or "cpp": DISABLE_MLP=1 /bin/python3 /home/houraghene/RAMA/src/message_passing_nn/nn_tester.py
+    test()
 

@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch_scatter import scatter_softmax
+from configuration.config import ModelConfig
 
 class ResBlock(nn.Module):
     def __init__(self, dim):
@@ -14,18 +15,20 @@ class ResBlock(nn.Module):
         return x + self.block(x)
 
 class EdgeToTriMLP(nn.Module):
-    def __init__(self, input_dim=3, hidden_dim=32, output_dim=1):
+    def __init__(self, config: ModelConfig, input_dim=3, output_dim=1):
         super().__init__()
-        self.mlp = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            ResBlock(hidden_dim),
-            ResBlock(hidden_dim),
-            ResBlock(hidden_dim),
-            ResBlock(hidden_dim),
-            ResBlock(hidden_dim),
-            ResBlock(hidden_dim),
-            nn.Linear(hidden_dim, output_dim)
-        )
+        layers = [nn.Linear(input_dim, config.hidden_dim)]  # input = [edge_cost, edge_counter, lagrange_multiplier]
+        for _ in range(config.num_res_blocks):
+            layers.append(ResBlock(config.hidden_dim))
+        layers.append(nn.Linear(config.hidden_dim, output_dim))  # output = weights
+        self.mlp = nn.Sequential(*layers)
+        self._init_weights(config)
+
+    def _init_weights(self, config: ModelConfig):
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, mean=config.weight_init_mean, std=config.weight_init_std)
+                nn.init.zeros_(m.bias)
 
     def forward(self, edge_features, edge_ids_all):
         logits = self.mlp(edge_features).squeeze(-1) 
@@ -40,33 +43,36 @@ class EdgeToTriMLP(nn.Module):
         return weights
     
 class EdgeToTriAttention(nn.Module):
-    def __init__(self, input_dim=3, hidden_dim=32, output_dim=1, d_k=16):
+    def __init__(self, config: ModelConfig, input_dim=3, output_dim=1):
         super().__init__()
-        self.d_k = d_k
-        self.query = nn.Linear(input_dim, d_k)  # input: [edge_cost, edge_counter, lagrange_multiplier]
-        self.key = nn.Linear(input_dim, d_k)
-        self.value = nn.Linear(input_dim, d_k)
-        self.attention_mlp = nn.Sequential(
-            nn.Linear(d_k, hidden_dim),
-            ResBlock(hidden_dim),
-            ResBlock(hidden_dim),
-            ResBlock(hidden_dim),
-            ResBlock(hidden_dim),
-            ResBlock(hidden_dim),
-            ResBlock(hidden_dim),
-            nn.Linear(hidden_dim, output_dim)   # output = weights
-        )
+        self.d_k = config.d_k
+        self.query = nn.Linear(input_dim, config.d_k)  # input = [edge_cost, edge_counter, lagrange_multiplier]
+        self.key = nn.Linear(input_dim, config.d_k)
+        self.value = nn.Linear(input_dim, config.d_k)
+        
+        layers = [nn.Linear(config.d_k, config.hidden_dim)]
+        for _ in range(config.num_res_blocks):
+            layers.append(ResBlock(config.hidden_dim))
+        layers.append(nn.Linear(config.hidden_dim, output_dim))  # output = weights
+        self.attention_mlp = nn.Sequential(*layers)
+        self._init_weights(config)
+
+    def _init_weights(self, config: ModelConfig):
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, mean=config.weight_init_mean, std=config.weight_init_std)
+                nn.init.zeros_(m.bias)
 
     def forward(self, edge_features, edge_ids_all, triangle_ids_all):
         queries = self.query(edge_features)  # [num_edges, 2] -> [num_edges, d_k = 16]
-        keys = self.key(edge_features)       
-        values = self.value(edge_features)   
+        keys = self.key(edge_features)
+        values = self.value(edge_features)
 
         # Attention(Q, K, V) = softmax(QK^T / sqrt(d_k))V
         attention_scores = torch.matmul(queries, keys.transpose(0, 1)) / (self.d_k ** 0.5)  # [num_edges, num_edges], aehnlichkeitsmatrix   
         attention_mask = (triangle_ids_all.unsqueeze(1) == triangle_ids_all.unsqueeze(0)) # nur kanten in gleichen triangles berücksichtigen
         attention_scores = attention_scores.masked_fill(~attention_mask, float('-inf')) # kanten aus verschiedenen triangles kriegen -inf score
-        attention_weights = torch.softmax(attention_scores, dim=1)  
+        attention_weights = torch.softmax(attention_scores, dim=1)
         attended_values = torch.matmul(attention_weights, values)  # [num_edges, d_k]
         
         logits = self.attention_mlp(attended_values).squeeze(-1)  # [num_edges]
@@ -75,35 +81,30 @@ class EdgeToTriAttention(nn.Module):
         return weights
     
 class TriToEdgeMLP(nn.Module):
-    def __init__(self, input_dim=3, output_dim=3):
+    def __init__(self, config: ModelConfig, input_dim=3, output_dim=3):
         super().__init__()
-        self.mlp = nn.Sequential(
-            nn.Linear(input_dim, 32),
-            ResBlock(32),
-            ResBlock(32),
-            ResBlock(32),
-            ResBlock(32),
-            ResBlock(32),
-            ResBlock(32),
-            nn.Linear(32, output_dim)
-        )
-        self._init_weights()
+        layers = [nn.Linear(input_dim, config.hidden_dim)]  # input = [t12, t13, t23]
+        for _ in range(config.num_res_blocks):
+            layers.append(ResBlock(config.hidden_dim))
+        layers.append(nn.Linear(config.hidden_dim, output_dim))  # output = [t12_updated, t13_updated, t23_updated]
+        self.mlp = nn.Sequential(*layers)
+        self._init_weights(config)
 
-    def _init_weights(self):
+    def _init_weights(self, config: ModelConfig):
         for m in self.modules():
             if isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, mean=0.0, std=0.02)
+                nn.init.normal_(m.weight, mean=config.weight_init_mean, std=config.weight_init_std)
                 nn.init.zeros_(m.bias)
 
     def forward(self, x):
         return self.mlp(x)
 
 class MLPMessagePassing(nn.Module):
-    def __init__(self):
+    def __init__(self, config: ModelConfig = ModelConfig()):
         super(MLPMessagePassing, self).__init__()
-        self.edge_to_tri_mlp = EdgeToTriMLP(input_dim=3, output_dim=1) # input = [edge_cost, edge_counter, lagrange_multiplier], output = weights
-        self.edge_to_tri_attention = EdgeToTriAttention(input_dim=3, output_dim=1, d_k=8) # input = [edge_cost, edge_counter, lagrange_multiplier], output = weights
-        self.tri_to_edge_mlp = TriToEdgeMLP(input_dim=3, output_dim=3) # input = [t12, t13, t23], output = [t12_updated, t13_updated, t23_updated]
+        self.edge_to_tri_mlp = EdgeToTriMLP(config, input_dim=3, output_dim=1)  # input = [edge_cost, edge_counter, lagrange_multiplier], output = weights
+        self.edge_to_tri_attention = EdgeToTriAttention(config, input_dim=3, output_dim=1)  # input = [edge_cost, edge_counter, lagrange_multiplier], output = weights
+        self.tri_to_edge_mlp = TriToEdgeMLP(config, input_dim=3, output_dim=3)  # input = [t12, t13, t23], output = [t12_updated, t13_updated, t23_updated]
     
     def send_messages_to_triplets(self, edge_costs, t12, t13, t23,
                                      corr_12, corr_13, corr_23, edge_counter):
