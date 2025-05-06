@@ -51,7 +51,7 @@ find_package(pybind11 REQUIRED)
 CPMAddPackage(
     NAME CCCL
     GITHUB_REPOSITORY nvidia/cccl
-    GIT_TAG main
+    GIT_TAG v2.8.3
 )
 target_link_libraries(RAMA INTERFACE CCCL::CCCL)
 
