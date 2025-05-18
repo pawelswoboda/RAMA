@@ -1,0 +1,35 @@
+model:
+  hidden_dim: 55
+  num_res_blocks: 6
+  weight_init_mean: 0.0
+  weight_init_std: 0.012
+  d_k: 12
+train:
+  model_type: mlp
+  gradient_clip_norm: 1.0
+  gradient_acc_steps: 4
+  scheduler_step_size: 10
+  scheduler_gamma: 0.5
+  epochs: 40
+  lr: 0.001
+  num_mp_iter: 5
+  dist: mlp
+  batch_size: 1
+  weight_decay: 1.0e-05
+  sweep_active: false
+test:
+  model_type: mlp
+  num_mp_iter: 5
+  batch_size: 1
+  dist: mlp
+data:
+  train_dir: src/message_passing_nn/data/train
+  test_dir: src/message_passing_nn/data/test
+  eval_dir: src/message_passing_nn/data/eval
+  cpp_dir: src/message_passing_nn/data/eval/cpp
+  mlp_dir: src/message_passing_nn/data/eval/mlp
+  gnn_dir: src/message_passing_nn/data/eval/gnn
+  output_summary_path: src/message_passing_nn/data/eval/results/summary.txt
+  output_plot_path: src/message_passing_nn/data/eval/results/lb_comparison.png
+seed: 42
+model_save_path: ./{model_type}_model.pt

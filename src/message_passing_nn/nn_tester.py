@@ -4,12 +4,12 @@ from torch.utils.data import DataLoader
 from multicut_dataset import MulticutGraphDataset
 import rama_py
 import torch
-from mlp.mlp_message_passing import MLPMessagePassing
-from gnn.gnn_message_passing import GNNMessagePassing
+from mlp_message_passing import MLPMessagePassing
 from dbca.dbca_message_passing import ClassicalMessagePassing
 import nn_utils as utils
 import hydra
-from configuration.config import Config
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "config"))
+from config import Config
 
 def save_results(name, lb, eval_dir):
     out_path = os.path.join(eval_dir, name.replace(".txt", ".out"))
@@ -31,17 +31,12 @@ def test(cfg: Config):
         eval_dir = cfg.data.mlp_dir
         model = MLPMessagePassing(cfg.model).to(device)
         model.eval()
-        
-    elif cfg.test.model_type == "gnn":
-        eval_dir = cfg.data.gnn_dir
-        model = GNNMessagePassing().to(device)
-        model.eval()
-        
+
     elif cfg.test.model_type == "cpp":
         eval_dir = cfg.data.cpp_dir
         
     else:
-        print("[ERROR] CANT FIND MODEL, USE mlp, gnn OR cpp")
+        print("[ERROR] CANT FIND MODEL: USE mlp OR cpp")
         return    
 
     MODEL_PATH = f"./{cfg.test.model_type}_model.pt"
@@ -51,7 +46,12 @@ def test(cfg: Config):
     print(f"[INFO] MODEL: {cfg.test.model_type}")
     print(f"[INFO] DEVICE: {device}")
     print(f"[INFO] Found {len(dataset)} Multicut instances.")
-    
+
+    assert cfg.test.dist == cfg.train.dist, "Distribution must match between training and testing"
+
+    assert cfg.test.num_mp_iter == cfg.train.num_mp_iter, "Number of iterations must match between training and testing"
+    k = cfg.test.num_mp_iter
+
     fails = set()
     for sample in loader:
         name = sample["name"][0]    
@@ -68,14 +68,14 @@ def test(cfg: Config):
                     #_, lb, _, _ = rama_py.rama_cuda(i, j, normed_costs.tolist(), opts)
                     mp = ClassicalMessagePassing(edge_costs, corr_12, corr_13, corr_23,
                                    t12_costs, t13_costs, t23_costs, edge_counter)
-                    for _ in range(cfg.test.num_mp_iter):
+                    for _ in range(k):
                         mp.iteration()  
                     lb = mp.compute_lower_bound()
                 elif cfg.test.model_type == "mlp":
                     #mp_data = rama_py.get_message_passing_data(i, j, normed_costs.tolist(), 3)
                     #edge_costs, t12_costs, t13_costs, t23_costs, corr_12, corr_13, corr_23, edge_counter = utils.extract_data(mp_data, device)
                 
-                    for _ in range(cfg.test.num_mp_iter):
+                    for _ in range(k):
                         updated_edge_costs, updated_t12, updated_t13, updated_t23 = model(
                             edge_costs, t12_costs, t13_costs, t23_costs,
                             corr_12, corr_13, corr_23, edge_counter, dist=cfg.test.dist
@@ -83,9 +83,6 @@ def test(cfg: Config):
                         edge_costs, t12_costs, t13_costs, t23_costs = updated_edge_costs, updated_t12, updated_t13, updated_t23
 
                     lb = utils.lower_bound(updated_edge_costs, updated_t12, updated_t13, updated_t23)
-                    
-                elif cfg.test.model_type == "gnn":
-                    print("TODO")
                     
                 else:
                     print("[ERROR] CANT FIND MODEL")

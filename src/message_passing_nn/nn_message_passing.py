@@ -2,7 +2,7 @@ import torch
 import cupy as cp
 import numpy as np
 from dbca.dbca_message_passing import ClassicalMessagePassing
-from mlp.mlp_message_passing import MLPMessagePassing
+from message_passing_nn.mlp_message_passing import MLPMessagePassing
 import os
 import nn_utils as utils
 

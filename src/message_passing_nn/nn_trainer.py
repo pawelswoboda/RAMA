@@ -3,14 +3,14 @@ import os
 from torch.utils.data import DataLoader
 import rama_py
 from multicut_dataset import MulticutGraphDataset
-from mlp.mlp_message_passing import MLPMessagePassing
-from gnn.gnn_message_passing import GNNMessagePassing
+from mlp_message_passing import MLPMessagePassing
 import os
 import torch
 import wandb
 import nn_utils as utils
 import hydra
-from configuration.config import Config
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "config"))
+from config import Config
 
 def loss_fn(edge_costs, t12, t13, t23):
     neg_lb = -utils.lower_bound(edge_costs, t12, t13, t23) 
@@ -26,7 +26,7 @@ def train(cfg: Config):
         "lr": cfg.train.lr,
         "model_type": cfg.train.model_type,
         "model_config": cfg.model,
-        "train_config": cfg.train
+        "train_config": cfg.train   
     })
 
     dataset = MulticutGraphDataset(cfg.data.train_dir)
@@ -34,14 +34,8 @@ def train(cfg: Config):
     opts = rama_py.multicut_solver_options("PD")
     opts.verbose = False
 
-    if cfg.train.model_type == "mlp":
-        model = MLPMessagePassing(cfg.model).to(device)
-    elif cfg.train.model_type == "gnn":
-        model = GNNMessagePassing().to(device)
-    else:
-        print("[ERROR] CANT FIND MODEL, USE mlp OR gnn")
-        return
-    
+    model = MLPMessagePassing(cfg.model).to(device)
+
     model.train()
     wandb.watch(model, log="all", log_freq=100)
     
@@ -58,8 +52,8 @@ def train(cfg: Config):
 
     model_path = cfg.model_save_path.format(model_type=cfg.train.model_type)
 
-    #if os.path.exists(model_path):
-     #   model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
+    if os.path.exists(model_path) and not cfg.train.sweep_active:
+        model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
     
     print(f"[INFO] MODEL: {cfg.train.model_type}")
     print(f"[INFO] DEVICE: {device}")
@@ -84,21 +78,15 @@ def train(cfg: Config):
                 edge_costs, t12_costs, t13_costs, t23_costs, corr_12, corr_13, corr_23, edge_counter = utils.extract_data(mp_data, device)
                 
                 loss = 0
-                if cfg.train.model_type == "mlp":
-                    for _ in range(cfg.train.num_mp_iter):
-                        updated_edge_costs, updated_t12, updated_t13, updated_t23 = model(
-                            edge_costs, t12_costs, t13_costs, t23_costs,
-                            corr_12, corr_13, corr_23, edge_counter, dist=cfg.train.dist
-                        )
-                        loss += loss_fn(updated_edge_costs, updated_t12, updated_t13, updated_t23)
-                        edge_costs, t12_costs, t13_costs, t23_costs = updated_edge_costs, updated_t12, updated_t13, updated_t23
-                        
-                elif cfg.train.model_type == "gnn":
-                    print("TODO")
-                    
-                else:
-                    print("[ERROR] CANT FIND MODEL")
-                    return
+
+                for _ in range(cfg.train.num_mp_iter):
+                    updated_edge_costs, updated_t12, updated_t13, updated_t23 = model(
+                        edge_costs, t12_costs, t13_costs, t23_costs,
+                        corr_12, corr_13, corr_23, edge_counter, dist=cfg.train.dist
+                    ) 
+                    # w = (iter_idx + 1) / ((num_mp_iter * (num_mp_iter + 1))/2)
+                    loss += loss_fn(updated_edge_costs, updated_t12, updated_t13, updated_t23)
+                    edge_costs, t12_costs, t13_costs, t23_costs = updated_edge_costs, updated_t12, updated_t13, updated_t23
  
                 loss.backward()
                 
