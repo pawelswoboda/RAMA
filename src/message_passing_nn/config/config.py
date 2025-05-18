@@ -15,9 +15,9 @@ class TrainConfig:
     model_type: str = "mlp"  
     gradient_clip_norm: float = 1.0
     gradient_acc_steps: int = 4
-    scheduler_step_size: int = 10 
+    scheduler_step_size: int = 20 
     scheduler_gamma: float = 0.3  
-    epochs: int = 40
+    epochs: int = 80
     lr: float = 1e-3  
     num_mp_iter: int = 5  
     dist: str = "mlp"  # "uniform" or "mlp" or "attention"

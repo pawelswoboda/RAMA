@@ -1,52 +1,52 @@
 ===== COMPARISON RESULTS =====
 Instance                       CPP                  MLP                  MAX                Diff MLP-CPP (%)               Diff MLP-MAX (%)    
 ============================================================================================================================================
-[COMPARE] 148026.out      CPP: -1376.14        MLP: -1376.12        MAX: -1375.95        %_DIFF_MLP_CPP: 0.00            %_DIFF_MLP_MAX: -0.01          
-[COMPARE] 15.out          CPP: -224.06         MLP: -224.07         MAX: -224.06         %_DIFF_MLP_CPP: -0.00           %_DIFF_MLP_MAX: -0.00          
-[COMPARE] 156065.out      CPP: -456.60         MLP: -456.41         MAX: -456.13         %_DIFF_MLP_CPP: 0.04            %_DIFF_MLP_MAX: -0.06          
-[COMPARE] 159008.out      CPP: -868.27         MLP: -868.16         MAX: -867.93         %_DIFF_MLP_CPP: 0.01            %_DIFF_MLP_MAX: -0.03          
-[COMPARE] 16.out          CPP: -96.23          MLP: -96.24          MAX: -96.23          %_DIFF_MLP_CPP: -0.00           %_DIFF_MLP_MAX: -0.00          
-[COMPARE] 160068.out      CPP: -542.58         MLP: -542.52         MAX: -542.28         %_DIFF_MLP_CPP: 0.01            %_DIFF_MLP_MAX: -0.04          
-[COMPARE] 163085.out      CPP: -459.87         MLP: -459.57         MAX: -459.26         %_DIFF_MLP_CPP: 0.06            %_DIFF_MLP_MAX: -0.07          
+[COMPARE] 148026.out      CPP: -1376.14        MLP: -1376.02        MAX: -1375.95        %_DIFF_MLP_CPP: 0.01            %_DIFF_MLP_MAX: -0.01          
+[COMPARE] 15.out          CPP: -224.06         MLP: -224.06         MAX: -224.06         %_DIFF_MLP_CPP: -0.00           %_DIFF_MLP_MAX: -0.00          
+[COMPARE] 156065.out      CPP: -456.60         MLP: -456.33         MAX: -456.13         %_DIFF_MLP_CPP: 0.06            %_DIFF_MLP_MAX: -0.05          
+[COMPARE] 159008.out      CPP: -868.27         MLP: -868.11         MAX: -867.93         %_DIFF_MLP_CPP: 0.02            %_DIFF_MLP_MAX: -0.02          
+[COMPARE] 16.out          CPP: -96.23          MLP: -96.24          MAX: -96.23          %_DIFF_MLP_CPP: -0.01           %_DIFF_MLP_MAX: -0.01          
+[COMPARE] 160068.out      CPP: -542.58         MLP: -542.39         MAX: -542.28         %_DIFF_MLP_CPP: 0.03            %_DIFF_MLP_MAX: -0.02          
+[COMPARE] 163085.out      CPP: -459.87         MLP: -459.44         MAX: -459.26         %_DIFF_MLP_CPP: 0.09            %_DIFF_MLP_MAX: -0.04          
 [COMPARE] 167062.out      CPP: -98.18          MLP: -98.14          MAX: -98.13          %_DIFF_MLP_CPP: 0.04            %_DIFF_MLP_MAX: -0.01          
-[COMPARE] 167083.out      CPP: -813.06         MLP: -812.65         MAX: -812.00         %_DIFF_MLP_CPP: 0.05            %_DIFF_MLP_MAX: -0.08          
+[COMPARE] 167083.out      CPP: -813.06         MLP: -812.64         MAX: -812.00         %_DIFF_MLP_CPP: 0.05            %_DIFF_MLP_MAX: -0.08          
 [COMPARE] 17.out          CPP: -124.27         MLP: -124.28         MAX: -124.27         %_DIFF_MLP_CPP: -0.00           %_DIFF_MLP_MAX: -0.00          
-[COMPARE] 170057.out      CPP: -284.38         MLP: -284.40         MAX: -284.28         %_DIFF_MLP_CPP: -0.01           %_DIFF_MLP_MAX: -0.04          
-[COMPARE] 175032.out      CPP: -860.56         MLP: -859.99         MAX: -859.26         %_DIFF_MLP_CPP: 0.07            %_DIFF_MLP_MAX: -0.08          
-[COMPARE] 175043.out      CPP: -1230.61        MLP: -1230.55        MAX: -1229.96        %_DIFF_MLP_CPP: 0.01            %_DIFF_MLP_MAX: -0.05          
+[COMPARE] 170057.out      CPP: -284.38         MLP: -284.34         MAX: -284.28         %_DIFF_MLP_CPP: 0.01            %_DIFF_MLP_MAX: -0.02          
+[COMPARE] 175032.out      CPP: -860.56         MLP: -859.78         MAX: -859.26         %_DIFF_MLP_CPP: 0.09            %_DIFF_MLP_MAX: -0.06          
+[COMPARE] 175043.out      CPP: -1230.61        MLP: -1230.40        MAX: -1229.96        %_DIFF_MLP_CPP: 0.02            %_DIFF_MLP_MAX: -0.04          
 [COMPARE] 18.out          CPP: -54.20          MLP: -54.21          MAX: -54.20          %_DIFF_MLP_CPP: -0.02           %_DIFF_MLP_MAX: -0.02          
-[COMPARE] 189080.out      CPP: -172.69         MLP: -172.63         MAX: -172.60         %_DIFF_MLP_CPP: 0.04            %_DIFF_MLP_MAX: -0.02          
+[COMPARE] 189080.out      CPP: -172.69         MLP: -172.65         MAX: -172.60         %_DIFF_MLP_CPP: 0.03            %_DIFF_MLP_MAX: -0.03          
 [COMPARE] 19.out          CPP: -112.78         MLP: -112.78         MAX: -112.77         %_DIFF_MLP_CPP: 0.00            %_DIFF_MLP_MAX: -0.00          
-[COMPARE] 196073.out      CPP: -49.75          MLP: -49.73          MAX: -49.70          %_DIFF_MLP_CPP: 0.05            %_DIFF_MLP_MAX: -0.06          
-[COMPARE] 197017.out      CPP: -450.24         MLP: -450.05         MAX: -449.95         %_DIFF_MLP_CPP: 0.04            %_DIFF_MLP_MAX: -0.02          
-[COMPARE] 20.out          CPP: -73.53          MLP: -73.55          MAX: -73.53          %_DIFF_MLP_CPP: -0.02           %_DIFF_MLP_MAX: -0.02          
-[COMPARE] 208001.out      CPP: -578.73         MLP: -578.67         MAX: -578.24         %_DIFF_MLP_CPP: 0.01            %_DIFF_MLP_MAX: -0.07          
+[COMPARE] 196073.out      CPP: -49.75          MLP: -49.71          MAX: -49.70          %_DIFF_MLP_CPP: 0.08            %_DIFF_MLP_MAX: -0.03          
+[COMPARE] 197017.out      CPP: -450.24         MLP: -450.00         MAX: -449.95         %_DIFF_MLP_CPP: 0.05            %_DIFF_MLP_MAX: -0.01          
+[COMPARE] 20.out          CPP: -73.53          MLP: -73.54          MAX: -73.53          %_DIFF_MLP_CPP: -0.01           %_DIFF_MLP_MAX: -0.01          
+[COMPARE] 208001.out      CPP: -578.73         MLP: -578.62         MAX: -578.24         %_DIFF_MLP_CPP: 0.02            %_DIFF_MLP_MAX: -0.07          
 [COMPARE] 21.out          CPP: -44.53          MLP: -44.53          MAX: -44.52          %_DIFF_MLP_CPP: -0.00           %_DIFF_MLP_MAX: -0.01          
-[COMPARE] 210088.out      CPP: -425.63         MLP: -425.50         MAX: -425.36         %_DIFF_MLP_CPP: 0.03            %_DIFF_MLP_MAX: -0.03          
-[COMPARE] 216081.out      CPP: -791.72         MLP: -791.74         MAX: -791.72         %_DIFF_MLP_CPP: -0.00           %_DIFF_MLP_MAX: -0.00          
-[COMPARE] 219090.out      CPP: -422.69         MLP: -422.48         MAX: -422.33         %_DIFF_MLP_CPP: 0.05            %_DIFF_MLP_MAX: -0.04          
+[COMPARE] 210088.out      CPP: -425.63         MLP: -425.45         MAX: -425.36         %_DIFF_MLP_CPP: 0.04            %_DIFF_MLP_MAX: -0.02          
+[COMPARE] 216081.out      CPP: -791.72         MLP: -791.73         MAX: -791.72         %_DIFF_MLP_CPP: -0.00           %_DIFF_MLP_MAX: -0.00          
+[COMPARE] 219090.out      CPP: -422.69         MLP: -422.41         MAX: -422.33         %_DIFF_MLP_CPP: 0.07            %_DIFF_MLP_MAX: -0.02          
 [COMPARE] 22.out          CPP: -21.45          MLP: -21.45          MAX: -21.45          %_DIFF_MLP_CPP: 0.00            %_DIFF_MLP_MAX: 0.00           
-[COMPARE] 220075.out      CPP: -770.27         MLP: -770.20         MAX: -770.10         %_DIFF_MLP_CPP: 0.01            %_DIFF_MLP_MAX: -0.01          
-[COMPARE] 223061.out      CPP: -427.75         MLP: -427.50         MAX: -426.96         %_DIFF_MLP_CPP: 0.06            %_DIFF_MLP_MAX: -0.13          
-[COMPARE] 23.out          CPP: -96.38          MLP: -96.40          MAX: -96.37          %_DIFF_MLP_CPP: -0.02           %_DIFF_MLP_MAX: -0.03          
-[COMPARE] 236037.out      CPP: -868.88         MLP: -868.28         MAX: -867.50         %_DIFF_MLP_CPP: 0.07            %_DIFF_MLP_MAX: -0.09          
+[COMPARE] 220075.out      CPP: -770.27         MLP: -770.14         MAX: -770.10         %_DIFF_MLP_CPP: 0.02            %_DIFF_MLP_MAX: -0.01          
+[COMPARE] 223061.out      CPP: -427.75         MLP: -427.33         MAX: -426.96         %_DIFF_MLP_CPP: 0.10            %_DIFF_MLP_MAX: -0.09          
+[COMPARE] 23.out          CPP: -96.38          MLP: -96.39          MAX: -96.37          %_DIFF_MLP_CPP: -0.01           %_DIFF_MLP_MAX: -0.02          
+[COMPARE] 236037.out      CPP: -868.88         MLP: -868.00         MAX: -867.50         %_DIFF_MLP_CPP: 0.10            %_DIFF_MLP_MAX: -0.06          
 [COMPARE] 24.out          CPP: -197.62         MLP: -197.64         MAX: -197.62         %_DIFF_MLP_CPP: -0.01           %_DIFF_MLP_MAX: -0.01          
 [COMPARE] 241004.out      CPP: -130.25         MLP: -130.23         MAX: -130.22         %_DIFF_MLP_CPP: 0.02            %_DIFF_MLP_MAX: -0.01          
 [COMPARE] 241048.out      CPP: -568.60         MLP: -568.59         MAX: -568.32         %_DIFF_MLP_CPP: 0.00            %_DIFF_MLP_MAX: -0.05          
 [COMPARE] 25.out          CPP: -110.34         MLP: -110.35         MAX: -110.34         %_DIFF_MLP_CPP: -0.01           %_DIFF_MLP_MAX: -0.01          
-[COMPARE] 26.out          CPP: -27.06          MLP: -27.07          MAX: -27.05          %_DIFF_MLP_CPP: -0.01           %_DIFF_MLP_MAX: -0.05          
-[COMPARE] 27.out          CPP: -45.32          MLP: -45.32          MAX: -45.32          %_DIFF_MLP_CPP: -0.01           %_DIFF_MLP_MAX: -0.01          
-[COMPARE] 28.out          CPP: -143.41         MLP: -143.42         MAX: -143.41         %_DIFF_MLP_CPP: -0.01           %_DIFF_MLP_MAX: -0.01          
-[COMPARE] 29.out          CPP: -139.04         MLP: -139.06         MAX: -139.04         %_DIFF_MLP_CPP: -0.01           %_DIFF_MLP_MAX: -0.01          
+[COMPARE] 26.out          CPP: -27.06          MLP: -27.06          MAX: -27.05          %_DIFF_MLP_CPP: 0.01            %_DIFF_MLP_MAX: -0.04          
+[COMPARE] 27.out          CPP: -45.32          MLP: -45.32          MAX: -45.32          %_DIFF_MLP_CPP: -0.00           %_DIFF_MLP_MAX: -0.00          
+[COMPARE] 28.out          CPP: -143.41         MLP: -143.42         MAX: -143.41         %_DIFF_MLP_CPP: -0.00           %_DIFF_MLP_MAX: -0.00          
+[COMPARE] 29.out          CPP: -139.04         MLP: -139.05         MAX: -139.04         %_DIFF_MLP_CPP: -0.01           %_DIFF_MLP_MAX: -0.01          
 [COMPARE] 30.out          CPP: -130.77         MLP: -130.78         MAX: -130.77         %_DIFF_MLP_CPP: -0.00           %_DIFF_MLP_MAX: -0.00          
 [COMPARE] 31.out          CPP: -96.15          MLP: -96.16          MAX: -96.16          %_DIFF_MLP_CPP: -0.00           %_DIFF_MLP_MAX: -0.00          
 [COMPARE] 32.out          CPP: -241.08         MLP: -241.09         MAX: -241.08         %_DIFF_MLP_CPP: -0.00           %_DIFF_MLP_MAX: -0.00          
 [COMPARE] 33.out          CPP: -162.02         MLP: -162.03         MAX: -162.02         %_DIFF_MLP_CPP: -0.01           %_DIFF_MLP_MAX: -0.01          
 [COMPARE] 34.out          CPP: -37.81          MLP: -37.81          MAX: -37.81          %_DIFF_MLP_CPP: -0.00           %_DIFF_MLP_MAX: -0.00          
-[COMPARE] 35.out          CPP: -218.89         MLP: -218.90         MAX: -218.89         %_DIFF_MLP_CPP: -0.01           %_DIFF_MLP_MAX: -0.01          
+[COMPARE] 35.out          CPP: -218.89         MLP: -218.89         MAX: -218.89         %_DIFF_MLP_CPP: -0.00           %_DIFF_MLP_MAX: -0.00          
 [COMPARE] 36.out          CPP: -83.18          MLP: -83.18          MAX: -83.18          %_DIFF_MLP_CPP: -0.00           %_DIFF_MLP_MAX: -0.00          
 
 ===== SUMMARY =====
 [SUMMARY] Compared 44 graphs.
-[SUMMARY] On average, MLP LB is 0.01% better than CPP
-[SUMMARY] On average, MLP LB is 0.03% worse than MAX
+[SUMMARY] On average, MLP LB is 0.02% better than CPP
+[SUMMARY] On average, MLP LB is 0.02% worse than MAX
