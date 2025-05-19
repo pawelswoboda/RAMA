@@ -18,7 +18,7 @@ def compute_optimal_lb(i, j, costs):
 
     opts = rama_py.multicut_solver_options("D")  
     opts.verbose = False 
-    opts.num_dual_itr_lb = 1000000
+    opts.num_dual_itr_lb = 100000000
     opts.max_cycle_length_lb = 3  
     opts.num_outer_itr_dual = 1
     

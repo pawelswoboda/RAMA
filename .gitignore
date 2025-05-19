@@ -10,3 +10,5 @@ wandb/
 
 *.pt
 
+/outputs/
+
