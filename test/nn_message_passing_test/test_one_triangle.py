@@ -1,15 +1,16 @@
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "src"))
-
 import rama_py
 import torch
 from message_passing_nn.mlp_message_passing import MLPMessagePassing
 from message_passing_nn.nn_utils import extract_data, lower_bound
+from message_passing_nn.config.config import Config 
+
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-
-model = MLPMessagePassing().to(device)
+cfg = Config()
+model = MLPMessagePassing(cfg.model).to(device)
 model.eval()
 MODEL_PATH = "./mlp_model.pt"
 if os.path.exists(MODEL_PATH):
