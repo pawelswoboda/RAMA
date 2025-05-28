@@ -31,8 +31,6 @@ def train(cfg: Config):
 
     dataset = MulticutGraphDataset(cfg.data.train_dir)
     loader = DataLoader(dataset, batch_size=cfg.train.batch_size, shuffle=True)
-    opts = rama_py.multicut_solver_options("PD")
-    opts.verbose = False
 
     model = MLPMessagePassing(cfg.model).to(device)
 
