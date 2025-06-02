@@ -31,7 +31,7 @@ with torch.no_grad():
 
 lb = lower_bound(updated_edge_costs, updated_t12, updated_t13, updated_t23)
 assert(-1.51 <= lb <= -1.49)
-
+print("SUCCESS")
 
 
 

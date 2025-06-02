@@ -23,9 +23,16 @@ def test(cfg: Config):
     
     dataset = MulticutGraphDataset(cfg.data.test_dir)
     loader = DataLoader(dataset, batch_size=cfg.test.batch_size, shuffle=False)
-
-    opts = rama_py.multicut_solver_options("PD")
-    opts.verbose = False
+   
+    assert cfg.test.dist == cfg.train.dist, "Distribution must match between training and testing"
+    assert cfg.test.num_mp_iter == cfg.train.num_mp_iter, "Number of iterations must match between training and testing"
+    
+    k = cfg.test.num_mp_iter
+    opts = rama_py.multicut_solver_options("D")  
+    opts.verbose = False 
+    opts.num_dual_itr_lb = k
+    opts.max_cycle_length_lb = 3  
+    opts.num_outer_itr_dual = 1
 
     if cfg.test.model_type == "mlp":
         eval_dir = cfg.data.mlp_dir
@@ -47,11 +54,6 @@ def test(cfg: Config):
     print(f"[INFO] DEVICE: {device}")
     print(f"[INFO] Found {len(dataset)} Multicut instances.")
 
-    assert cfg.test.dist == cfg.train.dist, "Distribution must match between training and testing"
-
-    assert cfg.test.num_mp_iter == cfg.train.num_mp_iter, "Number of iterations must match between training and testing"
-    k = cfg.test.num_mp_iter
-
     fails = set()
     for sample in loader:
         name = sample["name"][0]    
@@ -65,16 +67,13 @@ def test(cfg: Config):
 
             with torch.no_grad():
                 if cfg.test.model_type == "cpp":                    
-                    #_, lb, _, _ = rama_py.rama_cuda(i, j, normed_costs.tolist(), opts)
-                    mp = ClassicalMessagePassing(edge_costs, corr_12, corr_13, corr_23,
-                                   t12_costs, t13_costs, t23_costs, edge_counter)
-                    for _ in range(k):
-                        mp.iteration()  
-                    lb = mp.compute_lower_bound()
+                    #mp = ClassicalMessagePassing(edge_costs, corr_12, corr_13, corr_23,
+                    #               t12_costs, t13_costs, t23_costs, edge_counter)
+                  #  for _ in range(k):
+                   #     mp.iteration()  
+                   # lb = mp.compute_lower_bound()
+                    _, lb, _, _ = rama_py.rama_cuda(i, j, normed_costs.tolist(), opts)
                 elif cfg.test.model_type == "mlp":
-                    #mp_data = rama_py.get_message_passing_data(i, j, normed_costs.tolist(), 3)
-                    #edge_costs, t12_costs, t13_costs, t23_costs, corr_12, corr_13, corr_23, edge_counter = utils.extract_data(mp_data, device)
-                
                     for _ in range(k):
                         updated_edge_costs, updated_t12, updated_t13, updated_t23 = model(
                             edge_costs, t12_costs, t13_costs, t23_costs,

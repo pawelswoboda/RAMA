@@ -61,7 +61,7 @@ class EdgeToTriAttention(nn.Module):
                 nn.init.zeros_(m.bias)
 
     def forward(self, edge_features, edge_ids_all, triangle_ids_all):
-        queries = self.query(edge_features)  # [num_edges, 2] -> [num_edges, d_k = 16]
+        queries = self.query(edge_features)  # [num_edges, 3] -> [num_edges, d_k = 16]
         keys = self.key(edge_features)
         values = self.value(edge_features)
 

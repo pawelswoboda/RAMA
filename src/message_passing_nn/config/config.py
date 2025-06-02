@@ -27,21 +27,22 @@ class TrainConfig:
 
 @dataclass
 class TestConfig:
-    model_type: str = "mlp"  # "mlp", "gnn" or "cpp" with DISABLE_MLP=1
+    model_type: str = "mlp"  # "mlp" or "cpp"
     num_mp_iter: int = 5
     batch_size: int = 1
     dist: str = "mlp"  # "uniform" or "mlp" or "attention"
 
 @dataclass
 class DataConfig:
-    train_dir: str = "src/message_passing_nn/data/train"
-    test_dir: str = "src/message_passing_nn/data/test"
-    eval_dir: str = "src/message_passing_nn/data/eval"
-    cpp_dir: str = "src/message_passing_nn/data/eval/cpp"
-    mlp_dir: str = "src/message_passing_nn/data/eval/mlp"
-    max_dir: str = "src/message_passing_nn/data/eval/max"
-    output_summary_path: str = "src/message_passing_nn/data/eval/results/summary.txt"
-    output_plot_path: str = "src/message_passing_nn/data/eval/results/lb_comparison.png"
+    dir = "src/message_passing_nn/data"
+    train_dir: str = dir + "/train"
+    test_dir: str = dir + "/test"
+    eval_dir: str = dir + "/eval"
+    cpp_dir: str = dir + "/eval/cpp"
+    mlp_dir: str = dir + "/eval/mlp"
+    max_dir: str = dir + "/eval/max"
+    output_summary_path: str = dir + "/eval/results/summary.txt"
+    output_plot_path: str = dir + "/eval/results/lb_comparison.png"
 
 @dataclass
 class Config:
