@@ -4,8 +4,6 @@ build/*
 
 commands.txt
 
-/src/message_passing_nn/data2/
-
 wandb/
 
 *.pt

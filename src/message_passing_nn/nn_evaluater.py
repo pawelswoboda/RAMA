@@ -103,11 +103,11 @@ def evaluate(cfg: Config):
 
 def plot_lower_bounds(instance_names, diff_mlp_cpp, output_path):
     plt.figure(figsize=(14, 6))
-    plt.plot(instance_names, diff_mlp_cpp, label="MLP - CPP", marker='x')
+    plt.plot(instance_names, diff_mlp_cpp, label="MLP - RAMA", marker='x')
     plt.xticks(rotation=45, ha='right')
     plt.xlabel("Multicut Test Instances")
     plt.ylabel("Lower Bound Difference (%)")
-    plt.title("Lower Bound Difference (MLP - CPP)")
+    plt.title("Lower Bound Difference (MLP - RAMA)")
     plt.legend()
     plt.tight_layout()
     plt.grid(True)

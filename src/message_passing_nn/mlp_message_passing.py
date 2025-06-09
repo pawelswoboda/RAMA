@@ -77,7 +77,7 @@ class EdgeToTriAttention(nn.Module):
         return weights
     
 class TriToEdgeMLP(nn.Module):
-    def __init__(self, config: ModelConfig, input_dim=6, output_dim=3):
+    def __init__(self, config: ModelConfig, input_dim=3, output_dim=3):
         super().__init__()
         layers = [nn.Linear(input_dim, config.hidden_dim)]  # input = [t12, t13, t23, prev_delta_t12, prev_delta_t13, prev_delta_t23]
         for _ in range(config.num_res_blocks):
@@ -100,10 +100,10 @@ class MLPMessagePassing(nn.Module):
         super(MLPMessagePassing, self).__init__()
         self.edge_to_tri_mlp = EdgeToTriMLP(config, input_dim=3, output_dim=1)  # input = [edge_cost, edge_counter, lagrange_multiplier], output = weights
         self.edge_to_tri_attention = EdgeToTriAttention(config, input_dim=3, output_dim=1)  # input = [edge_cost, edge_counter, lagrange_multiplier], output = weights
-        self.tri_to_edge_mlp = TriToEdgeMLP(config, input_dim=6, output_dim=3)  # input = [t12, t13, t23, prev_delta_t12, prev_delta_t13, prev_delta_t23], output = [delta_t12, delta_t13, delta_t23]
+        self.tri_to_edge_mlp = TriToEdgeMLP(config, input_dim=3, output_dim=3)  # input = [t12, t13, t23, prev_delta_t12, prev_delta_t13, prev_delta_t23], output = [delta_t12, delta_t13, delta_t23]
         
-        self.prev_deltas = None
-        self._last_edge_count = None
+        #self.prev_deltas = None
+        #self._last_edge_count = None
     
     def send_messages_to_triplets(self, edge_costs, t12, t13, t23,
                                      corr_12, corr_13, corr_23, edge_counter):
@@ -176,27 +176,28 @@ class MLPMessagePassing(nn.Module):
 
     def send_messages_to_edges_mlp(self, edge_costs, t12, t13, t23,
                                           corr_12, corr_13, corr_23):
-        num_triangles = t12.size(0)
+        #num_triangles = t12.size(0)
         
-        if self.prev_deltas is None or self.prev_deltas.size(1) != num_triangles:
-            self.prev_deltas = torch.zeros((3, num_triangles), device=t12.device)
+        #if self.prev_deltas is None or self.prev_deltas.size(1) != num_triangles:
+        #    self.prev_deltas = torch.zeros((3, num_triangles), device=t12.device)
 
-        tri_features = torch.cat([
-            t12.unsqueeze(1),                 
-            t13.unsqueeze(1),                 
-            t23.unsqueeze(1),                 
-            self.prev_deltas[0].unsqueeze(1), 
-            self.prev_deltas[1].unsqueeze(1), 
-            self.prev_deltas[2].unsqueeze(1)  
-        ], dim=1)
+        #tri_features = torch.cat([
+        #    t12.unsqueeze(1),                 
+        #    t13.unsqueeze(1),                 
+        #    t23.unsqueeze(1),                 
+        #    self.prev_deltas[0].unsqueeze(1), 
+        #    self.prev_deltas[1].unsqueeze(1), 
+        #    self.prev_deltas[2].unsqueeze(1)  
+        #], dim=1)
+        tri_features = torch.stack([t12,t13,t23], dim=1)
         
         delta = self.tri_to_edge_mlp(tri_features)
         
-        self.prev_deltas = torch.stack([
-            delta[:, 0],
-            delta[:, 1],
-            delta[:, 2]
-        ])
+       # self.prev_deltas = torch.stack([
+       #     delta[:, 0],
+       #     delta[:, 1],
+       #     delta[:, 2]
+       # ])
         
         t12 = t12 - delta[:, 0] 
         t13 = t13 - delta[:, 1] 
@@ -213,10 +214,10 @@ class MLPMessagePassing(nn.Module):
 
     def forward(self, edge_costs, t12_costs, t13_costs, t23_costs,
                         tri_corr_12, tri_corr_13, tri_corr_23, edge_counter, dist="mlp"):
-        edge_count = edge_costs.size(0)
-        if self._last_edge_count != edge_count:
-            self.prev_deltas = None
-            self._last_edge_count = edge_count
+        #edge_count = edge_costs.size(0)
+        #if self._last_edge_count != edge_count:
+        #    self.prev_deltas = None
+        #    self._last_edge_count = edge_count
             
         if dist == "uniform":
             edge_costs, t12_costs, t13_costs, t23_costs = self.send_messages_to_triplets(

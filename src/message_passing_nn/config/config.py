@@ -15,11 +15,11 @@ class TrainConfig:
     model_type: str = "mlp"  
     gradient_clip_norm: float = 1.0
     gradient_acc_steps: int = 4
-    scheduler_step_size: int = 20 
+    scheduler_step_size: int = 30 # epochs/4 
     scheduler_gamma: float = 0.3  
-    epochs: int = 80
-    lr: float = 1e-3  
-    num_mp_iter: int = 5  
+    epochs: int = 120
+    lr: float = 1e-5  
+    num_mp_iter: int = 2 
     dist: str = "mlp"  # "uniform" or "mlp" or "attention"
     batch_size: int = 1
     weight_decay: float = 1e-6
@@ -27,14 +27,14 @@ class TrainConfig:
 
 @dataclass
 class TestConfig:
-    model_type: str = "mlp"  # "mlp" or "cpp"
-    num_mp_iter: int = 5
+    model_type: str = "cpp"  # "mlp" or "cpp"
+    num_mp_iter: int = 2
     batch_size: int = 1
     dist: str = "mlp"  # "uniform" or "mlp" or "attention"
 
 @dataclass
 class DataConfig:
-    dir = "src/message_passing_nn/data"
+    dir = "src/message_passing_nn/data_mqlib"
     train_dir: str = dir + "/train"
     test_dir: str = dir + "/test"
     eval_dir: str = dir + "/eval"
