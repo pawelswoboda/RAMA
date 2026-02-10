@@ -30,3 +30,12 @@ add_test(NAME compute_unique COMMAND compute_unique_test)
 add_executable(conflicted_cycles_test conflicted_cycles_test.cu)
 target_link_libraries(conflicted_cycles_test conflicted_cycles_cuda)
 add_test(NAME conflicted_cycles COMMAND conflicted_cycles_test)
+
+add_executable(graph_gpu_test graph_gpu_test.cu)
+target_link_libraries(graph_gpu_test RAMA)
+add_test(NAME graph_gpu COMMAND graph_gpu_test)
+
+add_executable(graph_cpu_test graph_cpu_test.cpp)
+set_source_files_properties(graph_cpu_test.cpp PROPERTIES LANGUAGE CUDA)
+target_link_libraries(graph_cpu_test RAMA)
+add_test(NAME graph_cpu COMMAND graph_cpu_test)
