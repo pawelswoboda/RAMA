@@ -3,8 +3,8 @@ add_library(multicut_text_parser multicut_text_parser.cpp)
 add_library(dCOO dCOO.cu)
 target_link_libraries(dCOO ECL-CC_11 RAMA)
 
-add_library(multicut_message_passing multicut_message_passing.cu)
-target_link_libraries(multicut_message_passing RAMA)
+# multicut_message_passing is now header-only (templatized)
+# Tests instantiate templates directly
 
 add_library(conflicted_cycles_cuda conflicted_cycles_cuda.cu)
 target_link_libraries(conflicted_cycles_cuda dCOO RAMA)

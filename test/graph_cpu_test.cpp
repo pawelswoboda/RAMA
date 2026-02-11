@@ -1,3 +1,6 @@
+#define THRUST_DEVICE_SYSTEM THRUST_DEVICE_SYSTEM_CPP
+#define THRUST_HOST_SYSTEM THRUST_HOST_SYSTEM_CPP
+
 #include "graph_test.h"
 #include <thrust/host_vector.h>
 

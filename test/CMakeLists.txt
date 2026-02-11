@@ -1,6 +1,12 @@
-add_executable(multicut_message_passing_test multicut_message_passing_test.cu)
-target_link_libraries(multicut_message_passing_test dCOO multicut_message_passing)
-add_test(NAME multicut_message_passing COMMAND multicut_message_passing_test)
+add_executable(multicut_message_passing_gpu_test multicut_message_passing_gpu_test.cu)
+target_compile_definitions(multicut_message_passing_gpu_test PRIVATE ${GPU_COMPILE_DEFINITIONS})
+target_link_libraries(multicut_message_passing_gpu_test RAMA)
+add_test(NAME multicut_message_passing_gpu COMMAND multicut_message_passing_gpu_test)
+
+add_executable(multicut_message_passing_cpu_test multicut_message_passing_cpu_test.cpp)
+# Compiled with g++ (not nvcc), CPP backend defined in source file
+target_link_libraries(multicut_message_passing_cpu_test RAMA)
+add_test(NAME multicut_message_passing_cpu COMMAND multicut_message_passing_cpu_test)
 
 add_executable(cc_gpu_test cc_gpu_test.cu)
 target_link_libraries(cc_gpu_test ECL-CC_11)
@@ -32,10 +38,11 @@ target_link_libraries(conflicted_cycles_test conflicted_cycles_cuda)
 add_test(NAME conflicted_cycles COMMAND conflicted_cycles_test)
 
 add_executable(graph_gpu_test graph_gpu_test.cu)
+target_compile_definitions(graph_gpu_test PRIVATE ${GPU_COMPILE_DEFINITIONS})
 target_link_libraries(graph_gpu_test RAMA)
 add_test(NAME graph_gpu COMMAND graph_gpu_test)
 
 add_executable(graph_cpu_test graph_cpu_test.cpp)
-set_source_files_properties(graph_cpu_test.cpp PROPERTIES LANGUAGE CUDA)
+# Compiled with g++ (not nvcc), CPP backend defined in source file
 target_link_libraries(graph_cpu_test RAMA)
 add_test(NAME graph_cpu COMMAND graph_cpu_test)

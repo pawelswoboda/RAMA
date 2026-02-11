@@ -12,7 +12,11 @@ std::tuple<dCOO, double, int> dual_update_cycle_length(const dCOO& A, const int 
     if (num_tri == 0)
         return {A, get_lb(A.get_data()), 0};
 
-    multicut_message_passing mp(A, std::move(triangles_v1), std::move(triangles_v2), std::move(triangles_v3), verbose);
+    DeviceGraph G(A.get_row_ids().begin(), A.get_row_ids().end(),
+                  A.get_col_ids().begin(), A.get_col_ids().end(),
+                  A.get_data().begin(), A.get_data().end(),
+                  false, !A.is_directed());
+    multicut_message_passing<thrust::device_vector> mp(G, std::move(triangles_v1), std::move(triangles_v2), std::move(triangles_v3), verbose);
     double prev_lb = 0;
     for(int iter = 0; iter < num_dual_steps_per_cycle; ++iter)
     {

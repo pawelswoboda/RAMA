@@ -1,5 +1,5 @@
 project(RAMA LANGUAGES CXX CUDA)
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -use_fast_math")
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -use_fast_math --extended-lambda")
 
 cmake_minimum_required(VERSION 3.22.1)
 
@@ -16,6 +16,24 @@ target_compile_features(RAMA INTERFACE cxx_std_17)
 target_compile_options(RAMA INTERFACE -march=native)
 target_compile_options(RAMA INTERFACE -fPIC)
 target_include_directories(RAMA INTERFACE external/Eigen)
+
+# Define global Thrust execution backend flags
+# GPU targets use CUDA device system
+set(GPU_COMPILE_DEFINITIONS
+    THRUST_DEVICE_SYSTEM=THRUST_DEVICE_SYSTEM_CUDA
+    THRUST_HOST_SYSTEM=THRUST_HOST_SYSTEM_CPP)
+
+# CPU targets use CPP device system (sequential, no OpenMP)
+set(CPU_COMPILE_DEFINITIONS
+    THRUST_DEVICE_SYSTEM=THRUST_DEVICE_SYSTEM_CPP
+    THRUST_HOST_SYSTEM=THRUST_HOST_SYSTEM_CPP)
+
+# Compiler options to undefine and redefine Thrust backend for CPU targets
+set(CPU_COMPILE_OPTIONS
+    -UTHRUST_DEVICE_SYSTEM
+    -UTHRUST_HOST_SYSTEM
+    -DTHRUST_DEVICE_SYSTEM=THRUST_DEVICE_SYSTEM_CPP
+    -DTHRUST_HOST_SYSTEM=THRUST_HOST_SYSTEM_CPP)
 
 # external dependencies
 set(CPM_DOWNLOAD_VERSION 0.34.0)
