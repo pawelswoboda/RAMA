@@ -46,3 +46,13 @@ add_executable(graph_cpu_test graph_cpu_test.cpp)
 # Compiled with g++ (not nvcc), CPP backend defined in source file
 target_link_libraries(graph_cpu_test RAMA)
 add_test(NAME graph_cpu COMMAND graph_cpu_test)
+
+add_executable(maximum_matching_gpu_test maximum_matching_gpu_test.cu)
+target_compile_definitions(maximum_matching_gpu_test PRIVATE ${GPU_COMPILE_DEFINITIONS})
+target_link_libraries(maximum_matching_gpu_test RAMA)
+add_test(NAME maximum_matching_gpu COMMAND maximum_matching_gpu_test)
+
+add_executable(maximum_matching_cpu_test maximum_matching_cpu_test.cpp)
+# Compiled with g++ (not nvcc), CPP backend defined in source file
+target_link_libraries(maximum_matching_cpu_test RAMA)
+add_test(NAME maximum_matching_cpu COMMAND maximum_matching_cpu_test)
