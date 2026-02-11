@@ -88,7 +88,7 @@ The codebase is being ported from raw CUDA kernels to Thrust library algorithms 
 | Edge contraction | Not started | `contract_cuda()` not yet ported to Graph |
 | Dual solver | Not started | Uses dCOO |
 | Conflicted cycles | Not started | Uses dCOO |
-| Maximum matching | Not started | Uses dCOO |
+| Maximum matching | **Done** | `include/maximum_matching.h` — templatized, uses Graph |
 | Message passing | Not started | Uses dCOO |
 
 When modifying or adding code:
