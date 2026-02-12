@@ -66,3 +66,13 @@ add_executable(find_triangles_cpu_test find_triangles_cpu_test.cpp)
 # Compiled with g++ (not nvcc), CPP backend defined in source file
 target_link_libraries(find_triangles_cpu_test RAMA)
 add_test(NAME find_triangles_cpu COMMAND find_triangles_cpu_test)
+
+add_executable(find_quadrangles_gpu_test find_quadrangles_gpu_test.cu)
+target_compile_definitions(find_quadrangles_gpu_test PRIVATE ${GPU_COMPILE_DEFINITIONS})
+target_link_libraries(find_quadrangles_gpu_test RAMA)
+add_test(NAME find_quadrangles_gpu COMMAND find_quadrangles_gpu_test)
+
+add_executable(find_quadrangles_cpu_test find_quadrangles_cpu_test.cpp)
+# Compiled with g++ (not nvcc), CPP backend defined in source file
+target_link_libraries(find_quadrangles_cpu_test RAMA)
+add_test(NAME find_quadrangles_cpu COMMAND find_quadrangles_cpu_test)
