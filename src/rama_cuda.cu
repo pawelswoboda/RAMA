@@ -15,6 +15,20 @@
 #include "edge_contractions_woc.h"
 #include "rama_utils.h"
 
+static double dual_solver_dcoo(dCOO& A, int max_cycle_length, int num_iter,
+                               int num_outer_itr, float tol_ratio, bool verbose)
+{
+    DeviceGraph G(A.get_row_ids().begin(), A.get_row_ids().end(),
+                  A.get_col_ids().begin(), A.get_col_ids().end(),
+                  A.get_data().begin(), A.get_data().end(),
+                  false, !A.is_directed());
+    double lb = dual_solver<thrust::device_vector>(G, max_cycle_length, num_iter,
+                                                    num_outer_itr, tol_ratio, verbose);
+    auto [di, dj, dc] = multicut_message_passing<thrust::device_vector>::extract_directed_edges(G);
+    A = dCOO(std::move(dj), std::move(di), std::move(dc), true, true);
+    return lb;
+}
+
 struct is_negative
 {
     __host__ __device__
@@ -68,7 +82,7 @@ std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>> > r
 
     assert(A.is_directed());
 
-    const double final_lb = dual_solver(A, opts.max_cycle_length_lb, opts.num_dual_itr_lb, opts.tri_memory_factor, opts.num_outer_itr_dual, 1e-4, opts.verbose);
+    const double final_lb = dual_solver_dcoo(A, opts.max_cycle_length_lb, opts.num_dual_itr_lb, opts.num_outer_itr_dual, 1e-4, opts.verbose);
 
     if (opts.verbose)
         std::cout << "initial energy = " << A.sum() << "\n";
@@ -89,7 +103,7 @@ std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>> > r
     {
         if (iter > 0)
         {
-            dual_solver(A, opts.max_cycle_length_primal, opts.num_dual_itr_primal, 1.0, 1, 1e-4, opts.verbose);
+            dual_solver_dcoo(A, opts.max_cycle_length_primal, opts.num_dual_itr_primal, 1, 1e-4, opts.verbose);
         }
         thrust::device_vector<int> cur_node_mapping;
         int nr_edges_to_contract;

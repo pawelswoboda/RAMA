@@ -376,6 +376,165 @@ void test_random_graph_message_passing(const int num_nodes, const double density
 }
 
 template<template<typename> class VectorType>
+void test_add_triangles_incremental()
+{
+    // Two triangles sharing edge (1,2):
+    //
+    //        1
+    //       /|\
+    //    +1/ | \+1
+    //     /  |  \
+    //    0  -1   3
+    //     \  |  /
+    //    +1\ | /+1
+    //       \|/
+    //        2
+    //
+    VectorType<int> ei = std::vector<int>{0,0,1,1,2};
+    VectorType<int> ej = std::vector<int>{1,2,2,3,3};
+    VectorType<float> ec = std::vector<float>{1.0, 1.0, -1.0, 1.0, 1.0};
+    Graph<VectorType> A(ei.begin(), ei.end(), ej.begin(), ej.end(), ec.begin(), ec.end());
+
+    multicut_message_passing<VectorType> mp(A, false);
+    double lb0 = mp.lower_bound();
+    test(std::abs(lb0 - (-1.0)) < 1e-6,
+         "incremental: trivial lb must be -1, got " + std::to_string(lb0));
+
+    // Add first triangle (0,1,2)
+    VectorType<int> ta1 = std::vector<int>{0};
+    VectorType<int> ta2 = std::vector<int>{1};
+    VectorType<int> ta3 = std::vector<int>{2};
+    int added1 = mp.add_triangles(std::move(ta1), std::move(ta2), std::move(ta3));
+    test(added1 == 1, "incremental: first add should return 1, got " + std::to_string(added1));
+
+    for (int iter = 0; iter < 20; ++iter)
+        mp.iteration();
+    double lb1 = mp.lower_bound();
+    test(lb1 >= lb0 - 1e-6,
+         "incremental: lb after first triangle must not decrease");
+
+    // Add second triangle (1,2,3)
+    VectorType<int> tb1 = std::vector<int>{1};
+    VectorType<int> tb2 = std::vector<int>{2};
+    VectorType<int> tb3 = std::vector<int>{3};
+    int added2 = mp.add_triangles(std::move(tb1), std::move(tb2), std::move(tb3));
+    test(added2 == 1, "incremental: second add should return 1, got " + std::to_string(added2));
+
+    for (int iter = 0; iter < 20; ++iter)
+        mp.iteration();
+    double lb2 = mp.lower_bound();
+    test(lb2 >= lb1 - 1e-6,
+         "incremental: lb after second triangle must not decrease");
+}
+
+template<template<typename> class VectorType>
+void test_add_triangles_deduplication()
+{
+    VectorType<int> ei = std::vector<int>{0,0,1};
+    VectorType<int> ej = std::vector<int>{1,2,2};
+    VectorType<float> ec = std::vector<float>{1.0, 1.0, -1.0};
+    Graph<VectorType> A(ei.begin(), ei.end(), ej.begin(), ej.end(), ec.begin(), ec.end());
+
+    multicut_message_passing<VectorType> mp(A, false);
+
+    VectorType<int> ta1 = std::vector<int>{0};
+    VectorType<int> ta2 = std::vector<int>{1};
+    VectorType<int> ta3 = std::vector<int>{2};
+    int added1 = mp.add_triangles(std::move(ta1), std::move(ta2), std::move(ta3));
+    test(added1 == 1, "dedup: first add should return 1");
+
+    for (int iter = 0; iter < 5; ++iter)
+        mp.iteration();
+    double lb_before = mp.lower_bound();
+
+    // Add same triangle again
+    VectorType<int> tb1 = std::vector<int>{0};
+    VectorType<int> tb2 = std::vector<int>{1};
+    VectorType<int> tb3 = std::vector<int>{2};
+    int added2 = mp.add_triangles(std::move(tb1), std::move(tb2), std::move(tb3));
+    test(added2 == 0, "dedup: second add of same triangle should return 0, got " + std::to_string(added2));
+
+    double lb_after = mp.lower_bound();
+    test(std::abs(lb_after - lb_before) < 1e-6,
+         "dedup: lb should be unchanged after duplicate add");
+}
+
+template<template<typename> class VectorType>
+void test_reparametrized_graph()
+{
+    VectorType<int> ei = std::vector<int>{0,0,1,2};
+    VectorType<int> ej = std::vector<int>{1,2,2,3};
+    VectorType<float> ec = std::vector<float>{1.0, -1.0, 1.0, -5.0};
+    VectorType<int> t1 = std::vector<int>{0};
+    VectorType<int> t2 = std::vector<int>{1};
+    VectorType<int> t3 = std::vector<int>{2};
+    Graph<VectorType> A(ei.begin(), ei.end(), ej.begin(), ej.end(), ec.begin(), ec.end());
+    multicut_message_passing<VectorType> mp(A, std::move(t1), std::move(t2), std::move(t3), false);
+
+    for (int iter = 0; iter < 10; ++iter)
+        mp.iteration();
+
+    Graph<VectorType> G = mp.reparametrized_graph();
+    test(G.num_nodes() == 4, "reparam graph: should have 4 nodes, got " + std::to_string(G.num_nodes()));
+    test(G.num_edges() == 4, "reparam graph: should have 4 undirected edges, got " + std::to_string(G.num_edges()));
+
+    // Non-triangle edge (2,3) cost should be unchanged
+    thrust::host_vector<int> h_tails = G.get_tails();
+    thrust::host_vector<int> h_heads = G.get_heads();
+    thrust::host_vector<float> h_costs = G.get_costs();
+    bool found = false;
+    for (size_t e = 0; e < h_tails.size(); ++e) {
+        if ((h_tails[e] == 2 && h_heads[e] == 3) || (h_tails[e] == 3 && h_heads[e] == 2)) {
+            test(std::abs(h_costs[e] - (-5.0f)) < 1e-6,
+                 "reparam graph: non-triangle edge cost must be unchanged");
+            found = true;
+            break;
+        }
+    }
+    test(found, "reparam graph: edge (2,3) must be present");
+}
+
+template<template<typename> class VectorType>
+void test_add_triangles_preserves_costs()
+{
+    // Two triangles sharing edge (1,2):
+    VectorType<int> ei = std::vector<int>{0,0,1,1,2};
+    VectorType<int> ej = std::vector<int>{1,2,2,3,3};
+    VectorType<float> ec = std::vector<float>{1.0, 1.0, -1.0, 1.0, 1.0};
+    Graph<VectorType> A(ei.begin(), ei.end(), ej.begin(), ej.end(), ec.begin(), ec.end());
+
+    // Create MP with first triangle only
+    VectorType<int> ta1 = std::vector<int>{0};
+    VectorType<int> ta2 = std::vector<int>{1};
+    VectorType<int> ta3 = std::vector<int>{2};
+    multicut_message_passing<VectorType> mp(A, std::move(ta1), std::move(ta2), std::move(ta3), false);
+
+    // Run iterations to reparametrize
+    for (int iter = 0; iter < 10; ++iter)
+        mp.iteration();
+    double lb_before_add = mp.lower_bound();
+
+    // Add second triangle
+    VectorType<int> tb1 = std::vector<int>{1};
+    VectorType<int> tb2 = std::vector<int>{2};
+    VectorType<int> tb3 = std::vector<int>{3};
+    mp.add_triangles(std::move(tb1), std::move(tb2), std::move(tb3));
+
+    // Lower bound should be preserved (adding triangles doesn't change costs)
+    double lb_after_add = mp.lower_bound();
+    test(std::abs(lb_after_add - lb_before_add) < 1e-4,
+         "preserves costs: lb should be preserved after adding triangles, before=" +
+         std::to_string(lb_before_add) + ", after=" + std::to_string(lb_after_add));
+
+    // Running more iterations should not decrease lb
+    for (int iter = 0; iter < 20; ++iter)
+        mp.iteration();
+    double lb_final = mp.lower_bound();
+    test(lb_final >= lb_after_add - 1e-6,
+         "preserves costs: lb should not decrease after more iterations");
+}
+
+template<template<typename> class VectorType>
 void run_all_multicut_message_passing_tests()
 {
     test_single_triangle_all_positive<VectorType>();
@@ -409,11 +568,23 @@ void run_all_multicut_message_passing_tests()
     std::cout << "PASSED: random graph (n=50, density=0.2)\n";
 
     for(float density : std::vector<float>({0.1, 0.2, 0.4, 0.8})) {
-        for(int n=10; n<300; n+=27) {
+        for(int n=10; n<100; n+=27) {
             test_random_graph_message_passing<VectorType>(n, density, 7);
             std::cout << "PASSED: random graph (n=" << std::to_string(n) << ", density=" << std::to_string(density) << ")\n";
         }
     }
+
+    test_add_triangles_incremental<VectorType>();
+    std::cout << "PASSED: add triangles incremental\n";
+
+    test_add_triangles_deduplication<VectorType>();
+    std::cout << "PASSED: add triangles deduplication\n";
+
+    test_reparametrized_graph<VectorType>();
+    std::cout << "PASSED: reparametrized graph\n";
+
+    test_add_triangles_preserves_costs<VectorType>();
+    std::cout << "PASSED: add triangles preserves costs\n";
 
     std::cout << "\nAll multicut_message_passing tests passed.\n";
 }

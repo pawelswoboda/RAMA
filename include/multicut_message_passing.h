@@ -144,6 +144,12 @@ public:
             VectorType<int>&& _t3,
             const bool verbose = true);
 
+    multicut_message_passing(const Graph<VectorType>& A, const bool verbose = true);
+
+    int add_triangles(VectorType<int>&& new_t1, VectorType<int>&& new_t2, VectorType<int>&& new_t3);
+
+    Graph<VectorType> reparametrized_graph() const;
+
     void send_messages_to_triplets();
     void send_messages_to_edges();
 
@@ -181,6 +187,8 @@ private:
     VectorType<int> triangle_correspondence_13;
     VectorType<int> triangle_correspondence_23;
     VectorType<int> edge_counter;
+
+    int num_nodes_;
 };
 
 // --- Implementation ---
@@ -260,115 +268,177 @@ multicut_message_passing<VectorType>::extract_directed_edges(const Graph<VectorT
 
 template<template<typename> class VectorType>
 inline multicut_message_passing<VectorType>::multicut_message_passing(
+        const Graph<VectorType>& A, const bool verbose)
+    : num_nodes_(A.num_nodes())
+{
+    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
+    std::tie(i, j, edge_costs) = extract_directed_edges(A);
+    mmp_detail::coo_sort_ijc<VectorType>(i, j, edge_costs);
+    if (verbose)
+        std::cout << "edges size = " << i.size() << "\n";
+    edge_counter = VectorType<int>(i.size(), 0);
+}
+
+template<template<typename> class VectorType>
+inline multicut_message_passing<VectorType>::multicut_message_passing(
         const Graph<VectorType>& A,
         VectorType<int>&& _t1,
         VectorType<int>&& _t2,
         VectorType<int>&& _t3,
         const bool verbose)
-    : t1(std::move(_t1)),
-    t2(std::move(_t2)),
-    t3(std::move(_t3))
+    : multicut_message_passing(A, verbose)
+{
+    if (verbose)
+        std::cout << "triangle size = " << _t1.size() << "\n";
+    add_triangles(std::move(_t1), std::move(_t2), std::move(_t3));
+}
+
+template<template<typename> class VectorType>
+int multicut_message_passing<VectorType>::add_triangles(
+        VectorType<int>&& new_t1, VectorType<int>&& new_t2, VectorType<int>&& new_t3)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
+    assert(new_t1.size() == new_t2.size() && new_t1.size() == new_t3.size());
+    if (new_t1.empty()) return 0;
 
-    // Extract directed edges (tail < head) from the symmetric Graph
-    VectorType<int> orig_i, orig_j;
-    VectorType<float> orig_edge_costs;
-    std::tie(orig_i, orig_j, orig_edge_costs) = extract_directed_edges(A);
+    // 1. Normalize new triangles (sort vertices, remove degenerate, deduplicate)
+    mmp_detail::normalize_triangles_impl<VectorType>(new_t1, new_t2, new_t3);
+    if (new_t1.empty()) return 0;
 
-    if(verbose)
-        std::cout << "triangle size = " << t1.size() << ", orig edges size = " << orig_i.size() << "\n";
-    assert(t1.size() == t2.size() && t1.size() == t3.size());
-    mmp_detail::normalize_triangles_impl<VectorType>(t1, t2, t3);
+    // 2. Deduplicate against existing triangles
+    if (!t1.empty()) {
+        VectorType<int> diff_t1(new_t1.size()), diff_t2(new_t1.size()), diff_t3(new_t1.size());
 
-    // edges that will participate in message passing are those in triangles. Hence, we use only these.
-    i = VectorType<int>(3*t1.size());
-    j = VectorType<int>(3*t1.size());
-    thrust::copy(t1.begin(), t1.end(), i.begin());
-    thrust::copy(t2.begin(), t2.end(), j.begin());
-    thrust::copy(t1.begin(), t1.end(), i.begin() + t1.size());
-    thrust::copy(t3.begin(), t3.end(), j.begin() + t1.size());
-    thrust::copy(t2.begin(), t2.end(), i.begin() + 2*t1.size());
-    thrust::copy(t3.begin(), t3.end(), j.begin() + 2*t1.size());
+        auto existing_first = thrust::make_zip_iterator(thrust::make_tuple(t1.begin(), t2.begin(), t3.begin()));
+        auto existing_last = thrust::make_zip_iterator(thrust::make_tuple(t1.end(), t2.end(), t3.end()));
+        auto new_first = thrust::make_zip_iterator(thrust::make_tuple(new_t1.begin(), new_t2.begin(), new_t3.begin()));
+        auto new_last = thrust::make_zip_iterator(thrust::make_tuple(new_t1.end(), new_t2.end(), new_t3.end()));
+        auto diff_first = thrust::make_zip_iterator(thrust::make_tuple(diff_t1.begin(), diff_t2.begin(), diff_t3.begin()));
 
-    // remove duplicate edges
-    {
-        mmp_detail::coo_sort_ij<VectorType>(i, j);
-        assert(thrust::is_sorted(i.begin(), i.end()));
-        auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
-        auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end()));
-        auto new_last = thrust::unique(first, last);
-        i.resize(std::distance(first, new_last));
-        j.resize(std::distance(first, new_last));
+        auto diff_end = thrust::set_difference(new_first, new_last, existing_first, existing_last, diff_first);
+        int num_diff = std::distance(diff_first, diff_end);
+        diff_t1.resize(num_diff);
+        diff_t2.resize(num_diff);
+        diff_t3.resize(num_diff);
+
+        new_t1 = std::move(diff_t1);
+        new_t2 = std::move(diff_t2);
+        new_t3 = std::move(diff_t3);
     }
 
-    // copy edge costs from given edges
+    const int num_new = new_t1.size();
+    if (num_new == 0) return 0;
+
+    // 3. Add any missing edges from new triangles to the edge set.
+    //    Triangulated cycles (quadrangles, pentagons) introduce diagonal
+    //    edges that may not exist in the original graph.
     {
-        edge_costs = VectorType<float>(i.size(), 0.0);
-        auto first_edge = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
-        auto last_edge = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end()));
+        VectorType<int> tri_i(3 * num_new);
+        VectorType<int> tri_j(3 * num_new);
+        thrust::copy(new_t1.begin(), new_t1.end(), tri_i.begin());
+        thrust::copy(new_t2.begin(), new_t2.end(), tri_j.begin());
+        thrust::copy(new_t1.begin(), new_t1.end(), tri_i.begin() + num_new);
+        thrust::copy(new_t3.begin(), new_t3.end(), tri_j.begin() + num_new);
+        thrust::copy(new_t2.begin(), new_t2.end(), tri_i.begin() + 2 * num_new);
+        thrust::copy(new_t3.begin(), new_t3.end(), tri_j.begin() + 2 * num_new);
 
-        auto first_orig = thrust::make_zip_iterator(thrust::make_tuple(orig_i.begin(), orig_j.begin()));
-        auto last_orig = thrust::make_zip_iterator(thrust::make_tuple(orig_i.end(), orig_j.end()));
+        mmp_detail::coo_sort_ij<VectorType>(tri_i, tri_j);
+        {
+            auto first = thrust::make_zip_iterator(thrust::make_tuple(tri_i.begin(), tri_j.begin()));
+            auto last = thrust::make_zip_iterator(thrust::make_tuple(tri_i.end(), tri_j.end()));
+            auto new_last = thrust::unique(first, last);
+            tri_i.resize(std::distance(first, new_last));
+            tri_j.resize(std::distance(first, new_last));
+        }
 
-        VectorType<int> intersecting_indices_edge(i.size()); // edge indices to copy to.
-        auto last_int_edge = thrust::set_intersection_by_key(first_edge, last_edge, first_orig, last_orig,
-                                        thrust::counting_iterator<int>(0), thrust::make_discard_iterator(),
-                                        intersecting_indices_edge.begin());
-        intersecting_indices_edge.resize(std::distance(intersecting_indices_edge.begin(), last_int_edge.second));
+        // Merge: existing edges keep their reparametrized costs,
+        // new edges (diagonals from triangulated cycles) enter with cost 0.
+        VectorType<float> tri_costs(tri_i.size(), 0.0f);
 
-        VectorType<float> orig_edge_costs_int(orig_edge_costs.size()); // costs to copy.
-        auto last_int_orig = thrust::set_intersection_by_key(first_orig, last_orig, first_edge, last_edge,
-                                                            orig_edge_costs.begin(), thrust::make_discard_iterator(),
-                                                            orig_edge_costs_int.begin());
-        orig_edge_costs_int.resize(std::distance(orig_edge_costs_int.begin(), last_int_orig.second));
-        assert(intersecting_indices_edge.size() == orig_edge_costs_int.size());
-        thrust::scatter(orig_edge_costs_int.begin(), orig_edge_costs_int.end(), intersecting_indices_edge.begin(), edge_costs.begin());
-    }
+        auto first_existing = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
+        auto last_existing = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end()));
+        auto first_tri = thrust::make_zip_iterator(thrust::make_tuple(tri_i.begin(), tri_j.begin()));
+        auto last_tri = thrust::make_zip_iterator(thrust::make_tuple(tri_i.end(), tri_j.end()));
 
-    // If some edges were not part of a triangle, append these edges and their original costs
-    {
-        auto first_orig = thrust::make_zip_iterator(thrust::make_tuple(orig_i.begin(), orig_j.begin()));
-        auto last_orig = thrust::make_zip_iterator(thrust::make_tuple(orig_i.end(), orig_j.end()));
-
-        auto first_edge = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
-        auto last_edge = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end()));
-
-        VectorType<int> merged_i(i.size() + orig_i.size());
-        VectorType<int> merged_j(j.size() + orig_j.size());
-        VectorType<float> merged_costs(edge_costs.size() + orig_edge_costs.size());
-
+        VectorType<int> merged_i(i.size() + tri_i.size());
+        VectorType<int> merged_j(j.size() + tri_j.size());
+        VectorType<float> merged_costs(edge_costs.size() + tri_costs.size());
         auto first_merged = thrust::make_zip_iterator(thrust::make_tuple(merged_i.begin(), merged_j.begin()));
 
-        auto merged_last = thrust::set_union_by_key(first_orig, last_orig, first_edge, last_edge,
-                                                    orig_edge_costs.begin(), edge_costs.begin(),
-                                                    first_merged, merged_costs.begin());
+        auto merged_last = thrust::set_union_by_key(
+            first_existing, last_existing, first_tri, last_tri,
+            edge_costs.begin(), tri_costs.begin(),
+            first_merged, merged_costs.begin());
+
         int num_merged = std::distance(first_merged, merged_last.first);
-        assert(std::distance(first_merged, thrust::unique(first_merged, merged_last.first)) == num_merged);
-        merged_i.resize(num_merged);
-        merged_j.resize(num_merged);
-        merged_costs.resize(num_merged);
-        thrust::swap(i, merged_i);
-        thrust::swap(j, merged_j);
-        thrust::swap(edge_costs, merged_costs);
-        mmp_detail::coo_sort_ijc<VectorType>(i, j, edge_costs);
+
+        // Skip swap if no new edges were actually added
+        if (num_merged != (int)i.size())
+        {
+            merged_i.resize(num_merged);
+            merged_j.resize(num_merged);
+            merged_costs.resize(num_merged);
+
+            thrust::swap(i, merged_i);
+            thrust::swap(j, merged_j);
+            thrust::swap(edge_costs, merged_costs);
+        }
     }
 
-    const int nr_edges = i.size();
+    // 4. Concatenate new triangles to existing
+    const int old_size = t1.size();
+    const int total_size = old_size + num_new;
 
-    // to which edge does first/second/third edge in triangle correspond to
-    triangle_correspondence_12 = VectorType<int>(t1.size());
-    triangle_correspondence_13 = VectorType<int>(t1.size());
-    triangle_correspondence_23 = VectorType<int>(t1.size());
-    edge_counter = VectorType<int>(nr_edges, 0);
+    t1.resize(total_size);
+    t2.resize(total_size);
+    t3.resize(total_size);
+    thrust::copy(new_t1.begin(), new_t1.end(), t1.begin() + old_size);
+    thrust::copy(new_t2.begin(), new_t2.end(), t2.begin() + old_size);
+    thrust::copy(new_t3.begin(), new_t3.end(), t3.begin() + old_size);
+
+    // Extend cost arrays with zeros for new triangles
+    t12_costs.resize(total_size, 0.0f);
+    t13_costs.resize(total_size, 0.0f);
+    t23_costs.resize(total_size, 0.0f);
+
+    // 4. Sort combined triangles by (t1,t2,t3), carrying cost arrays via permutation
+    {
+        VectorType<int> perm(total_size);
+        thrust::sequence(perm.begin(), perm.end());
+
+        auto key_first = thrust::make_zip_iterator(thrust::make_tuple(t1.begin(), t2.begin(), t3.begin()));
+        auto key_last = thrust::make_zip_iterator(thrust::make_tuple(t1.end(), t2.end(), t3.end()));
+        thrust::sort_by_key(key_first, key_last, perm.begin());
+
+        VectorType<float> tmp12(total_size), tmp13(total_size), tmp23(total_size);
+        thrust::gather(perm.begin(), perm.end(), t12_costs.begin(), tmp12.begin());
+        thrust::gather(perm.begin(), perm.end(), t13_costs.begin(), tmp13.begin());
+        thrust::gather(perm.begin(), perm.end(), t23_costs.begin(), tmp23.begin());
+        thrust::swap(t12_costs, tmp12);
+        thrust::swap(t13_costs, tmp13);
+        thrust::swap(t23_costs, tmp23);
+    }
+
+    // 5. Recompute all triangle-edge correspondences and edge_counter from scratch
+    triangle_correspondence_12 = VectorType<int>(total_size);
+    triangle_correspondence_13 = VectorType<int>(total_size);
+    triangle_correspondence_23 = VectorType<int>(total_size);
+    edge_counter = VectorType<int>(i.size(), 0);
 
     compute_triangle_edge_correspondence(t1, t2, edge_counter, triangle_correspondence_12);
     compute_triangle_edge_correspondence(t1, t3, edge_counter, triangle_correspondence_13);
     compute_triangle_edge_correspondence(t2, t3, edge_counter, triangle_correspondence_23);
 
-    t12_costs = VectorType<float>(t1.size(), 0.0);
-    t13_costs = VectorType<float>(t1.size(), 0.0);
-    t23_costs = VectorType<float>(t1.size(), 0.0);
+    return num_new;
+}
+
+template<template<typename> class VectorType>
+Graph<VectorType> multicut_message_passing<VectorType>::reparametrized_graph() const
+{
+    VectorType<int> tails(i);
+    VectorType<int> heads(j);
+    VectorType<float> costs(edge_costs);
+    return Graph<VectorType>(num_nodes_, std::move(tails), std::move(heads), std::move(costs));
 }
 
 template<template<typename> class VectorType>

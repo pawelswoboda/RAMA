@@ -96,3 +96,13 @@ add_executable(conflicted_cycles_cpu_test conflicted_cycles_cpu_test.cpp)
 # Compiled with g++ (not nvcc), CPP backend defined in source file
 target_link_libraries(conflicted_cycles_cpu_test RAMA)
 add_test(NAME conflicted_cycles_cpu COMMAND conflicted_cycles_cpu_test)
+
+add_executable(dual_solver_gpu_test dual_solver_gpu_test.cu)
+target_compile_definitions(dual_solver_gpu_test PRIVATE ${GPU_COMPILE_DEFINITIONS})
+target_link_libraries(dual_solver_gpu_test RAMA)
+add_test(NAME dual_solver_gpu COMMAND dual_solver_gpu_test)
+
+add_executable(dual_solver_cpu_test dual_solver_cpu_test.cpp)
+# Compiled with g++ (not nvcc), CPP backend defined in source file
+target_link_libraries(dual_solver_cpu_test RAMA)
+add_test(NAME dual_solver_cpu COMMAND dual_solver_cpu_test)
