@@ -1,6 +1,7 @@
 #pragma once
 
 #include "multicut_message_passing.h"
+#include "random_graph.h"
 #include "test.h"
 #include <iostream>
 #include <cmath>
@@ -283,27 +284,15 @@ void test_send_messages_to_triplets_only()
 template<template<typename> class VectorType>
 void test_random_graph_message_passing(const int num_nodes, const double density, const unsigned seed = 42)
 {
-    std::mt19937 gen(seed);
-    std::uniform_real_distribution<double> edge_prob(0.0, 1.0);
-    std::uniform_real_distribution<float> cost_dist(-1.0f, 1.0f);
+    auto rg = generate_random_graph(num_nodes, density, seed);
 
-    // Generate random Erdos-Renyi graph
-    std::vector<int> h_i, h_j;
-    std::vector<float> h_costs;
+    test(!rg.tails.empty(), "random graph (n=" + std::to_string(num_nodes) + ", d=" + std::to_string(density) + "): no edges generated");
+
     std::set<std::pair<int,int>> edge_set;
+    for (size_t e = 0; e < rg.tails.size(); ++e)
+        edge_set.insert({rg.tails[e], rg.heads[e]});
 
-    for (int u = 0; u < num_nodes; ++u) {
-        for (int v = u + 1; v < num_nodes; ++v) {
-            if (edge_prob(gen) < density) {
-                h_i.push_back(u);
-                h_j.push_back(v);
-                h_costs.push_back(cost_dist(gen));
-                edge_set.insert({u, v});
-            }
-        }
-    }
-
-    test(!h_i.empty(), "random graph (n=" + std::to_string(num_nodes) + ", d=" + std::to_string(density) + "): no edges generated");
+    std::mt19937 gen(seed);
 
     // Find all triangles in the graph
     std::vector<int> h_t1, h_t2, h_t3;
@@ -351,9 +340,9 @@ void test_random_graph_message_passing(const int num_nodes, const double density
     }
 
     // Build Graph and run message passing
-    VectorType<int> vi(h_i.begin(), h_i.end());
-    VectorType<int> vj(h_j.begin(), h_j.end());
-    VectorType<float> vc(h_costs.begin(), h_costs.end());
+    VectorType<int> vi(rg.tails.begin(), rg.tails.end());
+    VectorType<int> vj(rg.heads.begin(), rg.heads.end());
+    VectorType<float> vc(rg.costs.begin(), rg.costs.end());
     VectorType<int> vt1(sel_t1.begin(), sel_t1.end());
     VectorType<int> vt2(sel_t2.begin(), sel_t2.end());
     VectorType<int> vt3(sel_t3.begin(), sel_t3.end());
@@ -375,7 +364,7 @@ void test_random_graph_message_passing(const int num_nodes, const double density
         prev_lb = lb;
     }
 
-    std::cout << "  n=" << num_nodes << " edges=" << h_i.size()
+    std::cout << "  n=" << num_nodes << " edges=" << rg.tails.size()
               << " triangles=" << sel_t1.size() << "/" << h_t1.size()
               << " lb_improved=" << (lb_improved ? "yes" : "no") << "\n";
 

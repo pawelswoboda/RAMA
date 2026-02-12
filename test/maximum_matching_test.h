@@ -1,10 +1,10 @@
 #pragma once
 
 #include "maximum_matching.h"
+#include "random_graph.h"
 #include "test.h"
 #include <vector>
 #include <set>
-#include <random>
 #include <iostream>
 
 template<template<typename> class VectorType>
@@ -214,36 +214,20 @@ template<template<typename> class VectorType>
 void test_matching_random(const int num_nodes, const double density,
                           const unsigned seed = 42)
 {
-    std::mt19937 gen(seed);
-    std::uniform_real_distribution<double> edge_prob(0.0, 1.0);
-    std::uniform_real_distribution<float> cost_dist(-1.0f, 1.0f);
-
-    // Generate random Erdos-Renyi graph
-    std::vector<int> h_i, h_j;
-    std::vector<float> h_costs;
-    bool has_positive = false;
-
-    for (int u = 0; u < num_nodes; ++u) {
-        for (int v = u + 1; v < num_nodes; ++v) {
-            if (edge_prob(gen) < density) {
-                h_i.push_back(u);
-                h_j.push_back(v);
-                float c = cost_dist(gen);
-                h_costs.push_back(c);
-                if (c > 0.0f)
-                    has_positive = true;
-            }
-        }
-    }
+    auto rg = generate_random_graph(num_nodes, density, seed);
 
     const std::string label = "random(n=" + std::to_string(num_nodes) +
         ", d=" + std::to_string(density) + ", s=" + std::to_string(seed) + ")";
 
-    test(!h_i.empty(), label + ": no edges generated");
+    test(!rg.tails.empty(), label + ": no edges generated");
 
-    Graph<VectorType> A(num_nodes, h_i.begin(), h_i.end(),
-                        h_j.begin(), h_j.end(),
-                        h_costs.begin(), h_costs.end());
+    bool has_positive = false;
+    for (float c : rg.costs)
+        if (c > 0.0f) { has_positive = true; break; }
+
+    Graph<VectorType> A(num_nodes, rg.tails.begin(), rg.tails.end(),
+                        rg.heads.begin(), rg.heads.end(),
+                        rg.costs.begin(), rg.costs.end());
 
     VectorType<int> node_mapping;
     int nr_matched;

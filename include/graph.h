@@ -21,6 +21,8 @@
 #include <thrust/scatter.h>
 #include <thrust/scan.h>
 #include <thrust/count.h>
+#include <thrust/iterator/constant_iterator.h>
+#include <iostream>
 
 // Portable host/device annotation for functors.
 // When compiled with nvcc (__CUDACC__), expands to __host__ __device__.

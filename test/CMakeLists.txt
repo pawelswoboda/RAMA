@@ -56,3 +56,13 @@ add_executable(maximum_matching_cpu_test maximum_matching_cpu_test.cpp)
 # Compiled with g++ (not nvcc), CPP backend defined in source file
 target_link_libraries(maximum_matching_cpu_test RAMA)
 add_test(NAME maximum_matching_cpu COMMAND maximum_matching_cpu_test)
+
+add_executable(find_triangles_gpu_test find_triangles_gpu_test.cu)
+target_compile_definitions(find_triangles_gpu_test PRIVATE ${GPU_COMPILE_DEFINITIONS})
+target_link_libraries(find_triangles_gpu_test RAMA)
+add_test(NAME find_triangles_gpu COMMAND find_triangles_gpu_test)
+
+add_executable(find_triangles_cpu_test find_triangles_cpu_test.cpp)
+# Compiled with g++ (not nvcc), CPP backend defined in source file
+target_link_libraries(find_triangles_cpu_test RAMA)
+add_test(NAME find_triangles_cpu COMMAND find_triangles_cpu_test)
