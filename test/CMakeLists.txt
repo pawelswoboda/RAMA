@@ -86,3 +86,13 @@ add_executable(find_pentagons_cpu_test find_pentagons_cpu_test.cpp)
 # Compiled with g++ (not nvcc), CPP backend defined in source file
 target_link_libraries(find_pentagons_cpu_test RAMA)
 add_test(NAME find_pentagons_cpu COMMAND find_pentagons_cpu_test)
+
+add_executable(conflicted_cycles_gpu_test conflicted_cycles_gpu_test.cu)
+target_compile_definitions(conflicted_cycles_gpu_test PRIVATE ${GPU_COMPILE_DEFINITIONS})
+target_link_libraries(conflicted_cycles_gpu_test RAMA)
+add_test(NAME conflicted_cycles_gpu COMMAND conflicted_cycles_gpu_test)
+
+add_executable(conflicted_cycles_cpu_test conflicted_cycles_cpu_test.cpp)
+# Compiled with g++ (not nvcc), CPP backend defined in source file
+target_link_libraries(conflicted_cycles_cpu_test RAMA)
+add_test(NAME conflicted_cycles_cpu COMMAND conflicted_cycles_cpu_test)
