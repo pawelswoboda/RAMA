@@ -9,24 +9,18 @@
 #include <thrust/scan.h>
 #include <thrust/reduce.h>
 #include <thrust/iterator/counting_iterator.h>
-#include <thrust/extrema.h>
+#include "find_quadrangles.h" // for deduplicate_triangles, qd_detail::write_sorted_triangle
 
-#ifdef __CUDACC__
-#define CC_HOST_DEVICE __host__ __device__
-#else
-#define CC_HOST_DEVICE
-#endif
+namespace pent_detail {
 
-namespace cc_detail {
-
-// Count common neighbours of v1 and v2 in a symmetric CSR graph.
-// offsets: CSR row offsets (size num_nodes + 1), col_ids: CSR column indices.
+// Count common neighbours of v1 and v2, excluding nodes excl1 and excl2.
 // Adjacency lists must be sorted by column id.
 CC_HOST_DEVICE
-inline int count_common_neighbours(
+inline int count_common_neighbours_excluding(
     const int v1, const int v2,
     const int* const __restrict__ offsets,
-    const int* const __restrict__ col_ids)
+    const int* const __restrict__ col_ids,
+    const int excl1, const int excl2)
 {
     int v1_idx = offsets[v1];
     int v2_idx = offsets[v2];
@@ -37,7 +31,8 @@ inline int count_common_neighbours(
         const int v2_n = col_ids[v2_idx];
         if (v1_n == v2_n)
         {
-            ++count;
+            if (v1_n != excl1 && v1_n != excl2)
+                ++count;
             ++v1_idx;
             ++v2_idx;
         }
@@ -49,11 +44,37 @@ inline int count_common_neighbours(
     return count;
 }
 
-// Write common-neighbour triangles for edge (v1, v2) into output arrays.
-// Each triangle is stored with sorted vertices (min, mid, max).
-// write_offset: starting index in the output arrays for this edge.
+// Count triangles produced by pentagons for repulsive edge (v1, v2).
+// For each pair (v1_n1, v2_n1) of neighbours of v1 and v2 respectively,
+// where v1_n1 != v2_n1, count common neighbours of (v1_n1, v2_n1) excluding
+// v1 and v2. Each valid common neighbour yields one pentagon = 3 triangles.
 CC_HOST_DEVICE
-inline void fill_triangles_for_edge(
+inline int count_pentagon_triangles(
+    const int v1, const int v2,
+    const int* const __restrict__ offsets,
+    const int* const __restrict__ col_ids)
+{
+    int count = 0;
+    for (int i = offsets[v1]; i < offsets[v1 + 1]; ++i)
+    {
+        const int v1_n1 = col_ids[i];
+        for (int j = offsets[v2]; j < offsets[v2 + 1]; ++j)
+        {
+            const int v2_n1 = col_ids[j];
+            if (v1_n1 == v2_n1)
+                continue;
+            count += count_common_neighbours_excluding(
+                v1_n1, v2_n1, offsets, col_ids, v1, v2);
+        }
+    }
+    return 3 * count;
+}
+
+// Fill triangles for pentagons of repulsive edge (v1, v2).
+// For each pentagon v1 - v1_n1 - mid - v2_n1 - v2, writes three sorted
+// triangles: (v1, v2, v1_n1), (v2, v1_n1, mid), (v2, mid, v2_n1).
+CC_HOST_DEVICE
+inline void fill_pentagon_triangles(
     const int v1, const int v2,
     const int* const __restrict__ offsets,
     const int* const __restrict__ col_ids,
@@ -62,46 +83,68 @@ inline void fill_triangles_for_edge(
     int* const __restrict__ tri_v3,
     const int write_offset)
 {
-    int v1_idx = offsets[v1];
-    int v2_idx = offsets[v2];
     int local_idx = 0;
-    while (v1_idx < offsets[v1 + 1] && v2_idx < offsets[v2 + 1])
+    for (int i = offsets[v1]; i < offsets[v1 + 1]; ++i)
     {
-        const int v1_n = col_ids[v1_idx];
-        const int v2_n = col_ids[v2_idx];
-        if (v1_n == v2_n)
+        const int v1_n1 = col_ids[i];
+        for (int j = offsets[v2]; j < offsets[v2 + 1]; ++j)
         {
-            const int min_v = thrust::min(v1, thrust::min(v2, v1_n));
-            const int max_v = thrust::max(v1, thrust::max(v2, v1_n));
-            const int mid_v = v1 + v2 + v1_n - min_v - max_v;
-            tri_v1[write_offset + local_idx] = min_v;
-            tri_v2[write_offset + local_idx] = mid_v;
-            tri_v3[write_offset + local_idx] = max_v;
-            ++local_idx;
-            ++v1_idx;
-            ++v2_idx;
+            const int v2_n1 = col_ids[j];
+            if (v1_n1 == v2_n1)
+                continue;
+            // Two-pointer merge to find common neighbours excluding v1, v2
+            int a_idx = offsets[v1_n1];
+            int b_idx = offsets[v2_n1];
+            while (a_idx < offsets[v1_n1 + 1] && b_idx < offsets[v2_n1 + 1])
+            {
+                const int a_n = col_ids[a_idx];
+                const int b_n = col_ids[b_idx];
+                if (a_n == b_n)
+                {
+                    const int mid = a_n;
+                    if (mid != v1 && mid != v2)
+                    {
+                        qd_detail::write_sorted_triangle(v1, v2, v1_n1,
+                            tri_v1, tri_v2, tri_v3, write_offset + local_idx);
+                        ++local_idx;
+                        qd_detail::write_sorted_triangle(v2, v1_n1, mid,
+                            tri_v1, tri_v2, tri_v3, write_offset + local_idx);
+                        ++local_idx;
+                        qd_detail::write_sorted_triangle(v2, mid, v2_n1,
+                            tri_v1, tri_v2, tri_v3, write_offset + local_idx);
+                        ++local_idx;
+                    }
+                    ++a_idx;
+                    ++b_idx;
+                }
+                else if (a_n < b_n)
+                    ++a_idx;
+                else
+                    ++b_idx;
+            }
         }
-        else if (v1_n < v2_n)
-            ++v1_idx;
-        else
-            ++v2_idx;
     }
 }
 
-} // namespace cc_detail
+} // namespace pent_detail
 
-// Find all triangles formed by repulsive edges and a symmetric positive graph.
-// For each repulsive edge (tail, head), finds all common neighbours in the
-// positive graph and emits one triangle per common neighbour.
-// Triangles are returned with sorted vertices (v1 < v2 < v3) and are
-// unique (no deduplication needed).
+// Find all pentagons (5-cycles) formed by repulsive edges and a symmetric
+// positive graph, and decompose each into three triangles.
+//
+// For each repulsive edge (v1, v2), for each pair of neighbours (v1_n1 of v1,
+// v2_n1 of v2) where v1_n1 != v2_n1, finds all common neighbours mid of
+// (v1_n1, v2_n1) excluding v1 and v2. Each such path v1-v1_n1-mid-v2_n1-v2
+// is a 5-cycle, decomposed into triangles (v1,v2,v1_n1), (v2,v1_n1,mid),
+// and (v2,mid,v2_n1).
+//
+// Returns deduplicated triangles with sorted vertices (v1 < v2 < v3).
 //
 // rep_edge_tails, rep_edge_heads: endpoints of repulsive (negative) edges.
-// pos_graph_offsets: CSR row offsets of the symmetric positive graph (size >= max_node + 2).
+// pos_graph_offsets: CSR row offsets of the symmetric positive graph.
 // pos_graph_heads: CSR column indices of the symmetric positive graph.
 template<template<typename> class VectorType>
 std::tuple<VectorType<int>, VectorType<int>, VectorType<int>>
-find_triangles(
+find_pentagons(
     const VectorType<int>& rep_edge_tails,
     const VectorType<int>& rep_edge_heads,
     const VectorType<int>& pos_graph_offsets,
@@ -126,7 +169,7 @@ find_triangles(
         counts.begin(),
         [tails_ptr, heads_ptr, pos_offsets_ptr, pos_heads_ptr]
         CC_HOST_DEVICE (const int edge_idx) {
-            return cc_detail::count_common_neighbours(
+            return pent_detail::count_pentagon_triangles(
                 tails_ptr[edge_idx], heads_ptr[edge_idx],
                 pos_offsets_ptr, pos_heads_ptr);
         });
@@ -156,12 +199,15 @@ find_triangles(
         [tails_ptr, heads_ptr, pos_offsets_ptr, pos_heads_ptr,
          tri_v1_ptr, tri_v2_ptr, tri_v3_ptr, offsets_ptr]
         CC_HOST_DEVICE (const int edge_idx) {
-            cc_detail::fill_triangles_for_edge(
+            pent_detail::fill_pentagon_triangles(
                 tails_ptr[edge_idx], heads_ptr[edge_idx],
                 pos_offsets_ptr, pos_heads_ptr,
                 tri_v1_ptr, tri_v2_ptr, tri_v3_ptr,
                 offsets_ptr[edge_idx]);
         });
+
+    // Pass 3: deduplicate.
+    deduplicate_triangles<VectorType>(tri_v1, tri_v2, tri_v3);
 
     return {std::move(tri_v1), std::move(tri_v2), std::move(tri_v3)};
 }

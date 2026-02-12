@@ -76,3 +76,13 @@ add_executable(find_quadrangles_cpu_test find_quadrangles_cpu_test.cpp)
 # Compiled with g++ (not nvcc), CPP backend defined in source file
 target_link_libraries(find_quadrangles_cpu_test RAMA)
 add_test(NAME find_quadrangles_cpu COMMAND find_quadrangles_cpu_test)
+
+add_executable(find_pentagons_gpu_test find_pentagons_gpu_test.cu)
+target_compile_definitions(find_pentagons_gpu_test PRIVATE ${GPU_COMPILE_DEFINITIONS})
+target_link_libraries(find_pentagons_gpu_test RAMA)
+add_test(NAME find_pentagons_gpu COMMAND find_pentagons_gpu_test)
+
+add_executable(find_pentagons_cpu_test find_pentagons_cpu_test.cpp)
+# Compiled with g++ (not nvcc), CPP backend defined in source file
+target_link_libraries(find_pentagons_cpu_test RAMA)
+add_test(NAME find_pentagons_cpu COMMAND find_pentagons_cpu_test)

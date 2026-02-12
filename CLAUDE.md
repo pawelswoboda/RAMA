@@ -6,6 +6,47 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 RAMA (Rapid Algorithm for Multicut Problem) is a GPU-accelerated solver for the multicut/correlation clustering problem. It uses CUDA kernels and Thrust/CCCL primitives for GPU computation. Published at CVPR 2022.
 
+## The Multicut Problem
+
+The **multicut** (correlation clustering) problem partitions a graph into clusters by deciding which edges to "cut". Each edge has a real-valued cost:
+
+- **Positive edges** (cost > 0): Endpoints are similar and prefer to be in the **same** cluster. Cutting a positive edge incurs a penalty equal to its cost.
+- **Negative (repulsive) edges** (cost < 0): Endpoints are dissimilar and prefer to be in **different** clusters. Keeping a repulsive edge uncut incurs a penalty equal to |cost|.
+
+The objective is to find a partition that minimizes the total cost of cut positive edges plus uncut negative edges. The problem is NP-hard.
+
+### LP Relaxation and Lower Bounds
+
+The solver computes a lower bound via an LP (linear programming) relaxation. Each edge gets a relaxed label in [0,1] (0 = uncut, 1 = cut). The LP enforces **cycle inequalities**: for any cycle, no single edge label can exceed the sum of all other edge labels in that cycle. The tightest constraints come from short cycles (triangles).
+
+**Triangle inequality**: For a triangle on nodes (i, j, k), the constraint `x_ij <= x_ik + x_jk` must hold for all three edge permutations. This prevents inconsistent labelings (e.g., i and j in different clusters while both are with k).
+
+### Conflicted Cycles and Triangulation
+
+A **conflicted cycle** is one containing at least one repulsive edge — these are the cycles where LP constraints may be violated and tightening is beneficial. The solver detects conflicted cycles of length 3 (triangles), 4 (quadrangles), and 5 (pentagons).
+
+**Triangulation**: All higher-order conflicted cycles are decomposed into triangles for uniform treatment:
+- Quadrangles → 2 triangles (via a shared diagonal)
+- Pentagons → 3 triangles
+
+Triangle detection (`find_triangles.h`): For each repulsive edge (u, v), find all common neighbours w in the positive graph. Each such w forms a conflicted triangle (u, v, w) — exactly one repulsive edge (u,v) and two positive edges (u,w) and (v,w).
+
+### Message Passing (Dual Optimization)
+
+Message passing iteratively tightens the LP lower bound by reparametrizing costs between edges and triangles:
+
+1. **Edge → triangle**: Each edge's cost is distributed equally among all triangles containing it.
+2. **Triangle → edge**: Min-marginal messages are computed per triangle and sent back to edges, using `min_marginal(x,y,z) = min(x+y, x+z, x+y+z, 0) - min(0, y+z)`.
+
+This preserves the objective value while making the relaxation tighter. The resulting lower bound = sum of negative edge costs + sum of triangle lower bounds.
+
+### Primal Solver (Edge Contraction)
+
+The primal phase iteratively coarsens the graph:
+1. Select edges to merge via maximum matching or MST (on reparametrized costs)
+2. Contract selected edges, merging their endpoints into single nodes
+3. Repeat until no more contractions improve the solution
+
 ## Build Commands
 
 ```bash
@@ -135,7 +176,26 @@ int main() { run_all_foo_tests<thrust::host_vector>(); }
 
 Use the `test()` helper from `include/test.h` for assertions.
 
+Use `generate_random_graph()` from `test/random_graph.h` to construct random graphs in tests. It returns a `RandomGraph` struct with `num_nodes`, `tails`, `heads`, and `costs` vectors.
+
 When running tests, always run the CPU test first (it's faster and doesn't require GPU availability), then the GPU test.
+
+## Visualizing Graphs
+
+Use `graph-easy` (installed at `/usr/bin/graph-easy`) to draw ASCII graphs when explaining graph structures or examples. Edge labels carry the cost.
+
+Example — a conflicted triangle (one repulsive edge, two positive edges):
+```bash
+echo '[0] -- +3 --> [1] -- -1 --> [2] -- +2 --> [0]' | graph-easy --as ascii
+```
+```
+      +2
+  +-----------------------+
+  v                       |
++---+  +3   +---+  -1   +---+
+| 0 | ----> | 1 | ----> | 2 |
++---+       +---+       +---+
+```
 
 ## Git
 
