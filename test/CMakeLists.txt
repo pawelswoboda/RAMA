@@ -116,3 +116,13 @@ add_executable(mst_boruvka_cpu_test mst_boruvka_cpu_test.cpp)
 # Compiled with g++ (not nvcc), CPP backend defined in source file
 target_link_libraries(mst_boruvka_cpu_test RAMA)
 add_test(NAME mst_boruvka_cpu COMMAND mst_boruvka_cpu_test)
+
+add_executable(connected_components_gpu_test connected_components_gpu_test.cu)
+target_compile_definitions(connected_components_gpu_test PRIVATE ${GPU_COMPILE_DEFINITIONS})
+target_link_libraries(connected_components_gpu_test RAMA)
+add_test(NAME connected_components_gpu COMMAND connected_components_gpu_test)
+
+add_executable(connected_components_cpu_test connected_components_cpu_test.cpp)
+# Compiled with g++ (not nvcc), CPP backend defined in source file
+target_link_libraries(connected_components_cpu_test RAMA)
+add_test(NAME connected_components_cpu COMMAND connected_components_cpu_test)
