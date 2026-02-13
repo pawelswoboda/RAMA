@@ -106,3 +106,13 @@ add_executable(dual_solver_cpu_test dual_solver_cpu_test.cpp)
 # Compiled with g++ (not nvcc), CPP backend defined in source file
 target_link_libraries(dual_solver_cpu_test RAMA)
 add_test(NAME dual_solver_cpu COMMAND dual_solver_cpu_test)
+
+add_executable(mst_boruvka_gpu_test mst_boruvka_gpu_test.cu)
+target_compile_definitions(mst_boruvka_gpu_test PRIVATE ${GPU_COMPILE_DEFINITIONS})
+target_link_libraries(mst_boruvka_gpu_test RAMA)
+add_test(NAME mst_boruvka_gpu COMMAND mst_boruvka_gpu_test)
+
+add_executable(mst_boruvka_cpu_test mst_boruvka_cpu_test.cpp)
+# Compiled with g++ (not nvcc), CPP backend defined in source file
+target_link_libraries(mst_boruvka_cpu_test RAMA)
+add_test(NAME mst_boruvka_cpu COMMAND mst_boruvka_cpu_test)
