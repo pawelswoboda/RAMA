@@ -23,9 +23,15 @@ add_test(NAME maximum_matching_vertex_based COMMAND maximum_matching_vertex_base
 #add_executable(maximum_matching_thrust_test maximum_matching_thrust_test.cu)
 #target_link_libraries(maximum_matching_thrust_test dCOO maximum_matching_thrust)
 
-add_executable(edge_contractions_woc_test edge_contractions_woc_test.cu)
-target_link_libraries(edge_contractions_woc_test dCOO edge_contractions_woc)
-add_test(NAME edge_contractions_woc COMMAND edge_contractions_woc_test)
+add_executable(edge_contractions_gpu_test edge_contractions_gpu_test.cu)
+target_compile_definitions(edge_contractions_gpu_test PRIVATE ${GPU_COMPILE_DEFINITIONS})
+target_link_libraries(edge_contractions_gpu_test RAMA)
+add_test(NAME edge_contractions_gpu COMMAND edge_contractions_gpu_test)
+
+add_executable(edge_contractions_cpu_test edge_contractions_cpu_test.cpp)
+# Compiled with g++ (not nvcc), CPP backend defined in source file
+target_link_libraries(edge_contractions_cpu_test RAMA)
+add_test(NAME edge_contractions_cpu COMMAND edge_contractions_cpu_test)
 
 add_executable(compute_offsets_test compute_offsets_test.cu)
 add_test(NAME compute_offsets COMMAND compute_offsets_test)

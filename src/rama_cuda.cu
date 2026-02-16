@@ -12,7 +12,7 @@
 #include "maximum_matching_thrust.h"
 #include "multicut_solver_options.h"
 #include "dual_solver.h"
-#include "edge_contractions_woc.h"
+#include "edge_contractions.h"
 #include "rama_utils.h"
 
 static double dual_solver_dcoo(dCOO& A, int max_cycle_length, int num_iter,
@@ -72,7 +72,7 @@ std::tuple<thrust::device_vector<int>, int> contraction_mapping_by_maximum_match
     int nr_matched_edges;
     std::tie(node_mapping, nr_matched_edges) = filter_edges_by_matching_vertex_based(A.export_undirected(), mean_multiplier_mm, verbose);
     // std::tie(node_mapping, nr_matched_edges) = filter_edges_by_matching_thrust(A, mean_multiplier_mm, verbose);
-    return {compress_label_sequence(node_mapping, node_mapping.size() - 1), nr_matched_edges};
+    return {compress_label_sequence<thrust::device_vector>(node_mapping, node_mapping.size() - 1), nr_matched_edges};
 }
 
 std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>> > rama_cuda(dCOO& A, const multicut_solver_options& opts)
@@ -122,8 +122,12 @@ std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>> > r
         }
         else
         {
-            edge_contractions_woc c_mapper(A, opts.verbose);
-            std::tie(cur_node_mapping, nr_edges_to_contract) = c_mapper.find_contraction_mapping();
+            DeviceGraph G_contract(A.get_row_ids().begin(), A.get_row_ids().end(),
+                                   A.get_col_ids().begin(), A.get_col_ids().end(),
+                                   A.get_data().begin(), A.get_data().end(),
+                                   false, !A.is_directed());
+            std::tie(cur_node_mapping, nr_edges_to_contract) =
+                find_contraction_mapping<thrust::device_vector>(G_contract, opts.verbose);
         }
 
         if(nr_edges_to_contract == 0)

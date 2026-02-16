@@ -209,7 +209,7 @@ std::tuple<dCOO, thrust::device_vector<int>, thrust::device_vector<int>>
     dCOO A_pos_symm;
     if (num_positive_edges > 0)
     {
-        std::tie(row_ids_pos, col_ids_pos, costs_pos) = to_undirected(row_ids_pos, col_ids_pos, costs_pos);
+        std::tie(row_ids_pos, col_ids_pos, costs_pos) = to_undirected<thrust::device_vector>(row_ids_pos, col_ids_pos, costs_pos);
         A_pos_symm = dCOO(A.max_dim(), A.max_dim(),
                         std::move(col_ids_pos),
                         std::move(row_ids_pos), 
@@ -271,7 +271,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
         empty_tri_index[0] = rearrange_triangles(triangles_v1, triangles_v2, triangles_v3, empty_tri_index[0]); 
         thrust::device_vector<long> rep_row_offsets(num_rep_edges + 1);
         {
-            const thrust::device_vector<int> vertex_degrees = offsets_to_degrees(A_pos_row_offsets);
+            const thrust::device_vector<int> vertex_degrees = offsets_to_degrees<thrust::device_vector>(A_pos_row_offsets);
             thrust::gather(row_ids_rep.begin(), row_ids_rep.end(), vertex_degrees.begin(), rep_row_offsets.begin());
 
             rep_row_offsets.back() = 0;
@@ -304,7 +304,7 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
         empty_tri_index[0] = rearrange_triangles(triangles_v1, triangles_v2, triangles_v3, empty_tri_index[0]);
         thrust::device_vector<long> rep_edge_offsets(num_rep_edges + 1);
         {
-            const thrust::device_vector<int> vertex_degrees = offsets_to_degrees(A_pos_row_offsets);
+            const thrust::device_vector<int> vertex_degrees = offsets_to_degrees<thrust::device_vector>(A_pos_row_offsets);
             thrust::device_vector<int> row_ids_degrees(num_rep_edges);
             thrust::gather(row_ids_rep.begin(), row_ids_rep.end(), vertex_degrees.begin(), row_ids_degrees.begin());
             thrust::device_vector<int> col_ids_degrees(num_rep_edges);

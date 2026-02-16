@@ -1,8 +1,11 @@
 #pragma once
 
+#ifdef __CUDACC__
 #include <cuda_runtime.h>
+#endif
 #include <thrust/copy.h>
 #include <thrust/device_vector.h>
+#include <thrust/host_vector.h>
 #include <thrust/gather.h>
 #include <thrust/iterator/discard_iterator.h>
 #include <thrust/adjacent_difference.h>
@@ -11,9 +14,18 @@
 #include <thrust/unique.h>
 #include <thrust/extrema.h>
 #include <thrust/sort.h>
+#include <thrust/scan.h>
+#include <thrust/scatter.h>
 
+#ifdef __CUDACC__
+#define RAMA_HOST_DEVICE __host__ __device__
+#else
+#define RAMA_HOST_DEVICE
+#endif
+
+#ifdef __CUDACC__
 inline int get_cuda_device()
-{   
+{
     return 0; // Get first possible GPU. CUDA_VISIBLE_DEVICES automatically masks the rest of GPUs.
 }
 
@@ -59,9 +71,9 @@ __device__ __forceinline__ float atomicMax(float *address, float val)
 
 // Assumes a symmetric CSR matrix.
 // Initialize v1_mid_edge_index by row_offsets[v1] and v2_mid_edge_index by row_offsets[v2].
-__device__ inline int compute_lowest_common_neighbour(const int v1, const int v2, 
-                                            const int* const __restrict__ row_offsets, 
-                                            const int* const __restrict__ col_ids, 
+__device__ inline int compute_lowest_common_neighbour(const int v1, const int v2,
+                                            const int* const __restrict__ row_offsets,
+                                            const int* const __restrict__ col_ids,
                                             const float* const __restrict__ data,
                                             int& v1_mid_edge_index, int& v2_mid_edge_index)
 {
@@ -82,6 +94,7 @@ __device__ inline int compute_lowest_common_neighbour(const int v1, const int v2
     }
     return -1;
 }
+#endif // __CUDACC__
 
 template<typename ROW_ITERATOR, typename COL_ITERATOR>
 std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> to_undirected(
@@ -130,47 +143,67 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
     return {row_ids_u, col_ids_u, costs_u};
 }
 
-inline std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> to_undirected(const thrust::device_vector<int>& i, const thrust::device_vector<int>& j)
+template<template<typename> class VectorType>
+inline std::tuple<VectorType<int>, VectorType<int>> to_undirected(const VectorType<int>& i, const VectorType<int>& j)
 {
     assert(i.size() == j.size());
-    return to_undirected(i.begin(), i.end(), j.begin(), j.end());
+    const size_t n = i.size();
+    VectorType<int> row_ids_u(2 * n), col_ids_u(2 * n);
+    thrust::copy(i.begin(), i.end(), row_ids_u.begin());
+    thrust::copy(j.begin(), j.end(), row_ids_u.begin() + n);
+    thrust::copy(j.begin(), j.end(), col_ids_u.begin());
+    thrust::copy(i.begin(), i.end(), col_ids_u.begin() + n);
+    return {row_ids_u, col_ids_u};
 }
 
-inline std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<float>> to_undirected(const thrust::device_vector<int>& i, const thrust::device_vector<int>& j, const thrust::device_vector<float>& costs)
+template<template<typename> class VectorType>
+inline std::tuple<VectorType<int>, VectorType<int>, VectorType<float>> to_undirected(const VectorType<int>& i, const VectorType<int>& j, const VectorType<float>& costs)
 {
     assert(i.size() == j.size() && i.size() == costs.size());
-    return to_undirected(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end());
+    const size_t n = i.size();
+    VectorType<int> row_ids_u(2 * n), col_ids_u(2 * n);
+    VectorType<float> costs_u(2 * n);
+    thrust::copy(i.begin(), i.end(), row_ids_u.begin());
+    thrust::copy(j.begin(), j.end(), row_ids_u.begin() + n);
+    thrust::copy(j.begin(), j.end(), col_ids_u.begin());
+    thrust::copy(i.begin(), i.end(), col_ids_u.begin() + n);
+    thrust::copy(costs.begin(), costs.end(), costs_u.begin());
+    thrust::copy(costs.begin(), costs.end(), costs_u.begin() + n);
+    return {row_ids_u, col_ids_u, costs_u};
 }
 
-inline thrust::device_vector<int> offsets_to_degrees(const thrust::device_vector<int>& offsets)
+template<template<typename> class VectorType>
+inline VectorType<int> offsets_to_degrees(const VectorType<int>& offsets)
 {
-    thrust::device_vector<int> degrees(offsets.size());
+    VectorType<int> degrees(offsets.size());
     thrust::adjacent_difference(offsets.begin(), offsets.end(), degrees.begin());
-    return thrust::device_vector<int>(degrees.begin() + 1, degrees.end());
+    return VectorType<int>(degrees.begin() + 1, degrees.end());
 }
 
-inline thrust::device_vector<int> degrees_to_offsets(const thrust::device_vector<int>& degrees)
+template<template<typename> class VectorType>
+inline VectorType<int> degrees_to_offsets(const VectorType<int>& degrees)
 {
-    thrust::device_vector<int> offsets(degrees.size() + 1);
+    VectorType<int> offsets(degrees.size() + 1);
     thrust::exclusive_scan(degrees.begin(), degrees.end(), offsets.begin());
     offsets[offsets.size() - 1] = offsets[offsets.size() - 2] + degrees[degrees.size() - 1];
     return offsets;
 }
 
-inline thrust::device_vector<int> compress_label_sequence(const thrust::device_vector<int>& data, const int max_label)
+template<template<typename> class VectorType>
+inline VectorType<int> compress_label_sequence(const VectorType<int>& data, const int max_label)
 {
     assert(*thrust::max_element(data.begin(), data.end()) <= max_label);
 
     // first get mask of used labels
-    thrust::device_vector<int> label_mask(max_label + 1, 0);
+    VectorType<int> label_mask(max_label + 1, 0);
     thrust::scatter(thrust::constant_iterator<int>(1), thrust::constant_iterator<int>(1) + data.size(), data.begin(), label_mask.begin());
 
     // get map of original labels to consecutive ones
-    thrust::device_vector<int> label_to_consecutive(max_label + 1);
+    VectorType<int> label_to_consecutive(max_label + 1);
     thrust::exclusive_scan(label_mask.begin(), label_mask.end(), label_to_consecutive.begin());
 
     // apply compressed label map
-    thrust::device_vector<int> result(data.size(), 0);
+    VectorType<int> result(data.size(), 0);
     thrust::gather(data.begin(), data.end(), label_to_consecutive.begin(), result.begin());
 
     return result;
@@ -178,7 +211,7 @@ inline thrust::device_vector<int> compress_label_sequence(const thrust::device_v
 
 struct compute_lb
 {
-    __host__ __device__ double operator()(const float& val) const
+    RAMA_HOST_DEVICE double operator()(const float& val) const
     {
         return val < 0.0 ? val : 0.0;
     }
@@ -205,7 +238,7 @@ inline double get_obj(const std::vector<int>& h_node_mapping, const std::vector<
 }
 
 struct remove_reverse_edges_func {
-    __host__ __device__
+    RAMA_HOST_DEVICE
         inline int operator()(const thrust::tuple<int,int,float> e)
         {
             return thrust::get<0>(e) >= thrust::get<1>(e);
@@ -230,13 +263,13 @@ inline std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust
 
 struct sort_edge_nodes_func
 {
-    __host__ __device__
+    RAMA_HOST_DEVICE
         void operator()(const thrust::tuple<int&,int&> t)
         {
             int& x = thrust::get<0>(t);
             int& y = thrust::get<1>(t);
-            const int smallest = min(x, y);
-            const int largest = max(x, y);
+            const int smallest = thrust::min(x, y);
+            const int largest = thrust::max(x, y);
             assert(smallest < largest);
             x = smallest;
             y = largest;
@@ -257,7 +290,7 @@ struct map_values_func
 {
     const int* mapping;
     size_t mapping_size;
-    __host__ __device__ int operator()(const int& v)
+    RAMA_HOST_DEVICE int operator()(const int& v)
     {
         assert(v >= 0);
         assert(v < mapping_size);
@@ -266,7 +299,8 @@ struct map_values_func
 };
 
 
-inline void coo_sorting(thrust::device_vector<int>& i, thrust::device_vector<int>& j, thrust::device_vector<int>& k)
+template<template<typename> class VectorType>
+inline void coo_sorting(VectorType<int>& i, VectorType<int>& j, VectorType<int>& k)
 {
     assert(i.size() == j.size());
     assert(i.size() == k.size());
@@ -277,14 +311,16 @@ inline void coo_sorting(thrust::device_vector<int>& i, thrust::device_vector<int
     thrust::sort(first, last);
 }
 
-inline void coo_sorting(thrust::device_vector<int>& i, thrust::device_vector<int>& j)
+template<template<typename> class VectorType>
+inline void coo_sorting(VectorType<int>& i, VectorType<int>& j)
 {
     auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
     auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end()));
     thrust::sort(first, last);
 }
 
-inline void coo_sorting(thrust::device_vector<int>& i, thrust::device_vector<int>& j, thrust::device_vector<float>& data)
+template<template<typename> class VectorType>
+inline void coo_sorting(VectorType<int>& i, VectorType<int>& j, VectorType<float>& data)
 {
     assert(i.size() == j.size());
     assert(i.size() == data.size());
@@ -295,7 +331,7 @@ inline void coo_sorting(thrust::device_vector<int>& i, thrust::device_vector<int
 
 struct triangle_duplicate_nodes
 {
-    __host__ __device__
+    RAMA_HOST_DEVICE
         bool operator()(const thrust::tuple<int,int,int>& t)
         {
             return thrust::get<0>(t) == thrust::get<1>(t) || 
@@ -306,15 +342,15 @@ struct triangle_duplicate_nodes
 
 struct sort_triangle_nodes_func
 {
-    __host__ __device__
+    RAMA_HOST_DEVICE
         void operator()(const thrust::tuple<int&,int&,int&> t)
         {
             int& x = thrust::get<0>(t);
             int& y = thrust::get<1>(t);
             int& z = thrust::get<2>(t);
-            const int smallest = min(min(x, y), z);
-            const int middle = max(min(x,y), min(max(x,y),z));
-            const int largest = max(max(x, y), z);
+            const int smallest = thrust::min(thrust::min(x, y), z);
+            const int middle = thrust::max(thrust::min(x,y), thrust::min(thrust::max(x,y),z));
+            const int largest = thrust::max(thrust::max(x, y), z);
             assert(smallest < middle && middle < largest);
             x = smallest;
             y = middle;
@@ -338,7 +374,7 @@ inline void normalize_triangles(thrust::device_vector<int>& t1, thrust::device_v
 
     // sort triangles and remove duplicates
     {
-        coo_sorting(t1, t2, t3);
+        coo_sorting<thrust::device_vector>(t1, t2, t3);
         assert(thrust::is_sorted(t1.begin(), t1.end()));
         auto first = thrust::make_zip_iterator(thrust::make_tuple(t1.begin(), t2.begin(), t3.begin()));
         auto last = thrust::make_zip_iterator(thrust::make_tuple(t1.end(), t2.end(), t3.end()));
@@ -362,20 +398,21 @@ inline int rearrange_triangles(thrust::device_vector<int>& t1, thrust::device_ve
     return std::distance(first, new_last_unique);
 }
 
-inline std::tuple<thrust::device_vector<int>, thrust::device_vector<int>> get_unique_with_counts(const thrust::device_vector<int>& input)
+template<template<typename> class VectorType>
+inline std::tuple<VectorType<int>, VectorType<int>> get_unique_with_counts(const VectorType<int>& input)
 {
     assert(thrust::is_sorted(input.begin(), input.end()));
-    thrust::device_vector<int> unique_counts(input.size() + 1);
-    thrust::device_vector<int> unique_values(input.size());
+    VectorType<int> unique_counts(input.size() + 1);
+    VectorType<int> unique_values(input.size());
 
     auto new_end = thrust::unique_by_key_copy(input.begin(), input.end(), thrust::make_counting_iterator(0), unique_values.begin(), unique_counts.begin());
     int num_unique = std::distance(unique_values.begin(), new_end.first);
     unique_values.resize(num_unique);
     unique_counts.resize(num_unique + 1); // contains smallest index of each unique element.
-    
+
     unique_counts[num_unique] = input.size();
     thrust::adjacent_difference(unique_counts.begin(), unique_counts.end(), unique_counts.begin());
-    unique_counts = thrust::device_vector<int>(unique_counts.begin() + 1, unique_counts.end());
+    unique_counts = VectorType<int>(unique_counts.begin() + 1, unique_counts.end());
 
     return {unique_values, unique_counts};
 }
@@ -400,12 +437,13 @@ inline thrust::device_vector<int> invert_unique(const thrust::device_vector<int>
     return out_values;
 }
 
-inline thrust::device_vector<int> compute_offsets(const thrust::device_vector<int>& i, const int max_value)
+template<template<typename> class VectorType>
+inline VectorType<int> compute_offsets(const VectorType<int>& i, const int max_value)
 {
     assert(thrust::is_sorted(i.begin(), i.end()));
-    thrust::device_vector<int> offsets(max_value + 2, 0);
-    thrust::device_vector<int> unique_ids, counts;
-    std::tie(unique_ids, counts) = get_unique_with_counts(i);
+    VectorType<int> offsets(max_value + 2, 0);
+    VectorType<int> unique_ids, counts;
+    std::tie(unique_ids, counts) = get_unique_with_counts<VectorType>(i);
     thrust::transform(unique_ids.begin(), unique_ids.end(), thrust::make_constant_iterator<int>(1), unique_ids.begin(), thrust::plus<int>());
     thrust::scatter(counts.begin(), counts.end(), unique_ids.begin(), offsets.begin());
     thrust::inclusive_scan(offsets.begin(), offsets.end(), offsets.begin());
@@ -413,16 +451,17 @@ inline thrust::device_vector<int> compute_offsets(const thrust::device_vector<in
 }
 
 // Map old_values to 0:size(old_values) - 1 and replace all old values which are in src by this map.
-// Values which are not in old_values are mapped to -1. 
-inline void map_old_values_consec(thrust::device_vector<int>& src, 
-                                const thrust::device_vector<int>& old_values, 
+// Values which are not in old_values are mapped to -1.
+template<template<typename> class VectorType>
+inline void map_old_values_consec(VectorType<int>& src,
+                                const VectorType<int>& old_values,
                                 const int old_max_value)
 {
-    thrust::device_vector<int> mapping(old_max_value + 1, -1);
-    thrust::scatter(thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(0) + old_values.size(), 
+    VectorType<int> mapping(old_max_value + 1, -1);
+    thrust::scatter(thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(0) + old_values.size(),
                     old_values.begin(), mapping.begin());
 
-    map_values_func mapper({thrust::raw_pointer_cast(mapping.data()), mapping.size()}); 
+    map_values_func mapper({thrust::raw_pointer_cast(mapping.data()), mapping.size()});
     thrust::transform(src.begin(), src.end(), src.begin(), mapper);
 }
 
@@ -431,7 +470,7 @@ inline thrust::device_vector<int> compute_sanitized_graph(thrust::device_vector<
     // First find and remove duplicate edges. The corresponding costs are also discarded!
     sort_edge_nodes(i, j);
 
-    coo_sorting(i, j, data);
+    coo_sorting<thrust::device_vector>(i, j, data);
     auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
     auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end()));
     auto new_last = thrust::unique_by_key(first, last, data.begin());
@@ -470,7 +509,7 @@ struct desanitize_node_labels_func
     const int* ids_mapping;
     const int* node_labels_on_sanitized;
     const unsigned long ids_mapping_size;
-    __host__ __device__ int operator()(const int input_graph_node_index)
+    RAMA_HOST_DEVICE int operator()(const int input_graph_node_index)
     {
         const int current_node_mapping = ids_mapping[input_graph_node_index];
         if (input_graph_node_index == ids_mapping_size - 1 || current_node_mapping != ids_mapping[input_graph_node_index + 1]) 
@@ -517,7 +556,7 @@ inline void print_vector(const thrust::device_vector<T>& v, const char* name, co
 
 struct pos_part
 {
-    __host__ __device__
+    RAMA_HOST_DEVICE
         thrust::tuple<int, float> operator()(const thrust::tuple<int, float>& t)
         {
             if(thrust::get<1>(t) >= 0.0)
@@ -529,7 +568,7 @@ struct pos_part
 struct tuple_sum
 {
     template<typename T1, typename T2>
-    __host__ __device__
+    RAMA_HOST_DEVICE
         thrust::tuple<T1, T2> operator()(const thrust::tuple<T1, T2>& t1, const thrust::tuple<T1, T2>& t2)
         {
             return {thrust::get<0>(t1) + thrust::get<0>(t2), thrust::get<1>(t1) + thrust::get<1>(t2)};
@@ -539,14 +578,14 @@ struct tuple_sum
 struct is_positive_edge
 {
     const float tol;
-    __host__ __device__ bool operator()(const thrust::tuple<int,int,float>& t)
+    RAMA_HOST_DEVICE bool operator()(const thrust::tuple<int,int,float>& t)
     {
         return thrust::get<2>(t) > tol;
     }
 };
 
 /*
-__host__ __device__
+RAMA_HOST_DEVICE
 int min(const int a, const int b)
 {
     if(a < b)
@@ -554,7 +593,7 @@ int min(const int a, const int b)
     else
         return b; 
 }
-__host__ __device__
+RAMA_HOST_DEVICE
 int max(const int a, const int b)
 {
     if(a > b)

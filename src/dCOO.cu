@@ -39,7 +39,7 @@ void dCOO::init(const bool is_sorted)
     {
         if (is_directed_)
             sort_edge_nodes(row_ids, col_ids);
-        coo_sorting(row_ids, col_ids, data);
+        coo_sorting<thrust::device_vector>(row_ids, col_ids, data);
         // now row indices are non-decreasing
         assert(thrust::is_sorted(row_ids.begin(), row_ids.end()));
     } 
@@ -72,7 +72,7 @@ dCOO dCOO::contract_cuda(const thrust::device_vector<int>& node_mapping)
             thrust::raw_pointer_cast(new_row_ids.data()), 
             thrust::raw_pointer_cast(new_col_ids.data()));
 
-    coo_sorting(new_row_ids, new_col_ids, new_data); // in-place sorting by rows.
+    coo_sorting<thrust::device_vector>(new_row_ids, new_col_ids, new_data); // in-place sorting by rows.
 
     auto first = thrust::make_zip_iterator(thrust::make_tuple(new_row_ids.begin(), new_col_ids.begin()));
     auto last = thrust::make_zip_iterator(thrust::make_tuple(new_row_ids.end(), new_col_ids.end()));
@@ -143,7 +143,7 @@ thrust::device_vector<float> dCOO::diagonal() const
 
 thrust::device_vector<int> dCOO::compute_row_offsets() const
 {
-    return compute_offsets(row_ids, rows_ - 1);
+    return compute_offsets<thrust::device_vector>(row_ids, rows_ - 1);
 }
 
 float dCOO::sum() const
@@ -167,7 +167,7 @@ dCOO dCOO::export_undirected() const
     thrust::device_vector<int> row_ids_u, col_ids_u;
     thrust::device_vector<float> data_u;
 
-    std::tie(row_ids_u, col_ids_u, data_u) = to_undirected(row_ids, col_ids, data);
+    std::tie(row_ids_u, col_ids_u, data_u) = to_undirected<thrust::device_vector>(row_ids, col_ids, data);
     return dCOO(std::move(col_ids_u), std::move(row_ids_u), std::move(data_u), false);
 }
 
