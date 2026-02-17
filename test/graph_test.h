@@ -328,6 +328,83 @@ void test_has_duplicate_edges()
 }
 
 template<template<typename> class VectorType>
+void test_contract()
+{
+    //       +2
+    //   +-----------------------+
+    //   v                       |
+    // +---+  +3   +---+  -1   +---+
+    // | 0 | ----> | 1 | ----> | 2 |
+    // +---+       +---+       +---+
+    //
+    // Mapping: {0->0, 1->0, 2->1} merges nodes 0,1
+    //
+    // +-----+  +1   +-----+
+    // | 0,1 | ----> |  2  |
+    // +-----+       +-----+
+    //
+    // Edges after mapping:
+    //   (0,1): was (0,2,+2) -> maps to (0,1,+2)
+    //   (0,1): was (1,2,-1) -> maps to (0,1,-1)
+    //   Summed: (0,1, +1)
+    //   Self-loop on 0: was (0,1,+3) -> maps to (0,0,+3)
+    std::vector<int> tails = {0, 0, 1};
+    std::vector<int> heads = {1, 2, 2};
+    std::vector<float> costs = {3.0f, 2.0f, -1.0f};
+
+    Graph<VectorType> G(tails.begin(), tails.end(),
+                        heads.begin(), heads.end(),
+                        costs.begin(), costs.end());
+
+    VectorType<int> mapping(3);
+    mapping[0] = 0; mapping[1] = 0; mapping[2] = 1;
+
+    Graph<VectorType> contracted = G.contract(mapping);
+
+    test(contracted.num_nodes() == 2, "contracted graph should have 2 nodes");
+
+    // Should have self-loop (0,0,+3) and edge (0,1,+1) with reverse (1,0,+1)
+    // directed edges: (0,0), (0,1), (1,0) = 3
+    test(contracted.num_directed_edges() == 3, "contracted should have 3 directed edges");
+
+    // Check self-loop cost
+    VectorType<float> slc = contracted.self_loop_costs();
+    test(slc[0] == 3.0f, "self-loop on node 0 should have cost 3.0 (from merged edge 0-1)");
+    test(slc[1] == 0.0f, "node 1 should have no self-loop");
+
+    // After removing self-loops, should have 1 undirected edge with cost +1
+    contracted.remove_self_loops();
+    test(contracted.num_edges() == 1, "after removing self-loops, 1 undirected edge");
+    test(std::fabs(contracted.sum() - 2.0f) < 1e-5f,
+         "sum of symmetric costs should be 2.0 (= 2 * +1.0)");
+}
+
+template<template<typename> class VectorType>
+void test_contract_all_to_one()
+{
+    // All-positive triangle, contract everything to node 0
+    std::vector<int> tails = {0, 1, 0};
+    std::vector<int> heads = {1, 2, 2};
+    std::vector<float> costs = {1.0f, 2.0f, 3.0f};
+
+    Graph<VectorType> G(tails.begin(), tails.end(),
+                        heads.begin(), heads.end(),
+                        costs.begin(), costs.end());
+
+    VectorType<int> mapping(3, 0);
+
+    Graph<VectorType> contracted = G.contract(mapping);
+
+    test(contracted.num_nodes() == 1, "all contracted to 1 node");
+    // All 3 edges become self-loops on node 0, summing to 1+2+3=6
+    VectorType<float> slc = contracted.self_loop_costs();
+    test(std::fabs(slc[0] - 6.0f) < 1e-5f, "self-loop should sum all edge costs");
+
+    contracted.remove_self_loops();
+    test(contracted.num_directed_edges() == 0, "no edges after removing self-loops");
+}
+
+template<template<typename> class VectorType>
 void run_all_graph_tests()
 {
     test_is_single_orientation<VectorType>();
@@ -341,4 +418,9 @@ void run_all_graph_tests()
     test_self_loops<VectorType>();
     test_node_offsets<VectorType>();
     test_filter<VectorType>();
+
+    test_contract<VectorType>();
+    std::cout << "test_contract passed\n";
+    test_contract_all_to_one<VectorType>();
+    std::cout << "test_contract_all_to_one passed\n";
 }

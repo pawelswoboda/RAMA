@@ -132,3 +132,13 @@ add_executable(connected_components_cpu_test connected_components_cpu_test.cpp)
 # Compiled with g++ (not nvcc), CPP backend defined in source file
 target_link_libraries(connected_components_cpu_test RAMA)
 add_test(NAME connected_components_cpu COMMAND connected_components_cpu_test)
+
+add_executable(rama_solver_gpu_test rama_solver_gpu_test.cu)
+target_compile_definitions(rama_solver_gpu_test PRIVATE ${GPU_COMPILE_DEFINITIONS})
+target_link_libraries(rama_solver_gpu_test RAMA)
+add_test(NAME rama_solver_gpu COMMAND rama_solver_gpu_test)
+
+add_executable(rama_solver_cpu_test rama_solver_cpu_test.cpp)
+# Compiled with g++ (not nvcc), CPP backend defined in source file
+target_link_libraries(rama_solver_cpu_test RAMA)
+add_test(NAME rama_solver_cpu COMMAND rama_solver_cpu_test)

@@ -79,6 +79,7 @@ public:
     void remove_self_loops();
     VectorType<float> self_loop_costs() const;
     VectorType<int> compute_node_offsets() const;
+    Graph<VectorType> contract(const VectorType<int>& node_mapping) const;
 
     // Data access
     const int* get_tails_ptr() const { return thrust::raw_pointer_cast(tails_.data()); }
@@ -467,6 +468,71 @@ inline Graph<VectorType> Graph<VectorType>::filter(const float lb, const float u
     result.costs_ = std::move(costs_f);
     result.init(true, true);
     return result;
+}
+
+template<template<typename> class VectorType>
+inline Graph<VectorType> Graph<VectorType>::contract(const VectorType<int>& node_mapping) const
+{
+    assert(node_mapping.size() >= num_nodes_);
+
+    // Step 1: Keep only forward edges (tail < head) — one per undirected edge
+    auto all_begin = thrust::make_zip_iterator(thrust::make_tuple(tails_.begin(), heads_.begin(), costs_.begin()));
+    auto all_end = thrust::make_zip_iterator(thrust::make_tuple(tails_.end(), heads_.end(), costs_.end()));
+
+    auto is_fwd = [] GRAPH_HOST_DEVICE (const thrust::tuple<int, int, float>& t) {
+        return thrust::get<0>(t) < thrust::get<1>(t);
+    };
+
+    const size_t num_forward = thrust::count_if(all_begin, all_end, is_fwd);
+
+    if (num_forward == 0) {
+        int new_num_nodes = *thrust::max_element(node_mapping.begin(), node_mapping.end()) + 1;
+        Graph<VectorType> result;
+        result.num_nodes_ = new_num_nodes;
+        return result;
+    }
+
+    VectorType<int> fwd_tails(num_forward), fwd_heads(num_forward);
+    VectorType<float> fwd_costs(num_forward);
+
+    auto fwd_begin = thrust::make_zip_iterator(thrust::make_tuple(fwd_tails.begin(), fwd_heads.begin(), fwd_costs.begin()));
+    thrust::copy_if(all_begin, all_end, fwd_begin, is_fwd);
+
+    // Step 2: Map endpoints through node_mapping
+    VectorType<int> mapped_tails(num_forward), mapped_heads(num_forward);
+    thrust::gather(fwd_tails.begin(), fwd_tails.end(), node_mapping.begin(), mapped_tails.begin());
+    thrust::gather(fwd_heads.begin(), fwd_heads.end(), node_mapping.begin(), mapped_heads.begin());
+
+    // Step 3: Normalize to (min, max) — some edges may become self-loops
+    auto edge_begin = thrust::make_zip_iterator(thrust::make_tuple(mapped_tails.begin(), mapped_heads.begin()));
+    auto edge_end = thrust::make_zip_iterator(thrust::make_tuple(mapped_tails.end(), mapped_heads.end()));
+    auto normalize = [] GRAPH_HOST_DEVICE (const thrust::tuple<int, int>& t) {
+        const int a = thrust::get<0>(t);
+        const int b = thrust::get<1>(t);
+        return (a <= b) ? thrust::make_tuple(a, b) : thrust::make_tuple(b, a);
+    };
+    thrust::transform(edge_begin, edge_end, edge_begin, normalize);
+
+    // Step 4: Sort by (tail, head)
+    thrust::sort_by_key(edge_begin, edge_end, fwd_costs.begin());
+
+    // Step 5: reduce_by_key to sum costs of edges with same mapped endpoints
+    VectorType<int> out_tails(num_forward), out_heads(num_forward);
+    VectorType<float> out_costs(num_forward);
+
+    auto out_begin = thrust::make_zip_iterator(thrust::make_tuple(out_tails.begin(), out_heads.begin()));
+    auto new_end = thrust::reduce_by_key(edge_begin, edge_end, fwd_costs.begin(), out_begin, out_costs.begin());
+
+    size_t new_size = std::distance(out_costs.begin(), new_end.second);
+    out_tails.resize(new_size);
+    out_heads.resize(new_size);
+    out_costs.resize(new_size);
+
+    int new_num_nodes = *thrust::max_element(node_mapping.begin(), node_mapping.end()) + 1;
+
+    // is_symmetric=false triggers ensure_symmetric() to add reverse edges
+    return Graph<VectorType>(new_num_nodes, std::move(out_tails), std::move(out_heads),
+                             std::move(out_costs), false, false);
 }
 
 template<template<typename> class VectorType>
