@@ -25,6 +25,14 @@ target_link_libraries(rama_cuda dCOO maximum_matching_vertex_based RAMA)
 add_executable(rama_text_input rama_text_input.cu)
 target_link_libraries(rama_text_input RAMA multicut_text_parser rama_cuda)
 
+add_executable(rama_text_input_gpu rama_text_input_gpu.cu)
+target_compile_definitions(rama_text_input_gpu PRIVATE ${GPU_COMPILE_DEFINITIONS})
+target_link_libraries(rama_text_input_gpu RAMA multicut_text_parser)
+
+add_executable(rama_text_input_cpu rama_text_input_cpu.cpp)
+# Compiled with g++ (not nvcc), CPP backend defined in source file
+target_link_libraries(rama_text_input_cpu RAMA multicut_text_parser)
+
 pybind11_add_module(rama_py rama_py.cu)
 target_link_libraries(rama_py PRIVATE multicut_text_parser rama_cuda RAMA)
 
