@@ -1,27 +1,32 @@
-project(RAMA LANGUAGES CXX CUDA)
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -use_fast_math --extended-lambda")
-
 cmake_minimum_required(VERSION 3.22.1)
 
-set(CMAKE_CUDA_ARCHITECTURES OFF)
+option(WITH_CUDA "Compile GPU components" ON)
 
-include_directories(external/ECL-CC)
+if(WITH_CUDA)
+    project(RAMA LANGUAGES CXX CUDA)
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -use_fast_math --extended-lambda")
+    set(CMAKE_CUDA_ARCHITECTURES OFF)
+else()
+    project(RAMA LANGUAGES CXX)
+endif()
+
 include_directories(include)
 
 add_library(RAMA INTERFACE)
 target_include_directories(RAMA INTERFACE include/)
 target_compile_features(RAMA INTERFACE cxx_std_17)
-#set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -arch=compute_60 -code=sm_89")
 
 target_compile_options(RAMA INTERFACE -march=native)
 target_compile_options(RAMA INTERFACE -fPIC)
 target_include_directories(RAMA INTERFACE external/Eigen)
 
-# Define global Thrust execution backend flags
-# GPU targets use CUDA device system
-set(GPU_COMPILE_DEFINITIONS
-    THRUST_DEVICE_SYSTEM=THRUST_DEVICE_SYSTEM_CUDA
-    THRUST_HOST_SYSTEM=THRUST_HOST_SYSTEM_CPP)
+if(WITH_CUDA)
+    # Define global Thrust execution backend flags
+    # GPU targets use CUDA device system
+    set(GPU_COMPILE_DEFINITIONS
+        THRUST_DEVICE_SYSTEM=THRUST_DEVICE_SYSTEM_CUDA
+        THRUST_HOST_SYSTEM=THRUST_HOST_SYSTEM_CPP)
+endif()
 
 # CPU targets use CPP device system (sequential, no OpenMP)
 set(CPU_COMPILE_DEFINITIONS
@@ -56,15 +61,17 @@ endif()
 
 include(${CPM_DOWNLOAD_LOCATION})
 
-CPMAddPackage(
-    NAME pybind11
-    GIT_TAG master
-    GITHUB_REPOSITORY pybind/pybind11
-    OPTIONS
-    "PYBIND11_CPP_STANDARD -std=c++17"
-    "PYBIND11_INSTALL ON CACHE BOOL"
-)
-find_package(pybind11 REQUIRED)
+if(WITH_CUDA)
+    CPMAddPackage(
+        NAME pybind11
+        GIT_TAG master
+        GITHUB_REPOSITORY pybind/pybind11
+        OPTIONS
+        "PYBIND11_CPP_STANDARD -std=c++17"
+        "PYBIND11_INSTALL ON CACHE BOOL"
+    )
+    find_package(pybind11 REQUIRED)
+endif()
 
 CPMAddPackage(
     NAME CCCL
@@ -87,6 +94,9 @@ endif()
 option(WITH_TORCH "Compile with PyTorch support" OFF)
 
 if(WITH_TORCH)
+    if(NOT WITH_CUDA)
+        message(FATAL_ERROR "WITH_TORCH requires WITH_CUDA=ON")
+    endif()
     message(STATUS "Compiling with PyTorch support")
     find_package(Torch REQUIRED)
     add_definitions(-DWITH_TORCH)
@@ -97,18 +107,22 @@ endif()
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-add_library(ECL-CC_11 external/ECL-CC/ECL-CC_11.cu)
-target_include_directories(ECL-CC_11 INTERFACE external/ECL-CC)
+if(WITH_CUDA)
+    include_directories(external/ECL-CC)
 
-add_library(gpuMST_boruvka external/cudaMST/gpuMST/gpuMST.cu)
-target_link_libraries(gpuMST_boruvka RAMA)
-target_include_directories(gpuMST_boruvka PUBLIC external/cudaMST/gpuMST/)
-target_include_directories(gpuMST_boruvka PUBLIC external/cudaMST/common/)
+    add_library(ECL-CC_11 external/ECL-CC/ECL-CC_11.cu)
+    target_include_directories(ECL-CC_11 INTERFACE external/ECL-CC)
 
-add_library(gpuMST_kruskal external/cudaMST/gpuMSTdpk/gpuMST.cu)
-target_link_libraries(gpuMST_kruskal RAMA)
-target_include_directories(gpuMST_kruskal PUBLIC external/cudaMST/gpuMSTdpk/)
-target_include_directories(gpuMST_kruskal PUBLIC external/cudaMST/common/)
+    add_library(gpuMST_boruvka external/cudaMST/gpuMST/gpuMST.cu)
+    target_link_libraries(gpuMST_boruvka RAMA)
+    target_include_directories(gpuMST_boruvka PUBLIC external/cudaMST/gpuMST/)
+    target_include_directories(gpuMST_boruvka PUBLIC external/cudaMST/common/)
+
+    add_library(gpuMST_kruskal external/cudaMST/gpuMSTdpk/gpuMST.cu)
+    target_link_libraries(gpuMST_kruskal RAMA)
+    target_include_directories(gpuMST_kruskal PUBLIC external/cudaMST/gpuMSTdpk/)
+    target_include_directories(gpuMST_kruskal PUBLIC external/cudaMST/common/)
+endif()
 
 add_subdirectory(src)
 enable_testing()
