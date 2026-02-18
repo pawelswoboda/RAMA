@@ -1,10 +1,13 @@
 # RAMA: Rapid algorithm for multicut problem [(arxiv)](https://arxiv.org/abs/2109.01838)
-Solves multicut (correlation clustering) problems orders of magnitude faster than CPU based solvers without compromising solution quality on NVIDIA GPU. It also gives lower bound guarantees.
+Solves multicut (correlation clustering) problems orders of magnitude faster than existing solvers without compromising solution quality. Supports both CPU and GPU (NVIDIA CUDA) execution backends. It also gives lower bound guarantees.
 
 ![animation](./misc/contraction_animation.gif)
 
 ## Requirements
-We use `CUDA 11.2` and `GCC 10`. Other combinations might also work but not tested. `CMake` is required for compilation.
+- `CMake` 3.22.1+, `GCC 10+`
+- For GPU support: `CUDA 11.2+`
+
+Other combinations might also work but are not tested.
 
 ## Installation
 
@@ -12,9 +15,15 @@ We use `CUDA 11.2` and `GCC 10`. Other combinations might also work but not test
 ```bash
 git clone git@github.com:pawelswoboda/RAMA.git
 cd RAMA
-mkdir build
-cd build
+mkdir build && cd build
 cmake ..
+make -j 4
+```
+This builds both the CPU solver (`rama_text_input_cpu`) and the GPU solver (`rama_text_input_gpu`).
+
+To build without CUDA (CPU solver only):
+```bash
+cmake .. -DWITH_CUDA=OFF
 make -j 4
 ```
 
@@ -36,9 +45,16 @@ i_2 j_2 cost_2
 ...
 i_n j_n cost_n
 ```
-which corresponds to a graph with `N` edges. Where `i` and `j` should be vertex indices and `cost` is a floating point number. Positive costs implies that the nodes are similar and thus would prefer to be in same component and viceversa. Afterwards run:
+which corresponds to a graph with `N` edges. Where `i` and `j` should be vertex indices and `cost` is a floating point number. Positive costs implies that the nodes are similar and thus would prefer to be in same component and viceversa.
+
+Run with the GPU solver:
 ```bash
-./rama_text_input -f <PATH_TO_MULTICUT_INSTANCE>
+./rama_text_input_gpu -f <PATH_TO_MULTICUT_INSTANCE>
+```
+
+Or with the CPU solver (no GPU required):
+```bash
+./rama_text_input_cpu -f <PATH_TO_MULTICUT_INSTANCE>
 ```
 
 ### Python solver:
@@ -46,46 +62,47 @@ An example to compute multicut on a triangle graph:
 ```python
 import rama_py
 opts = rama_py.multicut_solver_options("PD")
-rama_py.rama_cuda([0, 1, 2], [1, 2, 0], [1.1, -2, 3], opts) 
+rama_py.rama_cuda([0, 1, 2], [1, 2, 0], [1.1, -2, 3], opts)
 ```
 The solver supports different modes which can be chosen by initializing multicut_solver_options by following:
 - `"P"`: For running purely primal algorithm (best runtime).
 - `"PD"`: This one offers good runtime vs quality tradeoff and is the default solver.
-- `"PD+"`: For better quality primal algorithm (worse runtime). 
+- `"PD+"`: For better quality primal algorithm (worse runtime).
 - `"D"`: For only computing the lower bound.
 ### Input format:
 RAMA normally expects that:
-1. Node indices always start from 0 and there are no missing node indices. For example on a graph with 1000 nodes, the node indices should be in [0, 999]. 
+1. Node indices always start from 0 and there are no missing node indices. For example on a graph with 1000 nodes, the node indices should be in [0, 999].
 2. There are no duplicate edges.
 
-If this is not the case with the input graph then use the option `--sanitize_graph` (for C++ CLI) and `opts.sanitize_graph = True` for python interface. 
+If this is not the case with the input graph then use the option `--sanitize_graph` (for C++ CLI) and `opts.sanitize_graph = True` for python interface.
 Note that the output node labels would be computed for all nodes in the input graph (where nodes without edges will have label -1). Duplicate edges will be removed in a non-deterministic order. Also see [this issue](https://github.com/pawelswoboda/RAMA/issues/26#issuecomment-1029949689) for more discussion.
 ### Parameters:
 The default set of parameters are defined [here](include/multicut_solver_options.h) which correspond to algorithm `PD` from the paper. This algorithm offers best compute time versus solution quality trade-off.  Parameters for other variants are:
 
  - **Fast purely primal algorithm (P)**:
- This algorithm can be slightly worse than sequential CPU heuristics but is 30 to 50 times faster. 
+ This algorithm can be slightly worse than sequential CPU heuristics but is 30 to 50 times faster (on GPU).
 	```bash
-	./rama_text_input -f <PATH_TO_MULTICUT_INSTANCE> 0 0 0 0
+	./rama_text_input_gpu -f <PATH_TO_MULTICUT_INSTANCE> 0 0 0 0
 	```
 - **Better quality primal algorithm (PD+)** :
-This algorithm can even be better than CPU solvers in terms of solution quality as it uses dual information. Still, it is 5 to 10 faster than best CPU solver.
+This algorithm can even be better than CPU solvers in terms of solution quality as it uses dual information. Still, it is 5 to 10 faster than best CPU solver (on GPU).
 	```bash
-	./rama_text_input -f <PATH_TO_MULTICUT_INSTANCE> 5 10 5 10
+	./rama_text_input_gpu -f <PATH_TO_MULTICUT_INSTANCE> 5 10 5 10
 	```
 - **Dual algorithm (D)**:
-Use this algorithm for only computing the lower bound. Our lower bounds are slightly better than [ICP](http://proceedings.mlr.press/v80/lange18a.html) and are computed up to 100 times faster.
+Use this algorithm for only computing the lower bound. Our lower bounds are slightly better than [ICP](http://proceedings.mlr.press/v80/lange18a.html) and are computed up to 100 times faster (on GPU).
 	```bash
-	./rama_text_input -f <PATH_TO_MULTICUT_INSTANCE> 5 10 0 0 5 --only_lb
+	./rama_text_input_gpu -f <PATH_TO_MULTICUT_INSTANCE> 5 10 0 0 5 --only_lb
 	```
-Run  `./rama_text_input --help` for details about the parameters. 
+
+All parameter variants work with both `rama_text_input_gpu` and `rama_text_input_cpu`. Run `./rama_text_input_gpu --help` or `./rama_text_input_cpu --help` for details.
 
 
 ## PyTorch support (Optional):
 The above-mentioned Python solver takes input in CPU memory and then copies to GPU memory. In cases where this takes too much time we offer additional (optional) functionality in Python bindings which allow to directly use the GPU tensors and return the result in GPU memory. For this there are two options:
 
 - **Binding via pointers to GPU memory:**
-Does not require compiling RAMA with PyTorch support (as done below). This option passes the GPU memory pointers to RAMA (the data is not modified). See 
+Does not require compiling RAMA with PyTorch support (as done below). This option passes the GPU memory pointers to RAMA (the data is not modified). See
 `test\test_pytorch_pointers.py` for usage.
 
 - **Direct binding of Torch Tensors:**
