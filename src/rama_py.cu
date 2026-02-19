@@ -154,7 +154,9 @@ PYBIND11_MODULE(rama_py, m) {
             });
 
     m.def("read_multicut_file", [](const std::string& filename) {
-            return read_file(filename);
+            auto inst = read_file(filename);
+            return std::make_tuple(inst.i, inst.j, inst.costs,
+                                   inst.lifted_i, inst.lifted_j, inst.lifted_costs);
             });
 
     #ifdef WITH_TORCH

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "graph.h"
+#include "lifted_multicut_utils.h"
 #include "dual_solver.h"
 #include "edge_contractions.h"
 #include "maximum_matching.h"
@@ -67,24 +68,28 @@ std::tuple<VectorType<int>, int> contraction_mapping_by_maximum_matching(
 
 } // namespace rama_solver_detail
 
-// Templatized multicut solver. Works on both CPU (thrust::host_vector) and GPU (thrust::device_vector).
+// Lifted multicut solver. Works on both CPU (thrust::host_vector) and GPU (thrust::device_vector).
+// The standard multicut is the special case with an empty lifted graph.
 // Returns (node_mapping, lower_bound, timeline).
 template<template<typename> class VectorType>
 std::tuple<VectorType<int>, double, std::vector<std::vector<int>>>
-rama_solver(Graph<VectorType>& G, const multicut_solver_options& opts)
+rama_solver(Graph<VectorType>& base_G, Graph<VectorType>& lifted_G,
+            const multicut_solver_options& opts)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
     std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 
-    // Dual solve for lower bound (reparametrizes G in-place)
-    const double final_lb = dual_solver<VectorType>(G,
+    // Initial dual solve on union graph
+    Graph<VectorType> union_G = create_union_graph(base_G, lifted_G);
+    const double final_lb = dual_solver<VectorType>(union_G,
         opts.max_cycle_length_lb, opts.num_dual_itr_lb,
         opts.num_outer_itr_dual, 1e-4, opts.verbose);
+    std::tie(base_G, lifted_G) = extract_costs_from_union(union_G, base_G);
 
     if (opts.verbose)
-        std::cout << "initial energy = " << G.sum() << "\n";
+        std::cout << "initial energy = " << base_G.sum() + lifted_G.sum() << "\n";
 
-    VectorType<int> node_mapping(G.num_nodes());
+    VectorType<int> node_mapping(base_G.num_nodes());
     thrust::sequence(node_mapping.begin(), node_mapping.end());
 
     std::vector<std::vector<int>> timeline;
@@ -96,12 +101,19 @@ rama_solver(Graph<VectorType>& G, const multicut_solver_options& opts)
     if (opts.matching_thresh_crossover_ratio > 1.0)
         try_matching = false;
 
-    for (size_t iter = 0; G.num_directed_edges() > 0; ++iter)
+    for (size_t iter = 0; base_G.num_directed_edges() > 0; ++iter)
     {
         if (iter > 0)
-            dual_solver<VectorType>(G, opts.max_cycle_length_primal,
+        {
+            union_G = create_union_graph(base_G, lifted_G);
+            dual_solver<VectorType>(union_G, opts.max_cycle_length_primal,
                                     opts.num_dual_itr_primal, 1, 1e-4, opts.verbose);
+            std::tie(base_G, lifted_G) = extract_costs_from_union(union_G, base_G);
+        }
 
+        // Contraction on base graph only: only base edges can be contracted
+        // because they determine connectivity. Lifted edges don't imply
+        // adjacency, so contracting them would create infeasible partitions.
         VectorType<int> cur_node_mapping;
         int nr_edges_to_contract;
 
@@ -109,14 +121,14 @@ rama_solver(Graph<VectorType>& G, const multicut_solver_options& opts)
         {
             std::tie(cur_node_mapping, nr_edges_to_contract) =
                 rama_solver_detail::contraction_mapping_by_maximum_matching<VectorType>(
-                    G, opts.mean_multiplier_mm, opts.verbose);
+                    base_G, opts.mean_multiplier_mm, opts.verbose);
 
-            if (nr_edges_to_contract < (int)G.num_nodes() * opts.matching_thresh_crossover_ratio)
+            if (nr_edges_to_contract < (int)base_G.num_nodes() * opts.matching_thresh_crossover_ratio)
             {
                 if (opts.verbose)
                 {
                     std::cout << "# edges to contract = " << nr_edges_to_contract
-                              << ", # vertices = " << G.num_nodes() << "\n";
+                              << ", # vertices = " << base_G.num_nodes() << "\n";
                     std::cout << "switching to MST based contraction edge selection\n";
                 }
                 try_matching = false;
@@ -125,7 +137,7 @@ rama_solver(Graph<VectorType>& G, const multicut_solver_options& opts)
         else
         {
             std::tie(cur_node_mapping, nr_edges_to_contract) =
-                find_contraction_mapping<VectorType>(G, opts.verbose);
+                find_contraction_mapping<VectorType>(base_G, opts.verbose);
         }
 
         if (nr_edges_to_contract == 0)
@@ -135,30 +147,37 @@ rama_solver(Graph<VectorType>& G, const multicut_solver_options& opts)
             break;
         }
 
-        Graph<VectorType> new_G = G.contract(cur_node_mapping);
+        Graph<VectorType> new_base_G = base_G.contract(cur_node_mapping);
         if (opts.verbose)
         {
-            std::cout << "original G size " << G.num_nodes() << "\n";
-            std::cout << "contracted G size " << new_G.num_nodes() << "\n";
+            std::cout << "original G size " << base_G.num_nodes() << "\n";
+            std::cout << "contracted G size " << new_base_G.num_nodes() << "\n";
         }
-        assert(new_G.num_nodes() < G.num_nodes());
+        assert(new_base_G.num_nodes() < base_G.num_nodes());
 
         if (opts.verbose)
         {
-            VectorType<float> slc = new_G.self_loop_costs();
+            VectorType<float> slc = new_base_G.self_loop_costs();
             float energy_reduction = thrust::reduce(slc.begin(), slc.end());
             std::cout << "energy reduction " << energy_reduction << "\n";
         }
 
-        if (rama_solver_detail::has_bad_contractions<VectorType>(new_G))
+        if (rama_solver_detail::has_bad_contractions<VectorType>(new_base_G))
             throw std::runtime_error("Found bad contractions");
 
-        G = std::move(new_G);
-        G.remove_self_loops();
+        base_G = std::move(new_base_G);
+        base_G.remove_self_loops();
+
+        if (lifted_G.num_directed_edges() > 0)
+        {
+            lifted_G = lifted_G.contract(cur_node_mapping);
+            lifted_G.remove_self_loops();
+        }
 
         if (opts.verbose)
-            std::cout << "energy after iteration " << iter << ": " << G.sum()
-                      << ", #components = " << G.num_nodes() << "\n";
+            std::cout << "energy after iteration " << iter << ": "
+                      << base_G.sum() + lifted_G.sum()
+                      << ", #components = " << base_G.num_nodes() << "\n";
 
         rama_solver_detail::map_node_labels<VectorType>(cur_node_mapping, node_mapping);
 
@@ -179,7 +198,16 @@ rama_solver(Graph<VectorType>& G, const multicut_solver_options& opts)
     }
 
     if (opts.verbose)
-        std::cout << "final energy = " << G.sum() << "\n";
+        std::cout << "final energy = " << base_G.sum() + lifted_G.sum() << "\n";
 
     return {node_mapping, final_lb, timeline};
+}
+
+// Standard multicut solver (special case with no lifted edges).
+template<template<typename> class VectorType>
+std::tuple<VectorType<int>, double, std::vector<std::vector<int>>>
+rama_solver(Graph<VectorType>& G, const multicut_solver_options& opts)
+{
+    Graph<VectorType> empty_lifted;
+    return rama_solver(G, empty_lifted, opts);
 }

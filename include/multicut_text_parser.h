@@ -1,5 +1,13 @@
+#pragma once
+
 #include <string>
 #include <vector>
 
-std::tuple<std::vector<int>, std::vector<int>, std::vector<float>> read_file(const std::string& filename);
+struct MulticutInstance {
+    std::vector<int> i, j;
+    std::vector<float> costs;
+    std::vector<int> lifted_i, lifted_j;
+    std::vector<float> lifted_costs;
+};
 
+MulticutInstance read_file(const std::string& filename);

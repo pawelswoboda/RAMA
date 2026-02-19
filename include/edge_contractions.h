@@ -468,7 +468,9 @@ std::tuple<VectorType<int>, int> find_contraction_mapping(
         rep_tails.begin(), rep_heads.begin(), thrust::make_discard_iterator()));
 
     auto ends = thrust::partition_copy(first_all, last_all, first_pos, first_rep,
-                                       is_positive_edge({0.0f}));
+        [] EC_HOST_DEVICE (const thrust::tuple<int,int,float>& t) {
+            return thrust::get<2>(t) >= 0.0f;
+        });
 
     const int num_positive = std::distance(first_pos, ends.first);
     if (num_positive == 0)

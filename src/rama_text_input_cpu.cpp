@@ -15,19 +15,32 @@ int main(int argc, char** argv)
     if (e != -1)
         return e;
 
-    auto [i, j, costs] = read_file(opts.input_file);
+    auto inst = read_file(opts.input_file);
 
     // Normalize edges to (min, max) orientation
-    for (size_t e = 0; e < i.size(); ++e)
+    for (size_t e = 0; e < inst.i.size(); ++e)
     {
-        if (i[e] > j[e])
-            std::swap(i[e], j[e]);
+        if (inst.i[e] > inst.j[e])
+            std::swap(inst.i[e], inst.j[e]);
+    }
+    for (size_t e = 0; e < inst.lifted_i.size(); ++e)
+    {
+        if (inst.lifted_i[e] > inst.lifted_j[e])
+            std::swap(inst.lifted_i[e], inst.lifted_j[e]);
     }
 
-    HostGraph G(i.begin(), i.end(), j.begin(), j.end(), costs.begin(), costs.end());
+    HostGraph base_G(inst.i.begin(), inst.i.end(),
+                     inst.j.begin(), inst.j.end(),
+                     inst.costs.begin(), inst.costs.end());
+
+    HostGraph lifted_G;
+    if (!inst.lifted_i.empty())
+        lifted_G = HostGraph(inst.lifted_i.begin(), inst.lifted_i.end(),
+                             inst.lifted_j.begin(), inst.lifted_j.end(),
+                             inst.lifted_costs.begin(), inst.lifted_costs.end());
 
     auto start = std::chrono::steady_clock::now();
-    auto [node_mapping, lb, timeline] = rama_solver<thrust::host_vector>(G, opts);
+    auto [node_mapping, lb, timeline] = rama_solver<thrust::host_vector>(base_G, lifted_G, opts);
     auto end = std::chrono::steady_clock::now();
     int dur = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
@@ -35,7 +48,8 @@ int main(int argc, char** argv)
 
     if (!opts.only_compute_lb)
     {
-        double obj = get_obj(h_node_mapping, i, j, costs);
+        double obj = get_obj(h_node_mapping, inst.i, inst.j, inst.costs);
+        obj += get_obj(h_node_mapping, inst.lifted_i, inst.lifted_j, inst.lifted_costs);
         std::cout << "\tcost w.r.t original objective: " << obj << "\n";
     }
     std::cout << "\tfinal lower bound: " << lb << "\n";

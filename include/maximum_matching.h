@@ -112,7 +112,7 @@ inline std::tuple<VectorType<int>, int> filter_edges_by_matching(
                     for (int e = offsets_ptr[v]; e < offsets_ptr[v + 1]; ++e) {
                         const int h = heads_ptr[e];
                         const float c = costs_ptr[e];
-                        if (h == v || matched_ptr[h] || c <= best_cost)
+                        if (h == v || matched_ptr[h] || c < best_cost)
                             continue;
                         best_cost = c;
                         best_head = h;
