@@ -4,11 +4,7 @@
 #include "connected_components.h"
 #include "rama_utils.h"
 
-#include <vector>
 #include <algorithm>
-#include <cmath>
-#include <map>
-#include <set>
 #include <limits>
 #include <iostream>
 
@@ -22,8 +18,16 @@
 #include <thrust/unique.h>
 #include <thrust/for_each.h>
 #include <thrust/reduce.h>
+#include <thrust/scan.h>
 #include <thrust/functional.h>
+#include <thrust/binary_search.h>
+#include <thrust/set_operations.h>
+#include <thrust/transform.h>
 #include <thrust/iterator/counting_iterator.h>
+#include <thrust/iterator/constant_iterator.h>
+#include <thrust/iterator/zip_iterator.h>
+#include <thrust/iterator/discard_iterator.h>
+#include <thrust/tuple.h>
 
 #ifdef __CUDACC__
 #define LCC_HOST_DEVICE __host__ __device__
@@ -31,11 +35,34 @@
 #define LCC_HOST_DEVICE
 #endif
 
+// GPU-friendly representation of multiple cut factors in CSR format.
+// Each factor groups one cut (a set of base edges) with all lifted edges
+// separated by that cut. Edge indices refer to directed (tail < head) positions
+// in the respective graph's edge list.
+template<template<typename> class VectorType>
+struct LiftedCutFactors {
+    int num_factors = 0;
+
+    // Base edges per factor (CSR)
+    VectorType<int> base_offsets;     // [num_factors + 1]
+    VectorType<int> base_edge_idx;    // flat: directed base edge indices (tail < head)
+
+    // Lifted edges per factor (CSR)
+    VectorType<int> lifted_offsets;   // [num_factors + 1]
+    VectorType<int> lifted_edge_idx;  // flat: directed lifted edge indices (tail < head)
+};
+
 namespace lifted_cut_detail {
 
 LCC_HOST_DEVICE inline int uf_find(int* parent, int x)
 {
     while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+    return x;
+}
+
+LCC_HOST_DEVICE inline int uf_find_readonly(const int* parent, int x)
+{
+    while (parent[x] != x) x = parent[x];
     return x;
 }
 
@@ -114,18 +141,7 @@ struct update_best_functor {
 
 } // namespace lifted_cut_detail
 
-// A violated lifted cut constraint: a lifted edge whose endpoints are in different
-// components of the non-negative base subgraph, together with a small s-t cut in the
-// quotient graph found by Karger's algorithm.
-struct LiftedCutConstraint {
-    int lifted_fwd_idx;                         // directed edge index in lifted_G (tail < head)
-    float lifted_cost;                          // cost of the lifted edge (positive)
-    std::set<std::pair<int,int>> cut_comp_pairs; // component pairs whose inter-component base edges form the cut
-    int cut_size;                               // number of undirected base edges in the cut
-    float min_abs_base_cost;                    // minimum |cost| among those base edges
-};
-
-// Find violated lifted cut constraints and small cuts for reparametrization.
+// Find violated lifted cut constraints and build GPU-friendly cut factors.
 //
 // A lifted edge (s,t) with positive cost is "violated" when s and t are in different
 // connected components of the non-negative base subgraph. This means the LP relaxation
@@ -135,13 +151,15 @@ struct LiftedCutConstraint {
 // For each violation, builds a quotient graph Q (nodes = components, edges = negative
 // inter-component base edges) and runs Karger's randomized min s-t cut algorithm to
 // find a small cut suitable for Lagrangian reparametrization.
+//
+// Returns LiftedCutFactors in CSR format, entirely on GPU.
 template<template<typename> class VectorType>
-std::vector<LiftedCutConstraint> find_lifted_cut_constraints(
+LiftedCutFactors<VectorType> find_lifted_cut_constraints(
     const Graph<VectorType>& base_G,
     const Graph<VectorType>& lifted_G,
     bool verbose = false)
 {
-    std::vector<LiftedCutConstraint> result;
+    LiftedCutFactors<VectorType> result;
 
     if (lifted_G.num_directed_edges() == 0)
         return result;
@@ -252,15 +270,12 @@ std::vector<LiftedCutConstraint> find_lifted_cut_constraints(
     }
 
     VectorType<int> v_src(num_v), v_dst(num_v), v_idx(num_v);
-    VectorType<float> v_cost(num_v);
     thrust::copy_if(lift_cmin.begin(), lift_cmin.end(), v_mask.begin(), v_src.begin(), is_one);
     thrust::copy_if(lift_cmax.begin(), lift_cmax.end(), v_mask.begin(), v_dst.begin(), is_one);
 
     VectorType<int> iota(num_lifted_dir);
     thrust::sequence(iota.begin(), iota.end(), 0);
     thrust::copy_if(iota.begin(), iota.end(), v_mask.begin(), v_idx.begin(), is_one);
-    thrust::copy_if(lifted_G.get_costs().begin(), lifted_G.get_costs().end(),
-                    v_mask.begin(), v_cost.begin(), is_one);
 
     if (verbose)
         std::cout << "lifted cut constraints: " << num_v
@@ -365,80 +380,344 @@ std::vector<LiftedCutConstraint> find_lifted_cut_constraints(
             break;
     }
 
-    // ---- Phase 6: Extract results on host ----
+    // ---- Phase 6: Build LiftedCutFactors on GPU ----
 
-    thrust::host_vector<int> h_best_parent(best_parent);
-    thrust::host_vector<int> h_best_cut(best_cut);
-    thrust::host_vector<int> h_pair_s(pair_s);
-    thrust::host_vector<int> h_pair_t(pair_t);
-    thrust::host_vector<long long> h_unique_keys(unique_keys);
-    thrust::host_vector<int> h_v_src(v_src);
-    thrust::host_vector<int> h_v_dst(v_dst);
-    thrust::host_vector<int> h_v_idx(v_idx);
-    thrust::host_vector<float> h_v_cost(v_cost);
-    thrust::host_vector<int> h_q_src(q_src);
-    thrust::host_vector<int> h_q_dst(q_dst);
-    thrust::host_vector<int> h_bt(base_G.get_tails());
-    thrust::host_vector<int> h_bh(base_G.get_heads());
-    thrust::host_vector<float> h_bc(base_G.get_costs());
-    thrust::host_vector<int> h_comp(comp);
-
-    // Map encoded pair keys to pair indices
-    std::map<long long, int> key_to_pair;
-    for (int i = 0; i < num_pairs; i++)
-        key_to_pair[h_unique_keys[i]] = i;
-
-    auto host_find = [](int* p, int x) {
-        while (p[x] != x) { p[x] = p[p[x]]; x = p[x]; }
-        return x;
-    };
-
-    for (int vi = 0; vi < num_v; vi++)
+    // 6a: Collect negative forward inter-component base edge indices.
+    //     These are the base edges that CAN participate in cuts.
+    VectorType<int> nfb_mask(num_base_dir);
     {
-        long long key = ((long long)h_v_src[vi] << 32) | (long long)(unsigned int)h_v_dst[vi];
-        int pi = key_to_pair[key];
-
-        if (h_best_cut[pi] <= 0 || h_best_cut[pi] == std::numeric_limits<int>::max())
-            continue;
-
-        // Extract cut component pairs from the best parent array for this (s,t) pair
-        int* par = h_best_parent.data() + pi * num_comp;
-        int su = host_find(par, h_pair_s[pi]);
-        int sv = host_find(par, h_pair_t[pi]);
-
-        std::set<std::pair<int,int>> cut_pairs;
-        for (int e = 0; e < num_q; e++)
-        {
-            int u = host_find(par, h_q_src[e]);
-            int v = host_find(par, h_q_dst[e]);
-            if ((u == su && v == sv) || (u == sv && v == su))
-                cut_pairs.insert({h_q_src[e], h_q_dst[e]});
-        }
-
-        // Count undirected base edges in the cut and find min |cost|
-        int actual_cut = 0;
-        float min_abs = std::numeric_limits<float>::max();
-        for (int e = 0; e < num_base_dir; e++)
-        {
-            if (h_bc[e] >= 0.0f) continue;
-            int ct = h_comp[h_bt[e]], ch = h_comp[h_bh[e]];
-            auto p = std::make_pair(std::min(ct, ch), std::max(ct, ch));
-            if (cut_pairs.count(p) && h_bt[e] < h_bh[e])
-            {
-                actual_cut++;
-                min_abs = std::min(min_abs, std::abs(h_bc[e]));
-            }
-        }
-
-        if (actual_cut == 0) continue;
-
-        result.push_back({h_v_idx[vi], h_v_cost[vi], std::move(cut_pairs),
-                          actual_cut, min_abs});
-
-        if (verbose)
-            std::cout << "  cut (" << h_v_src[vi] << "," << h_v_dst[vi]
-                      << "): base-edges=" << actual_cut << "\n";
+        const float* bc_ptr = base_G.get_costs_ptr();
+        const int* bt_ptr = base_G.get_tails_ptr();
+        const int* bh_ptr = base_G.get_heads_ptr();
+        const int* ct_ptr = thrust::raw_pointer_cast(base_ct.data());
+        const int* ch_ptr = thrust::raw_pointer_cast(base_ch.data());
+        int* m_ptr = thrust::raw_pointer_cast(nfb_mask.data());
+        thrust::for_each(
+            thrust::make_counting_iterator(0),
+            thrust::make_counting_iterator(num_base_dir),
+            [bc_ptr, bt_ptr, bh_ptr, ct_ptr, ch_ptr, m_ptr] LCC_HOST_DEVICE (int e) {
+                m_ptr[e] = (bc_ptr[e] < 0.0f && bt_ptr[e] < bh_ptr[e] &&
+                            ct_ptr[e] != ch_ptr[e]) ? 1 : 0;
+            });
     }
+
+    int num_nfb = thrust::reduce(nfb_mask.begin(), nfb_mask.end(), 0);
+    if (num_nfb == 0)
+        return result;
+
+    VectorType<int> nfb_idx(num_nfb);
+    {
+        VectorType<int> seq(num_base_dir);
+        thrust::sequence(seq.begin(), seq.end());
+        thrust::copy_if(seq.begin(), seq.end(), nfb_mask.begin(), nfb_idx.begin(), is_one);
+    }
+
+    // Gather component ids for the negative forward base edges
+    VectorType<int> nfb_ct(num_nfb), nfb_ch(num_nfb);
+    thrust::gather(nfb_idx.begin(), nfb_idx.end(), base_ct.begin(), nfb_ct.begin());
+    thrust::gather(nfb_idx.begin(), nfb_idx.end(), base_ch.begin(), nfb_ch.begin());
+
+    // 6b: Compute partition sides for each (pair, component node).
+    //     side = 0 if on same side as s, 1 if on same side as t.
+    VectorType<int> sides(num_pairs * num_comp);
+    {
+        const int* bp = thrust::raw_pointer_cast(best_parent.data());
+        const int* ps = thrust::raw_pointer_cast(pair_s.data());
+        int* s_ptr = thrust::raw_pointer_cast(sides.data());
+        int nc = num_comp;
+        thrust::for_each(
+            thrust::make_counting_iterator(0),
+            thrust::make_counting_iterator(num_pairs * num_comp),
+            [bp, ps, s_ptr, nc] LCC_HOST_DEVICE (int idx) {
+                int pi = idx / nc;
+                int node = idx % nc;
+                const int* parent = bp + pi * nc;
+                int root_s = lifted_cut_detail::uf_find_readonly(parent, ps[pi]);
+                int root_n = lifted_cut_detail::uf_find_readonly(parent, node);
+                s_ptr[idx] = (root_n == root_s) ? 0 : 1;
+            });
+    }
+
+    // 6c: For each (pair, neg_fwd_base_edge), check if it crosses the partition.
+    //     Parallel over num_pairs * num_nfb.
+    int total_pxb = num_pairs * num_nfb;
+    VectorType<int> cross_flags(total_pxb);
+    {
+        const int* s_ptr = thrust::raw_pointer_cast(sides.data());
+        const int* ct_ptr = thrust::raw_pointer_cast(nfb_ct.data());
+        const int* ch_ptr = thrust::raw_pointer_cast(nfb_ch.data());
+        const int* bc_ptr = thrust::raw_pointer_cast(best_cut.data());
+        int* cf_ptr = thrust::raw_pointer_cast(cross_flags.data());
+        int nc = num_comp;
+        int nb = num_nfb;
+        thrust::for_each(
+            thrust::make_counting_iterator(0),
+            thrust::make_counting_iterator(total_pxb),
+            [s_ptr, ct_ptr, ch_ptr, bc_ptr, cf_ptr, nc, nb] LCC_HOST_DEVICE (int idx) {
+                int pi = idx / nb;
+                int bi = idx % nb;
+                // Skip pairs with no valid Karger result
+                if (bc_ptr[pi] <= 0 || bc_ptr[pi] >= 0x7FFFFFFF) { cf_ptr[idx] = 0; return; }
+                int side_tail = s_ptr[pi * nc + ct_ptr[bi]];
+                int side_head = s_ptr[pi * nc + ch_ptr[bi]];
+                cf_ptr[idx] = (side_tail != side_head) ? 1 : 0;
+            });
+    }
+
+    int num_cross = thrust::reduce(cross_flags.begin(), cross_flags.end(), 0);
+    if (num_cross == 0)
+        return result;
+
+    // Extract crossing (pair_idx, base_edge_idx) pairs
+    VectorType<int> cross_pair(num_cross), cross_base(num_cross);
+    {
+        VectorType<int> flat_pair(total_pxb), flat_base(total_pxb);
+        int nb = num_nfb;
+        const int* nfb_ptr = thrust::raw_pointer_cast(nfb_idx.data());
+        int* fp_ptr = thrust::raw_pointer_cast(flat_pair.data());
+        int* fb_ptr = thrust::raw_pointer_cast(flat_base.data());
+        thrust::for_each(
+            thrust::make_counting_iterator(0),
+            thrust::make_counting_iterator(total_pxb),
+            [fp_ptr, fb_ptr, nfb_ptr, nb] LCC_HOST_DEVICE (int idx) {
+                fp_ptr[idx] = idx / nb;
+                fb_ptr[idx] = nfb_ptr[idx % nb];
+            });
+
+        auto in_first = thrust::make_zip_iterator(thrust::make_tuple(flat_pair.begin(), flat_base.begin()));
+        auto out_first = thrust::make_zip_iterator(thrust::make_tuple(cross_pair.begin(), cross_base.begin()));
+        thrust::copy_if(in_first, in_first + total_pxb, cross_flags.begin(), out_first, is_one);
+    }
+
+    // 6d: Sort by (pair, base_edge), deduplicate.
+    {
+        auto first = thrust::make_zip_iterator(thrust::make_tuple(cross_pair.begin(), cross_base.begin()));
+        auto last = thrust::make_zip_iterator(thrust::make_tuple(cross_pair.end(), cross_base.end()));
+        thrust::sort(first, last);
+        auto new_last = thrust::unique(first, last);
+        int n = (int)std::distance(first, new_last);
+        cross_pair.resize(n);
+        cross_base.resize(n);
+        num_cross = n;
+    }
+
+    // 6e: Build base CSR from (pair_idx, base_edge_idx) pairs.
+    //     reduce_by_key on pair_idx to get counts, then scan for offsets.
+    VectorType<int> base_factor_ids(num_cross), base_counts(num_cross);
+    int num_base_factors;
+    {
+        auto end = thrust::reduce_by_key(
+            cross_pair.begin(), cross_pair.end(),
+            thrust::make_constant_iterator(1),
+            base_factor_ids.begin(), base_counts.begin());
+        num_base_factors = (int)std::distance(base_factor_ids.begin(), end.first);
+        base_factor_ids.resize(num_base_factors);
+        base_counts.resize(num_base_factors);
+    }
+
+    VectorType<int> base_offsets(num_base_factors + 1);
+    base_offsets[0] = 0;
+    thrust::inclusive_scan(base_counts.begin(), base_counts.end(), base_offsets.begin() + 1);
+
+    // 6f: Map violations to pair indices using binary search in unique_keys.
+    VectorType<int> v_pair(num_v);
+    {
+        const long long* uk_ptr = thrust::raw_pointer_cast(unique_keys.data());
+        const int* vs_ptr = thrust::raw_pointer_cast(v_src.data());
+        const int* vd_ptr = thrust::raw_pointer_cast(v_dst.data());
+        int* vp_ptr = thrust::raw_pointer_cast(v_pair.data());
+        int np = num_pairs;
+        thrust::for_each(
+            thrust::make_counting_iterator(0),
+            thrust::make_counting_iterator(num_v),
+            [uk_ptr, vs_ptr, vd_ptr, vp_ptr, np] LCC_HOST_DEVICE (int vi) {
+                long long key = ((long long)vs_ptr[vi] << 32) |
+                                (long long)(unsigned int)vd_ptr[vi];
+                int lo = 0, hi = np;
+                while (lo < hi) {
+                    int mid = (lo + hi) / 2;
+                    if (uk_ptr[mid] < key) lo = mid + 1;
+                    else hi = mid;
+                }
+                vp_ptr[vi] = lo;
+            });
+    }
+
+    // Map violation pair indices to factor indices using binary search in base_factor_ids.
+    // A violation belongs to a factor only if its pair has base edges in a cut.
+    VectorType<int> v_factor(num_v);
+    {
+        const int* bf_ptr = thrust::raw_pointer_cast(base_factor_ids.data());
+        const int* vp_ptr = thrust::raw_pointer_cast(v_pair.data());
+        int* vf_ptr = thrust::raw_pointer_cast(v_factor.data());
+        int nbf = num_base_factors;
+        thrust::for_each(
+            thrust::make_counting_iterator(0),
+            thrust::make_counting_iterator(num_v),
+            [bf_ptr, vp_ptr, vf_ptr, nbf] LCC_HOST_DEVICE (int vi) {
+                int pair = vp_ptr[vi];
+                int lo = 0, hi = nbf;
+                while (lo < hi) {
+                    int mid = (lo + hi) / 2;
+                    if (bf_ptr[mid] < pair) lo = mid + 1;
+                    else hi = mid;
+                }
+                vf_ptr[vi] = (lo < nbf && bf_ptr[lo] == pair) ? lo : -1;
+            });
+    }
+
+    // Filter violations with valid factor assignment, sort by factor
+    VectorType<int> valid_v_mask(num_v);
+    thrust::transform(v_factor.begin(), v_factor.end(), valid_v_mask.begin(),
+        [] LCC_HOST_DEVICE (int f) { return f >= 0 ? 1 : 0; });
+    int num_valid_v = thrust::reduce(valid_v_mask.begin(), valid_v_mask.end(), 0);
+
+    if (num_valid_v == 0)
+        return result;
+
+    VectorType<int> vv_factor(num_valid_v), vv_idx(num_valid_v);
+    thrust::copy_if(v_factor.begin(), v_factor.end(), valid_v_mask.begin(), vv_factor.begin(), is_one);
+    thrust::copy_if(v_idx.begin(), v_idx.end(), valid_v_mask.begin(), vv_idx.begin(), is_one);
+
+    // Sort violations by factor index
+    thrust::sort_by_key(vv_factor.begin(), vv_factor.end(), vv_idx.begin());
+
+    // Build lifted CSR: compute counts per factor via reduce_by_key
+    VectorType<int> lifted_factor_ids(num_valid_v), lifted_counts(num_valid_v);
+    int num_lifted_factors;
+    {
+        auto end = thrust::reduce_by_key(
+            vv_factor.begin(), vv_factor.end(),
+            thrust::make_constant_iterator(1),
+            lifted_factor_ids.begin(), lifted_counts.begin());
+        num_lifted_factors = (int)std::distance(lifted_factor_ids.begin(), end.first);
+        lifted_factor_ids.resize(num_lifted_factors);
+        lifted_counts.resize(num_lifted_factors);
+    }
+
+    // 6g: Intersect base and lifted factor sets to get final factors.
+    //     A valid factor must have both base edges and lifted edges.
+    VectorType<int> final_factor_ids(std::min(num_base_factors, num_lifted_factors));
+    {
+        auto end = thrust::set_intersection(
+            base_factor_ids.begin(), base_factor_ids.end(),
+            lifted_factor_ids.begin(), lifted_factor_ids.end(),
+            final_factor_ids.begin());
+        int n = (int)std::distance(final_factor_ids.begin(), end);
+        final_factor_ids.resize(n);
+    }
+
+    int num_final = (int)final_factor_ids.size();
+    if (num_final == 0)
+        return result;
+
+    // 6h: Extract final base CSR.
+    //     For each final factor, gather the base edges from cross_base.
+    VectorType<int> final_base_offsets(num_final + 1);
+    {
+        // Map final factor ids to positions in base_factor_ids via lower_bound
+        VectorType<int> base_pos(num_final);
+        thrust::lower_bound(base_factor_ids.begin(), base_factor_ids.end(),
+                            final_factor_ids.begin(), final_factor_ids.end(),
+                            base_pos.begin());
+
+        // Gather base offsets for final factors
+        VectorType<int> starts(num_final), ends(num_final);
+        thrust::gather(base_pos.begin(), base_pos.end(), base_offsets.begin(), starts.begin());
+        {
+            VectorType<int> pos_plus1(num_final);
+            thrust::transform(base_pos.begin(), base_pos.end(),
+                              thrust::make_constant_iterator(1),
+                              pos_plus1.begin(), thrust::plus<int>());
+            thrust::gather(pos_plus1.begin(), pos_plus1.end(), base_offsets.begin(), ends.begin());
+        }
+
+        // Compute sizes and final offsets
+        VectorType<int> sizes(num_final);
+        thrust::transform(ends.begin(), ends.end(), starts.begin(), sizes.begin(), thrust::minus<int>());
+        final_base_offsets[0] = 0;
+        thrust::inclusive_scan(sizes.begin(), sizes.end(), final_base_offsets.begin() + 1);
+
+        // Gather base edge indices
+        int total_base = final_base_offsets[num_final];
+        VectorType<int> final_base_idx(total_base);
+
+        const int* s_ptr = thrust::raw_pointer_cast(starts.data());
+        const int* fbo_ptr = thrust::raw_pointer_cast(final_base_offsets.data());
+        const int* cb_ptr = thrust::raw_pointer_cast(cross_base.data());
+        int* out_ptr = thrust::raw_pointer_cast(final_base_idx.data());
+        thrust::for_each(
+            thrust::make_counting_iterator(0),
+            thrust::make_counting_iterator(num_final),
+            [s_ptr, fbo_ptr, cb_ptr, out_ptr] LCC_HOST_DEVICE (int f) {
+                int src = s_ptr[f];
+                int dst = fbo_ptr[f];
+                int len = fbo_ptr[f + 1] - dst;
+                for (int k = 0; k < len; k++)
+                    out_ptr[dst + k] = cb_ptr[src + k];
+            });
+
+        result.base_offsets = std::move(final_base_offsets);
+        result.base_edge_idx = std::move(final_base_idx);
+    }
+
+    // 6i: Extract final lifted CSR.
+    VectorType<int> final_lifted_offsets(num_final + 1);
+    {
+        VectorType<int> lifted_pos(num_final);
+        thrust::lower_bound(lifted_factor_ids.begin(), lifted_factor_ids.end(),
+                            final_factor_ids.begin(), final_factor_ids.end(),
+                            lifted_pos.begin());
+
+        // Build lifted offsets from lifted_counts via the same pattern
+        VectorType<int> lifted_off_full(num_lifted_factors + 1);
+        lifted_off_full[0] = 0;
+        thrust::inclusive_scan(lifted_counts.begin(), lifted_counts.end(),
+                               lifted_off_full.begin() + 1);
+
+        VectorType<int> starts(num_final), ends(num_final);
+        thrust::gather(lifted_pos.begin(), lifted_pos.end(), lifted_off_full.begin(), starts.begin());
+        {
+            VectorType<int> pos_plus1(num_final);
+            thrust::transform(lifted_pos.begin(), lifted_pos.end(),
+                              thrust::make_constant_iterator(1),
+                              pos_plus1.begin(), thrust::plus<int>());
+            thrust::gather(pos_plus1.begin(), pos_plus1.end(), lifted_off_full.begin(), ends.begin());
+        }
+
+        VectorType<int> sizes(num_final);
+        thrust::transform(ends.begin(), ends.end(), starts.begin(), sizes.begin(), thrust::minus<int>());
+        final_lifted_offsets[0] = 0;
+        thrust::inclusive_scan(sizes.begin(), sizes.end(), final_lifted_offsets.begin() + 1);
+
+        int total_lifted = final_lifted_offsets[num_final];
+        VectorType<int> final_lifted_idx(total_lifted);
+
+        const int* s_ptr = thrust::raw_pointer_cast(starts.data());
+        const int* flo_ptr = thrust::raw_pointer_cast(final_lifted_offsets.data());
+        const int* vi_ptr = thrust::raw_pointer_cast(vv_idx.data());
+        int* out_ptr = thrust::raw_pointer_cast(final_lifted_idx.data());
+        thrust::for_each(
+            thrust::make_counting_iterator(0),
+            thrust::make_counting_iterator(num_final),
+            [s_ptr, flo_ptr, vi_ptr, out_ptr] LCC_HOST_DEVICE (int f) {
+                int src = s_ptr[f];
+                int dst = flo_ptr[f];
+                int len = flo_ptr[f + 1] - dst;
+                for (int k = 0; k < len; k++)
+                    out_ptr[dst + k] = vi_ptr[src + k];
+            });
+
+        result.lifted_offsets = std::move(final_lifted_offsets);
+        result.lifted_edge_idx = std::move(final_lifted_idx);
+    }
+
+    result.num_factors = num_final;
+
+    if (verbose)
+        std::cout << "lifted cut factors: " << num_final << " factors, "
+                  << result.base_edge_idx.size() << " base edges, "
+                  << result.lifted_edge_idx.size() << " lifted edges\n";
 
     return result;
 }

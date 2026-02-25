@@ -12,8 +12,6 @@
 #include <algorithm>
 #include <numeric>
 #include <set>
-#include <cmath>
-#include <limits>
 
 // Helper: build a symmetric Graph from undirected edge list.
 template<template<typename> class VectorType>
@@ -37,6 +35,128 @@ Graph<VectorType> make_graph(int num_nodes,
                              false, true);
 }
 
+// Validate structural properties of all cut factors:
+//   - Base edges are negative forward inter-component base edges
+//   - Lifted edges are positive forward inter-component lifted edges
+//   - All lifted edges in a factor share the same component pair
+//   - Base edges form a valid s-t cut in the quotient graph
+template<template<typename> class VectorType>
+void validate_factors(
+    const LiftedCutFactors<VectorType>& factors,
+    const Graph<VectorType>& base_G,
+    const Graph<VectorType>& lifted_G,
+    const std::string& label = "")
+{
+    if (factors.num_factors == 0) return;
+
+    thrust::host_vector<int> h_bo(factors.base_offsets);
+    thrust::host_vector<int> h_bi(factors.base_edge_idx);
+    thrust::host_vector<int> h_lo(factors.lifted_offsets);
+    thrust::host_vector<int> h_li(factors.lifted_edge_idx);
+
+    thrust::host_vector<int> h_bt(base_G.get_tails());
+    thrust::host_vector<int> h_bh(base_G.get_heads());
+    thrust::host_vector<float> h_bc(base_G.get_costs());
+    thrust::host_vector<int> h_lt(lifted_G.get_tails());
+    thrust::host_vector<int> h_lh(lifted_G.get_heads());
+    thrust::host_vector<float> h_lc(lifted_G.get_costs());
+
+    int num_base_dir = (int)base_G.num_directed_edges();
+    int num_nodes = base_G.num_nodes();
+
+    // CC on non-negative base subgraph
+    std::vector<int> at, ah;
+    for (int e = 0; e < num_base_dir; e++)
+        if (h_bc[e] >= 0.0f) { at.push_back(h_bt[e]); ah.push_back(h_bh[e]); }
+
+    thrust::host_vector<int> hv_at(at.begin(), at.end());
+    thrust::host_vector<int> hv_ah(ah.begin(), ah.end());
+    thrust::host_vector<int> comp =
+        connected_components::compute_cc<thrust::host_vector>(num_nodes, hv_at, hv_ah);
+    int ml = *std::max_element(comp.begin(), comp.end());
+    comp = compress_label_sequence<thrust::host_vector>(comp, ml);
+    int num_comp = *std::max_element(comp.begin(), comp.end()) + 1;
+
+    // Build quotient edge set
+    std::set<std::pair<int,int>> q_edges;
+    for (int e = 0; e < num_base_dir; e++)
+    {
+        if (h_bc[e] >= 0.0f) continue;
+        int ct = comp[h_bt[e]], ch = comp[h_bh[e]];
+        if (ct != ch) q_edges.insert({std::min(ct, ch), std::max(ct, ch)});
+    }
+
+    for (int f = 0; f < factors.num_factors; f++)
+    {
+        int base_start = h_bo[f], base_end = h_bo[f + 1];
+        int lifted_start = h_lo[f], lifted_end = h_lo[f + 1];
+
+        test(base_end > base_start,
+             label + ": factor " + std::to_string(f) + " has no base edges");
+        test(lifted_end > lifted_start,
+             label + ": factor " + std::to_string(f) + " has no lifted edges");
+
+        // Collect cut component pairs from base edges
+        std::set<std::pair<int,int>> cut_pairs;
+        for (int k = base_start; k < base_end; k++)
+        {
+            int idx = h_bi[k];
+            test(idx >= 0 && idx < num_base_dir,
+                 label + ": base edge idx out of range");
+            test(h_bt[idx] < h_bh[idx],
+                 label + ": base edge not forward");
+            test(h_bc[idx] < 0.0f,
+                 label + ": base edge not negative");
+            int ct = comp[h_bt[idx]], ch = comp[h_bh[idx]];
+            test(ct != ch,
+                 label + ": base edge endpoints in same component");
+            cut_pairs.insert({std::min(ct, ch), std::max(ct, ch)});
+        }
+
+        // All lifted edges must be positive, forward, inter-component, same pair
+        std::set<std::pair<int,int>> lifted_comp_pairs;
+        for (int k = lifted_start; k < lifted_end; k++)
+        {
+            int idx = h_li[k];
+            test(idx >= 0 && idx < (int)lifted_G.num_directed_edges(),
+                 label + ": lifted edge idx out of range");
+            test(h_lt[idx] < h_lh[idx],
+                 label + ": lifted edge not forward");
+            test(h_lc[idx] > 0.0f,
+                 label + ": lifted edge not positive");
+            int ct = comp[h_lt[idx]], ch = comp[h_lh[idx]];
+            test(ct != ch,
+                 label + ": lifted edge endpoints in same component");
+            lifted_comp_pairs.insert({std::min(ct, ch), std::max(ct, ch)});
+        }
+
+        test(lifted_comp_pairs.size() == 1,
+             label + ": factor " + std::to_string(f) +
+             " has lifted edges spanning different comp pairs");
+
+        auto st_pair = *lifted_comp_pairs.begin();
+        int sc = st_pair.first, tc = st_pair.second;
+
+        // Cut must disconnect s from t in Q
+        std::vector<int> uf(num_comp);
+        std::iota(uf.begin(), uf.end(), 0);
+        auto uf_find = [&](int x) {
+            while (uf[x] != x) { uf[x] = uf[uf[x]]; x = uf[x]; }
+            return x;
+        };
+        for (const auto& qe : q_edges)
+        {
+            if (!cut_pairs.count(qe))
+            {
+                int rx = uf_find(qe.first), ry = uf_find(qe.second);
+                if (rx != ry) uf[ry] = rx;
+            }
+        }
+        test(uf_find(sc) != uf_find(tc),
+             label + ": cut does not disconnect s from t");
+    }
+}
+
 // Test 1: Single Q-edge -- simplest violation.
 //
 //         +10
@@ -46,9 +166,7 @@ Graph<VectorType> make_graph(int num_nodes,
 //   | 0 | ----> | 1 | ----> | 2 |
 //   +---+       +---+       +---+
 //
-//   Non-neg subgraph: {0-1}. Components: {0,1}, {2}.
-//   Q: 1 edge between the two components.
-//   Expect: 1 constraint, cut_size=1, min_abs_base_cost=5.
+//   Components: {0,1}, {2}. Q: 1 edge. Expect: 1 factor, 1 base edge, 1 lifted edge.
 template<template<typename> class VectorType>
 void test_single_q_edge()
 {
@@ -57,13 +175,16 @@ void test_single_q_edge()
     auto base = make_graph<VectorType>(3, {0, 1}, {1, 2}, {3.0f, -5.0f});
     auto lifted = make_graph<VectorType>(3, {0}, {2}, {10.0f});
 
-    auto constraints = find_lifted_cut_constraints<VectorType>(base, lifted);
+    auto factors = find_lifted_cut_constraints<VectorType>(base, lifted);
 
-    test(constraints.size() == 1, "expected 1 constraint");
-    test(constraints[0].cut_size == 1, "expected cut_size=1");
-    test(constraints[0].lifted_cost == 10.0f, "expected lifted_cost=10");
-    test(constraints[0].min_abs_base_cost == 5.0f, "expected min_abs_base_cost=5");
-    test(constraints[0].cut_comp_pairs.size() == 1, "expected 1 cut comp pair");
+    test(factors.num_factors == 1, "expected 1 factor");
+
+    thrust::host_vector<int> bo(factors.base_offsets);
+    thrust::host_vector<int> lo(factors.lifted_offsets);
+    test(bo[1] - bo[0] == 1, "expected 1 base edge in cut");
+    test(lo[1] - lo[0] == 1, "expected 1 lifted edge");
+
+    validate_factors(factors, base, lifted, "single_q_edge");
 
     std::cout << "passed\n";
 }
@@ -83,9 +204,7 @@ void test_single_q_edge()
 //   |  2  | --------------------+
 //   +-----+
 //
-//   Components: {0,1}, {2,3}. Q: 2 parallel edges between the same pair.
-//   With only 2 Q-nodes, Karger can never contract (would merge s,t).
-//   Cut always includes all inter-component edges. cut_size=2.
+//   Components: {0,1}, {2,3}. Q: 2 edges between same pair. cut_size=2.
 template<template<typename> class VectorType>
 void test_two_component_parallel()
 {
@@ -95,36 +214,24 @@ void test_two_component_parallel()
         {0, 2, 0, 1}, {1, 3, 2, 3}, {5.0f, 5.0f, -1.0f, -1.0f});
     auto lifted = make_graph<VectorType>(4, {0}, {3}, {10.0f});
 
-    auto constraints = find_lifted_cut_constraints<VectorType>(base, lifted);
+    auto factors = find_lifted_cut_constraints<VectorType>(base, lifted);
 
-    test(constraints.size() == 1, "expected 1 constraint");
-    test(constraints[0].cut_size == 2, "expected cut_size=2");
-    test(constraints[0].min_abs_base_cost == 1.0f, "expected min_abs=1");
+    test(factors.num_factors == 1, "expected 1 factor");
+
+    thrust::host_vector<int> bo(factors.base_offsets);
+    thrust::host_vector<int> lo(factors.lifted_offsets);
+    test(bo[1] - bo[0] == 2, "expected 2 base edges in cut");
+    test(lo[1] - lo[0] == 1, "expected 1 lifted edge");
+
+    validate_factors(factors, base, lifted, "two_component_parallel");
 
     std::cout << "passed\n";
 }
 
 // Test 3: Path quotient (3 components) -- min cut = 1.
 //
-//           +10
-//     .........................................
-//     :                                       v
-//   +-----+  -1   +-----+  -1   +---+  +5   +---+
-//   |  0  | ----> |  2  | ----> | 4 | ----> | 5 |
-//   +-----+       +-----+       +---+       +---+
-//     |             |
-//     | +5          | +5
-//     v             v
-//   +-----+       +-----+
-//   |  1  |       |  3  |
-//   +-----+       +-----+
-//
 //   Components: A={0,1}, B={2,3}, C={4,5}.
-//   Quotient graph Q (path):
-//     +---+  1   +---+  1   +---+
-//     | A | ---> | B | ---> | C |
-//     +---+      +---+      +---+
-//   Karger contracts B into one side, yielding cut_size=1.
+//   Q: A--B--C (path). Min A-C cut = 1.
 template<template<typename> class VectorType>
 void test_path_quotient()
 {
@@ -136,44 +243,24 @@ void test_path_quotient()
         {5.0f, 5.0f, 5.0f, -1.0f, -1.0f});
     auto lifted = make_graph<VectorType>(6, {0}, {5}, {10.0f});
 
-    auto constraints = find_lifted_cut_constraints<VectorType>(base, lifted);
+    auto factors = find_lifted_cut_constraints<VectorType>(base, lifted);
 
-    test(constraints.size() == 1, "expected 1 constraint");
-    test(constraints[0].cut_size == 1, "expected cut_size=1");
-    test(constraints[0].min_abs_base_cost == 1.0f, "expected min_abs=1");
+    test(factors.num_factors == 1, "expected 1 factor");
+
+    thrust::host_vector<int> bo(factors.base_offsets);
+    thrust::host_vector<int> lo(factors.lifted_offsets);
+    test(bo[1] - bo[0] == 1, "expected cut_size=1");
+    test(lo[1] - lo[0] == 1, "expected 1 lifted edge");
+
+    validate_factors(factors, base, lifted, "path_quotient");
 
     std::cout << "passed\n";
 }
 
 // Test 4: Triangle quotient (3 components) -- min cut = 2.
 //
-//           -1
-//     +---------------------------+
-//     |                           v
-//   +-----+  -1   +-----+  -1   +---+  +5   +---+
-//   |  0  | ----> |  2  | ----> | 4 | ----> | 5 |
-//   +-----+       +-----+       +---+       +---+
-//     |             |                         ^
-//     | +5          |                         :
-//     v             |                         :
-//   +-----+  +8    |                         :
-//   |  1  | ......!...........................
-//   +-----+        |
-//                   | +5
-//                   v
-//                 +-----+
-//                 |  3  |
-//                 +-----+
-//
 //   Components: A={0,1}, B={2,3}, C={4,5}.
-//   Quotient graph Q (triangle):
-//           1
-//     +---------------------+
-//     |                     v
-//   +---+  1   +---+  1   +---+
-//   | A | ---> | B | ---> | C |
-//   +---+      +---+      +---+
-//   Min A-C cut = 2: any partition puts B on one side, leaving 2 crossing edges.
+//   Q: triangle A-B-C (3 edges). Min A-C cut = 2.
 template<template<typename> class VectorType>
 void test_triangle_quotient()
 {
@@ -185,21 +272,21 @@ void test_triangle_quotient()
         {5.0f, 5.0f, 5.0f, -1.0f, -1.0f, -1.0f});
     auto lifted = make_graph<VectorType>(6, {1}, {5}, {8.0f});
 
-    auto constraints = find_lifted_cut_constraints<VectorType>(base, lifted);
+    auto factors = find_lifted_cut_constraints<VectorType>(base, lifted);
 
-    test(constraints.size() == 1, "expected 1 constraint");
-    test(constraints[0].cut_size == 2, "expected cut_size=2");
-    test(constraints[0].lifted_cost == 8.0f, "expected lifted_cost=8");
+    test(factors.num_factors == 1, "expected 1 factor");
+
+    thrust::host_vector<int> bo(factors.base_offsets);
+    thrust::host_vector<int> lo(factors.lifted_offsets);
+    test(bo[1] - bo[0] == 2, "expected cut_size=2");
+    test(lo[1] - lo[0] == 1, "expected 1 lifted edge");
+
+    validate_factors(factors, base, lifted, "triangle_quotient");
 
     std::cout << "passed\n";
 }
 
 // Test 5: No violations -- single component (all base edges non-negative).
-//
-//   +---+  +3   +---+  +5   +---+
-//   | 0 | ----> | 1 | ----> | 2 |
-//   +---+       +---+       +---+
-//   Lifted: (0,2, +10). All in one component. No violations.
 template<template<typename> class VectorType>
 void test_no_violations_single_component()
 {
@@ -208,15 +295,13 @@ void test_no_violations_single_component()
     auto base = make_graph<VectorType>(3, {0, 1}, {1, 2}, {3.0f, 5.0f});
     auto lifted = make_graph<VectorType>(3, {0}, {2}, {10.0f});
 
-    auto constraints = find_lifted_cut_constraints<VectorType>(base, lifted);
-    test(constraints.empty(), "expected no constraints");
+    auto factors = find_lifted_cut_constraints<VectorType>(base, lifted);
+    test(factors.num_factors == 0, "expected no factors");
 
     std::cout << "passed\n";
 }
 
-// Test 6: Empty quotient graph -- two components but no negative inter-component edges.
-//   [0] --+5-- [1]     [2] isolated.     Lifted: (0,2, +10).
-//   Components: {0,1}, {2}. Q is empty (no negative edges between them).
+// Test 6: Empty quotient -- components exist but no negative inter-component edges.
 template<template<typename> class VectorType>
 void test_empty_quotient()
 {
@@ -225,13 +310,13 @@ void test_empty_quotient()
     auto base = make_graph<VectorType>(3, {0}, {1}, {5.0f});
     auto lifted = make_graph<VectorType>(3, {0}, {2}, {10.0f});
 
-    auto constraints = find_lifted_cut_constraints<VectorType>(base, lifted);
-    test(constraints.empty(), "expected no constraints (empty Q)");
+    auto factors = find_lifted_cut_constraints<VectorType>(base, lifted);
+    test(factors.num_factors == 0, "expected no factors (empty Q)");
 
     std::cout << "passed\n";
 }
 
-// Test 7: Multiple violations sharing the same component pair -- same cut reused.
+// Test 7: Multiple lifted edges sharing the same component pair → single factor.
 //
 //         +10             +7
 //     .............   .........
@@ -240,8 +325,7 @@ void test_empty_quotient()
 //   | 0 | ----> | 1 | ----> | 2 |
 //   +---+       +---+       +---+
 //
-//   Both lifted edges cross the same component pair.
-//   Expect 2 constraints with identical cuts.
+//   Both lifted edges cross components {0,1} vs {2}. 1 factor, 2 lifted edges.
 template<template<typename> class VectorType>
 void test_multiple_violations_same_pair()
 {
@@ -250,15 +334,16 @@ void test_multiple_violations_same_pair()
     auto base = make_graph<VectorType>(3, {0, 1}, {1, 2}, {5.0f, -3.0f});
     auto lifted = make_graph<VectorType>(3, {0, 1}, {2, 2}, {10.0f, 7.0f});
 
-    auto constraints = find_lifted_cut_constraints<VectorType>(base, lifted);
+    auto factors = find_lifted_cut_constraints<VectorType>(base, lifted);
 
-    test(constraints.size() == 2, "expected 2 constraints");
-    test(constraints[0].cut_size == constraints[1].cut_size,
-         "same pair should yield same cut_size");
-    test(constraints[0].cut_comp_pairs == constraints[1].cut_comp_pairs,
-         "same pair should yield same cut_comp_pairs");
-    test(constraints[0].lifted_fwd_idx != constraints[1].lifted_fwd_idx,
-         "should reference different lifted edges");
+    test(factors.num_factors == 1, "expected 1 factor");
+
+    thrust::host_vector<int> bo(factors.base_offsets);
+    thrust::host_vector<int> lo(factors.lifted_offsets);
+    test(bo[1] - bo[0] == 1, "expected 1 base edge in cut");
+    test(lo[1] - lo[0] == 2, "expected 2 lifted edges");
+
+    validate_factors(factors, base, lifted, "multiple_violations_same_pair");
 
     std::cout << "passed\n";
 }
@@ -272,22 +357,13 @@ void test_empty_lifted()
     auto base = make_graph<VectorType>(3, {0, 1}, {1, 2}, {3.0f, -5.0f});
     Graph<VectorType> lifted;
 
-    auto constraints = find_lifted_cut_constraints<VectorType>(base, lifted);
-    test(constraints.empty(), "expected no constraints for empty lifted");
+    auto factors = find_lifted_cut_constraints<VectorType>(base, lifted);
+    test(factors.num_factors == 0, "expected no factors for empty lifted");
 
     std::cout << "passed\n";
 }
 
-// Test 9: No positive lifted edges -- all lifted costs <= 0, no violations.
-//
-//         -2
-//     .........................
-//     :                       v
-//   +---+  +5   +---+  -3   +---+
-//   | 0 | ----> | 1 | ----> | 2 |
-//   +---+       +---+       +---+
-//
-//   Negative lifted edge is not a violation.
+// Test 9: No positive lifted edges -- no violations.
 template<template<typename> class VectorType>
 void test_no_positive_lifted()
 {
@@ -296,76 +372,17 @@ void test_no_positive_lifted()
     auto base = make_graph<VectorType>(3, {0, 1}, {1, 2}, {5.0f, -3.0f});
     auto lifted = make_graph<VectorType>(3, {0}, {2}, {-2.0f});
 
-    auto constraints = find_lifted_cut_constraints<VectorType>(base, lifted);
-    test(constraints.empty(), "expected no constraints for non-positive lifted");
+    auto factors = find_lifted_cut_constraints<VectorType>(base, lifted);
+    test(factors.num_factors == 0, "expected no factors for non-positive lifted");
 
     std::cout << "passed\n";
 }
 
-// Test 10: Verify min_abs_base_cost with two parallel negative edges of different cost.
-//
-//           +10
-//     ...........................
-//     :                         v
-//   +-----+  +5   +---+  -7   +---+
-//   |  0  | ----> | 1 | ----> | 3 |
-//   +-----+       +---+       +---+
-//     |                         ^
-//     | -3                      |
-//     v                         |
-//   +-----+  +5                 |
-//   |  2  | --------------------+
-//   +-----+
-//
-//   Components: {0,1}, {2,3}. Q: 2 parallel edges. cut_size=2.
-//   min_abs = min(3,7) = 3.
+// Test 10: Random graphs -- validate structural properties of all factors.
 template<template<typename> class VectorType>
-void test_min_abs_base_cost()
+void test_random_validity()
 {
-    std::cout << "test_min_abs_base_cost ... ";
-
-    auto base = make_graph<VectorType>(4,
-        {0, 2, 0, 1}, {1, 3, 2, 3}, {5.0f, 5.0f, -3.0f, -7.0f});
-    auto lifted = make_graph<VectorType>(4, {0}, {2}, {10.0f});
-
-    auto constraints = find_lifted_cut_constraints<VectorType>(base, lifted);
-
-    test(constraints.size() == 1, "expected 1 constraint");
-    test(constraints[0].cut_size == 2, "expected cut_size=2");
-    test(constraints[0].min_abs_base_cost == 3.0f, "expected min_abs=3");
-
-    std::cout << "passed\n";
-}
-
-// ---- Random graph tests ----
-
-namespace lcc_test_detail {
-
-struct UnionFind {
-    std::vector<int> parent;
-    UnionFind(int n) : parent(n) { std::iota(parent.begin(), parent.end(), 0); }
-    int find(int x) {
-        while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; }
-        return x;
-    }
-    void unite(int a, int b) { parent[find(b)] = find(a); }
-    bool connected(int a, int b) { return find(a) == find(b); }
-};
-
-} // namespace lcc_test_detail
-
-// Test 11: Random graphs -- verify completeness and cut validity.
-//
-// For several random instances:
-//   (a) Every positive lifted edge with endpoints in different components of
-//       the non-negative base subgraph (and reachable in Q) produces a constraint.
-//   (b) Each reported cut is a valid s-t cut: merging all non-cut Q-edges
-//       leaves s_comp and t_comp disconnected.
-//   (c) cut_size and min_abs_base_cost are consistent with the base graph.
-template<template<typename> class VectorType>
-void test_random_completeness_and_validity()
-{
-    std::cout << "test_random_completeness_and_validity ... ";
+    std::cout << "test_random_validity ... ";
 
     const int sizes[] = {8, 15, 30, 50};
     const double base_probs[] = {0.15, 0.3, 0.5};
@@ -384,125 +401,10 @@ void test_random_completeness_and_validity()
         auto lifted = make_graph<VectorType>(rg.num_nodes,
             rg.lifted_tails, rg.lifted_heads, rg.lifted_costs);
 
-        auto constraints = find_lifted_cut_constraints<VectorType>(base, lifted);
+        auto factors = find_lifted_cut_constraints<VectorType>(base, lifted);
 
-        // Recompute CC on non-negative base subgraph (on host for verification)
-        const int num_base_dir = (int)base.num_directed_edges();
-        const int num_lifted_dir = (int)lifted.num_directed_edges();
-        thrust::host_vector<int> h_bt(base.get_tails());
-        thrust::host_vector<int> h_bh(base.get_heads());
-        thrust::host_vector<float> h_bc(base.get_costs());
-        thrust::host_vector<int> h_lt(lifted.get_tails());
-        thrust::host_vector<int> h_lh(lifted.get_heads());
-        thrust::host_vector<float> h_lc(lifted.get_costs());
-
-        std::vector<int> at, ah;
-        for (int e = 0; e < num_base_dir; e++)
-            if (h_bc[e] >= 0.0f) { at.push_back(h_bt[e]); ah.push_back(h_bh[e]); }
-
-        thrust::host_vector<int> hv_at(at.begin(), at.end());
-        thrust::host_vector<int> hv_ah(ah.begin(), ah.end());
-        thrust::host_vector<int> comp =
-            connected_components::compute_cc<thrust::host_vector>(rg.num_nodes, hv_at, hv_ah);
-        int ml = *std::max_element(comp.begin(), comp.end());
-        comp = compress_label_sequence<thrust::host_vector>(comp, ml);
-        int num_comp = *std::max_element(comp.begin(), comp.end()) + 1;
-
-        // Build quotient graph Q on host
-        std::vector<int> q_src, q_dst;
-        for (int e = 0; e < num_base_dir; e++)
-        {
-            if (h_bc[e] >= 0.0f) continue;
-            int ct = comp[h_bt[e]], ch = comp[h_bh[e]];
-            if (ct < ch) { q_src.push_back(ct); q_dst.push_back(ch); }
-        }
-
-        // Q-reachability via union-find (merge all Q edges)
-        lcc_test_detail::UnionFind q_uf(num_comp);
-        for (size_t e = 0; e < q_src.size(); e++)
-            q_uf.unite(q_src[e], q_dst[e]);
-
-        // (a) Completeness: every expected violation should have a constraint
-        std::set<int> found_fwd;
-        for (const auto& c : constraints)
-            found_fwd.insert(c.lifted_fwd_idx);
-
-        for (int e = 0; e < num_lifted_dir; e++)
-        {
-            if (h_lt[e] >= h_lh[e]) continue;
-            if (h_lc[e] <= 0.0f) continue;
-            int ct = comp[h_lt[e]], ch = comp[h_lh[e]];
-            if (ct == ch) continue;
-            int sc = std::min(ct, ch), tc = std::max(ct, ch);
-            if (!q_uf.connected(sc, tc)) continue;
-            test(found_fwd.count(e) > 0,
-                 "seed " + std::to_string(seed) +
-                 ": missing constraint for violated lifted edge " + std::to_string(e));
-        }
-
-        // (b) Cut validity and (c) consistency for each constraint
-        for (const auto& c : constraints)
-        {
-            int lt = h_lt[c.lifted_fwd_idx], lh = h_lh[c.lifted_fwd_idx];
-            int sc = std::min(comp[lt], comp[lh]);
-            int tc = std::max(comp[lt], comp[lh]);
-
-            // (b) Merge all Q-edges NOT in the cut; s and t must stay disconnected.
-            lcc_test_detail::UnionFind cut_uf(num_comp);
-            for (size_t e = 0; e < q_src.size(); e++)
-            {
-                auto p = std::make_pair(std::min(q_src[e], q_dst[e]),
-                                        std::max(q_src[e], q_dst[e]));
-                if (!c.cut_comp_pairs.count(p))
-                    cut_uf.unite(q_src[e], q_dst[e]);
-            }
-            test(!cut_uf.connected(sc, tc),
-                 "seed " + std::to_string(seed) +
-                 ": cut does not disconnect s from t");
-
-            // (b2) Minimality: adding back any single cut pair must reconnect s-t.
-            for (const auto& cp : c.cut_comp_pairs)
-            {
-                lcc_test_detail::UnionFind min_uf(num_comp);
-                for (size_t e = 0; e < q_src.size(); e++)
-                {
-                    auto p = std::make_pair(std::min(q_src[e], q_dst[e]),
-                                            std::max(q_src[e], q_dst[e]));
-                    if (!c.cut_comp_pairs.count(p) || p == cp)
-                        min_uf.unite(q_src[e], q_dst[e]);
-                }
-                test(min_uf.connected(sc, tc),
-                     "seed " + std::to_string(seed) +
-                     ": cut is not minimal, pair (" +
-                     std::to_string(cp.first) + "," + std::to_string(cp.second) +
-                     ") is redundant");
-            }
-
-            // (c) Verify cut_size and min_abs_base_cost
-            int expected_cut_size = 0;
-            float expected_min_abs = std::numeric_limits<float>::max();
-            for (int e = 0; e < num_base_dir; e++)
-            {
-                if (h_bc[e] >= 0.0f) continue;
-                if (h_bt[e] >= h_bh[e]) continue;
-                int ct2 = comp[h_bt[e]], ch2 = comp[h_bh[e]];
-                auto p = std::make_pair(std::min(ct2, ch2), std::max(ct2, ch2));
-                if (c.cut_comp_pairs.count(p))
-                {
-                    expected_cut_size++;
-                    expected_min_abs = std::min(expected_min_abs, std::abs(h_bc[e]));
-                }
-            }
-
-            test(c.cut_size == expected_cut_size,
-                 "seed " + std::to_string(seed) + ": cut_size mismatch");
-            test(std::abs(c.min_abs_base_cost - expected_min_abs) < 1e-6f,
-                 "seed " + std::to_string(seed) + ": min_abs_base_cost mismatch");
-            test(c.cut_size > 0,
-                 "seed " + std::to_string(seed) + ": cut_size should be positive");
-            test(c.lifted_cost > 0.0f,
-                 "seed " + std::to_string(seed) + ": lifted_cost should be positive");
-        }
+        validate_factors(factors, base, lifted,
+            "random(n=" + std::to_string(n) + ",seed=" + std::to_string(seed) + ")");
     }
 
     std::cout << "passed\n";
@@ -520,6 +422,5 @@ void run_all_lifted_cut_constraints_tests()
     test_multiple_violations_same_pair<VectorType>();
     test_empty_lifted<VectorType>();
     test_no_positive_lifted<VectorType>();
-    test_min_abs_base_cost<VectorType>();
-    test_random_completeness_and_validity<VectorType>();
+    test_random_validity<VectorType>();
 }
