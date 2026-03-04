@@ -173,9 +173,11 @@ public:
     static std::tuple<VectorType<int>, VectorType<int>, VectorType<float>>
         extract_directed_edges(const Graph<VectorType>& A);
 
-private:
+    // Public for nvcc: __host__ __device__ lambdas require public access.
     void send_messages_to_cut_factors();
     void send_from_cut_factors_to_edges();
+
+private:
     void compute_triangle_edge_correspondence(const VectorType<int>&, const VectorType<int>&,
         VectorType<int>&, VectorType<int>&);
 
@@ -285,7 +287,7 @@ multicut_message_passing<VectorType>::extract_directed_edges(const Graph<VectorT
 }
 
 template<template<typename> class VectorType>
-inline multicut_message_passing<VectorType>::multicut_message_passing(
+multicut_message_passing<VectorType>::multicut_message_passing(
         const Graph<VectorType>& A, const bool verbose)
     : num_nodes_(A.num_nodes())
 {
@@ -298,7 +300,7 @@ inline multicut_message_passing<VectorType>::multicut_message_passing(
 }
 
 template<template<typename> class VectorType>
-inline multicut_message_passing<VectorType>::multicut_message_passing(
+multicut_message_passing<VectorType>::multicut_message_passing(
         const Graph<VectorType>& A,
         VectorType<int>&& _t1,
         VectorType<int>&& _t2,
@@ -839,8 +841,10 @@ void multicut_message_passing<VectorType>::send_from_cut_factors_to_edges()
                 const int nb = be - bs, nl = le - ls;
                 if (nb == 0 || nl == 0) return;
 
-                for (int pass = 0; pass < 2; pass++) {
-                    // Step 1: Base edges with 0.5 damping
+                for (int round = 0; round < 3; round++) {
+                    const float damping = (round < 2) ? 0.5f : 1.0f;
+
+                    // Base edges
                     for (int bi = bs; bi < be; bi++) {
                         float sb = 0, pb = 0, max_b = -1e30f, second_max_b = -1e30f;
                         bool all_neg = true;
@@ -884,12 +888,12 @@ void multicut_message_passing<VectorType>::send_from_cut_factors_to_edges()
                                 val1 = c_bj + ((a < b) ? a : b);
                             }
                         }
-                        float mm = 0.5f * (val1 - val0);
+                        float mm = damping * (val1 - val0);
                         bd_ptr[bi] += mm;
                         bc_ptr[bi] -= mm;
                     }
 
-                    // Step 2: Lifted edges (full update)
+                    // Lifted edges
                     for (int li = ls; li < le; li++) {
                         float sb = 0, pb = 0, max_b = -1e30f;
                         bool all_neg = true;
@@ -931,58 +935,9 @@ void multicut_message_passing<VectorType>::send_from_cut_factors_to_edges()
                             float b = pb + sub_pl;
                             val1 = c_lj + ((a < b) ? a : b);
                         }
-                        float mm = val1 - val0;
+                        float mm = damping * (val1 - val0);
                         ld_ptr[li] += mm;
                         lc_ptr[li] -= mm;
-                    }
-
-                    // Step 3: Base edges (full update with remaining costs)
-                    for (int bi = bs; bi < be; bi++) {
-                        float sb = 0, pb = 0, max_b = -1e30f, second_max_b = -1e30f;
-                        bool all_neg = true;
-                        int max_idx = bs;
-                        for (int k = bs; k < be; k++) {
-                            float c = bc_ptr[k];
-                            if (c < 0) sb += c;
-                            pb += c;
-                            if (c >= 0) all_neg = false;
-                            if (c > max_b) { second_max_b = max_b; max_b = c; max_idx = k; }
-                            else if (c > second_max_b) second_max_b = c;
-                        }
-                        float sl = 0, pl = 0;
-                        int num_nonneg_l = 0;
-                        for (int k = ls; k < le; k++) {
-                            float c = lc_ptr[k];
-                            if (c < 0) sl += c;
-                            pl += c;
-                            if (c >= 0) num_nonneg_l++;
-                        }
-
-                        float c_bj = bc_ptr[bi];
-                        float min0_bj = (c_bj < 0) ? c_bj : 0.0f;
-                        float val0 = sb - min0_bj + sl;
-
-                        float val1;
-                        if (nb == 1) {
-                            val1 = c_bj + pl;
-                        } else {
-                            float sub_sb = sb - min0_bj;
-                            float sub_pb = pb - c_bj;
-                            float sub_max = (bi == max_idx) ? second_max_b : max_b;
-                            bool sub_all_neg = (bi == max_idx) ? (second_max_b < 0) : all_neg;
-                            bool any_nonneg_l = (num_nonneg_l > 0);
-
-                            if (!(sub_all_neg && any_nonneg_l)) {
-                                val1 = c_bj + sub_sb + sl;
-                            } else {
-                                float a = sub_sb - sub_max + sl;
-                                float b = sub_pb + pl;
-                                val1 = c_bj + ((a < b) ? a : b);
-                            }
-                        }
-                        float mm = val1 - val0;
-                        bd_ptr[bi] += mm;
-                        bc_ptr[bi] -= mm;
                     }
                 }
             });
@@ -1058,3 +1013,7 @@ double multicut_message_passing<VectorType>::cut_factor_lower_bound()
         },
         0.0, thrust::plus<double>());
 }
+
+// Explicit instantiation declarations.
+extern template class multicut_message_passing<thrust::host_vector>;
+extern template class multicut_message_passing<thrust::device_vector>;

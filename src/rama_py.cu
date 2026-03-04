@@ -27,7 +27,7 @@ solve_gpu(thrust::device_vector<int>&& i_gpu, thrust::device_vector<int>&& j_gpu
     if (opts.sanitize_graph)
         sanitized_node_ids = compute_sanitized_graph(i_gpu, j_gpu, costs_gpu);
     else
-        sort_edge_nodes(i_gpu, j_gpu);
+        sort_edge_nodes<thrust::device_vector>(i_gpu, j_gpu);
 
     DeviceGraph G(std::move(i_gpu), std::move(j_gpu), std::move(costs_gpu));
     auto [node_mapping, lb, timeline] = rama_solver<thrust::device_vector>(G, opts);

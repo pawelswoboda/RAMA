@@ -73,25 +73,33 @@ inline int count_pentagon_triangles(
 // Fill triangles for pentagons of repulsive edge (v1, v2).
 // For each pentagon v1 - v1_n1 - mid - v2_n1 - v2, writes three sorted
 // triangles: (v1, v2, v1_n1), (v2, v1_n1, mid), (v2, mid, v2_n1).
+// costs: CSR edge costs (parallel to col_ids), rep_cost: repulsive edge cost.
+// strength: output per-triangle strength = min(|rep_cost|, |v1-v1_n1|, |v1_n1-mid|, |mid-v2_n1|, |v2_n1-v2|).
 CC_HOST_DEVICE
 inline void fill_pentagon_triangles(
     const int v1, const int v2,
     const int* const __restrict__ offsets,
     const int* const __restrict__ col_ids,
+    const float* const __restrict__ costs,
+    const float rep_cost,
     int* const __restrict__ tri_v1,
     int* const __restrict__ tri_v2,
     int* const __restrict__ tri_v3,
+    float* const __restrict__ strength,
     const int write_offset)
 {
     int local_idx = 0;
+    const float abs_rep = rep_cost < 0 ? -rep_cost : rep_cost;
     for (int i = offsets[v1]; i < offsets[v1 + 1]; ++i)
     {
         const int v1_n1 = col_ids[i];
+        const float abs_v1_v1n1 = costs[i] < 0 ? -costs[i] : costs[i];
         for (int j = offsets[v2]; j < offsets[v2 + 1]; ++j)
         {
             const int v2_n1 = col_ids[j];
             if (v1_n1 == v2_n1)
                 continue;
+            const float abs_v2_v2n1 = costs[j] < 0 ? -costs[j] : costs[j];
             // Two-pointer merge to find common neighbours excluding v1, v2
             int a_idx = offsets[v1_n1];
             int b_idx = offsets[v2_n1];
@@ -104,14 +112,27 @@ inline void fill_pentagon_triangles(
                     const int mid = a_n;
                     if (mid != v1 && mid != v2)
                     {
+                        const float abs_v1n1_mid = costs[a_idx] < 0 ? -costs[a_idx] : costs[a_idx];
+                        const float abs_mid_v2n1 = costs[b_idx] < 0 ? -costs[b_idx] : costs[b_idx];
+                        const float s = thrust::min(abs_rep,
+                            thrust::min(abs_v1_v1n1,
+                                thrust::min(abs_v2_v2n1,
+                                    thrust::min(abs_v1n1_mid, abs_mid_v2n1))));
+
+                        const int idx0 = write_offset + local_idx;
                         qd_detail::write_sorted_triangle(v1, v2, v1_n1,
-                            tri_v1, tri_v2, tri_v3, write_offset + local_idx);
+                            tri_v1, tri_v2, tri_v3, idx0);
+                        strength[idx0] = s;
                         ++local_idx;
+                        const int idx1 = write_offset + local_idx;
                         qd_detail::write_sorted_triangle(v2, v1_n1, mid,
-                            tri_v1, tri_v2, tri_v3, write_offset + local_idx);
+                            tri_v1, tri_v2, tri_v3, idx1);
+                        strength[idx1] = s;
                         ++local_idx;
+                        const int idx2 = write_offset + local_idx;
                         qd_detail::write_sorted_triangle(v2, mid, v2_n1,
-                            tri_v1, tri_v2, tri_v3, write_offset + local_idx);
+                            tri_v1, tri_v2, tri_v3, idx2);
+                        strength[idx2] = s;
                         ++local_idx;
                     }
                     ++a_idx;
@@ -137,29 +158,35 @@ inline void fill_pentagon_triangles(
 // is a 5-cycle, decomposed into triangles (v1,v2,v1_n1), (v2,v1_n1,mid),
 // and (v2,mid,v2_n1).
 //
-// Returns deduplicated triangles with sorted vertices (v1 < v2 < v3).
+// Returns deduplicated triangles with sorted vertices (v1 < v2 < v3) and strength.
 //
 // rep_edge_tails, rep_edge_heads: endpoints of repulsive (negative) edges.
 // pos_graph_offsets: CSR row offsets of the symmetric positive graph.
 // pos_graph_heads: CSR column indices of the symmetric positive graph.
+// pos_graph_costs: CSR edge costs (parallel to pos_graph_heads).
+// rep_edge_costs: costs of repulsive edges (parallel to rep_edge_tails/heads).
 template<template<typename> class VectorType>
-std::tuple<VectorType<int>, VectorType<int>, VectorType<int>>
+std::tuple<VectorType<int>, VectorType<int>, VectorType<int>, VectorType<float>>
 find_pentagons(
     const VectorType<int>& rep_edge_tails,
     const VectorType<int>& rep_edge_heads,
     const VectorType<int>& pos_graph_offsets,
-    const VectorType<int>& pos_graph_heads)
+    const VectorType<int>& pos_graph_heads,
+    const VectorType<float>& pos_graph_costs,
+    const VectorType<float>& rep_edge_costs)
 {
     const int num_rep_edges = rep_edge_tails.size();
     assert(num_rep_edges == (int)rep_edge_heads.size());
 
     if (num_rep_edges == 0)
-        return {VectorType<int>(), VectorType<int>(), VectorType<int>()};
+        return {VectorType<int>(), VectorType<int>(), VectorType<int>(), VectorType<float>()};
 
     const int* tails_ptr = thrust::raw_pointer_cast(rep_edge_tails.data());
     const int* heads_ptr = thrust::raw_pointer_cast(rep_edge_heads.data());
     const int* pos_offsets_ptr = thrust::raw_pointer_cast(pos_graph_offsets.data());
     const int* pos_heads_ptr = thrust::raw_pointer_cast(pos_graph_heads.data());
+    const float* pos_costs_ptr = thrust::raw_pointer_cast(pos_graph_costs.data());
+    const float* rep_costs_ptr = thrust::raw_pointer_cast(rep_edge_costs.data());
 
     // Pass 1: count triangles per repulsive edge.
     VectorType<int> counts(num_rep_edges);
@@ -176,7 +203,7 @@ find_pentagons(
 
     const int total_triangles = thrust::reduce(counts.begin(), counts.end());
     if (total_triangles == 0)
-        return {VectorType<int>(), VectorType<int>(), VectorType<int>()};
+        return {VectorType<int>(), VectorType<int>(), VectorType<int>(), VectorType<float>()};
 
     // Compute write offsets via exclusive scan.
     VectorType<int> offsets(num_rep_edges);
@@ -186,28 +213,46 @@ find_pentagons(
     VectorType<int> tri_v1(total_triangles);
     VectorType<int> tri_v2(total_triangles);
     VectorType<int> tri_v3(total_triangles);
+    VectorType<float> tri_strength(total_triangles);
 
     int* tri_v1_ptr = thrust::raw_pointer_cast(tri_v1.data());
     int* tri_v2_ptr = thrust::raw_pointer_cast(tri_v2.data());
     int* tri_v3_ptr = thrust::raw_pointer_cast(tri_v3.data());
+    float* tri_str_ptr = thrust::raw_pointer_cast(tri_strength.data());
     const int* offsets_ptr = thrust::raw_pointer_cast(offsets.data());
 
     // Pass 2: fill triangles at computed offsets.
     thrust::for_each(
         thrust::make_counting_iterator(0),
         thrust::make_counting_iterator(num_rep_edges),
-        [tails_ptr, heads_ptr, pos_offsets_ptr, pos_heads_ptr,
-         tri_v1_ptr, tri_v2_ptr, tri_v3_ptr, offsets_ptr]
+        [tails_ptr, heads_ptr, pos_offsets_ptr, pos_heads_ptr, pos_costs_ptr,
+         rep_costs_ptr, tri_v1_ptr, tri_v2_ptr, tri_v3_ptr, tri_str_ptr, offsets_ptr]
         CC_HOST_DEVICE (const int edge_idx) {
             pent_detail::fill_pentagon_triangles(
                 tails_ptr[edge_idx], heads_ptr[edge_idx],
                 pos_offsets_ptr, pos_heads_ptr,
-                tri_v1_ptr, tri_v2_ptr, tri_v3_ptr,
+                pos_costs_ptr, rep_costs_ptr[edge_idx],
+                tri_v1_ptr, tri_v2_ptr, tri_v3_ptr, tri_str_ptr,
                 offsets_ptr[edge_idx]);
         });
 
-    // Pass 3: deduplicate.
-    deduplicate_triangles<VectorType>(tri_v1, tri_v2, tri_v3);
+    // Pass 3: deduplicate (keeping max strength).
+    deduplicate_triangles<VectorType>(tri_v1, tri_v2, tri_v3, tri_strength);
 
-    return {std::move(tri_v1), std::move(tri_v2), std::move(tri_v3)};
+    return {std::move(tri_v1), std::move(tri_v2), std::move(tri_v3), std::move(tri_strength)};
 }
+
+// Explicit instantiation declarations.
+extern template
+std::tuple<thrust::host_vector<int>, thrust::host_vector<int>, thrust::host_vector<int>, thrust::host_vector<float>>
+find_pentagons<thrust::host_vector>(
+    const thrust::host_vector<int>&, const thrust::host_vector<int>&,
+    const thrust::host_vector<int>&, const thrust::host_vector<int>&,
+    const thrust::host_vector<float>&, const thrust::host_vector<float>&);
+
+extern template
+std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<float>>
+find_pentagons<thrust::device_vector>(
+    const thrust::device_vector<int>&, const thrust::device_vector<int>&,
+    const thrust::device_vector<int>&, const thrust::device_vector<int>&,
+    const thrust::device_vector<float>&, const thrust::device_vector<float>&);

@@ -124,9 +124,9 @@ private:
 // Implementation
 
 template<template<typename> class VectorType>
-inline Graph<VectorType>::Graph(VectorType<int>&& tails, VectorType<int>&& heads,
-                                 VectorType<float>&& costs, const bool is_sorted,
-                                 const bool is_symmetric)
+Graph<VectorType>::Graph(VectorType<int>&& tails, VectorType<int>&& heads,
+                         VectorType<float>&& costs, const bool is_sorted,
+                         const bool is_symmetric)
     : tails_(std::move(tails)),
       heads_(std::move(heads)),
       costs_(std::move(costs))
@@ -135,10 +135,10 @@ inline Graph<VectorType>::Graph(VectorType<int>&& tails, VectorType<int>&& heads
 }
 
 template<template<typename> class VectorType>
-inline Graph<VectorType>::Graph(const int num_nodes,
-                                 VectorType<int>&& tails, VectorType<int>&& heads,
-                                 VectorType<float>&& costs, const bool is_sorted,
-                                 const bool is_symmetric)
+Graph<VectorType>::Graph(const int num_nodes,
+                         VectorType<int>&& tails, VectorType<int>&& heads,
+                         VectorType<float>&& costs, const bool is_sorted,
+                         const bool is_symmetric)
     : num_nodes_(num_nodes),
       tails_(std::move(tails)),
       heads_(std::move(heads)),
@@ -176,7 +176,7 @@ Graph<VectorType>::Graph(TAIL_ITERATOR tail_begin, TAIL_ITERATOR tail_end,
 }
 
 template<template<typename> class VectorType>
-inline void Graph<VectorType>::coo_sort(VectorType<int>& i, VectorType<int>& j, VectorType<float>& costs)
+void Graph<VectorType>::coo_sort(VectorType<int>& i, VectorType<int>& j, VectorType<float>& costs)
 {
     assert(i.size() == j.size());
     assert(i.size() == costs.size());
@@ -198,7 +198,7 @@ struct normalize_edge_func {
 
 template<template<typename> class VectorType>
 template<typename TAIL_ITERATOR, typename HEAD_ITERATOR>
-inline bool Graph<VectorType>::is_single_orientation(
+bool Graph<VectorType>::is_single_orientation(
     TAIL_ITERATOR tail_begin, TAIL_ITERATOR tail_end,
     HEAD_ITERATOR head_begin, HEAD_ITERATOR head_end)
 {
@@ -229,7 +229,7 @@ inline bool Graph<VectorType>::is_single_orientation(
 
 template<template<typename> class VectorType>
 template<typename TAIL_ITERATOR, typename HEAD_ITERATOR>
-inline bool Graph<VectorType>::has_duplicate_edges(
+bool Graph<VectorType>::has_duplicate_edges(
     TAIL_ITERATOR tail_begin, TAIL_ITERATOR tail_end,
     HEAD_ITERATOR head_begin, HEAD_ITERATOR head_end)
 {
@@ -252,7 +252,7 @@ inline bool Graph<VectorType>::has_duplicate_edges(
 }
 
 template<template<typename> class VectorType>
-inline void Graph<VectorType>::ensure_symmetric()
+void Graph<VectorType>::ensure_symmetric()
 {
     const size_t nr_edges = costs_.size();
 
@@ -290,7 +290,7 @@ inline void Graph<VectorType>::ensure_symmetric()
 }
 
 template<template<typename> class VectorType>
-inline void Graph<VectorType>::init(const bool is_sorted, const bool is_symmetric)
+void Graph<VectorType>::init(const bool is_sorted, const bool is_symmetric)
 {
     assert(tails_.size() == costs_.size());
     assert(heads_.size() == costs_.size());
@@ -321,19 +321,19 @@ inline void Graph<VectorType>::init(const bool is_sorted, const bool is_symmetri
 }
 
 template<template<typename> class VectorType>
-inline float Graph<VectorType>::sum() const
+float Graph<VectorType>::sum() const
 {
     return thrust::reduce(costs_.begin(), costs_.end(), (float)0.0, thrust::plus<float>());
 }
 
 template<template<typename> class VectorType>
-inline float Graph<VectorType>::min() const
+float Graph<VectorType>::min() const
 {
     return *thrust::min_element(costs_.begin(), costs_.end());
 }
 
 template<template<typename> class VectorType>
-inline float Graph<VectorType>::max() const
+float Graph<VectorType>::max() const
 {
     return *thrust::max_element(costs_.begin(), costs_.end());
 }
@@ -347,7 +347,7 @@ struct is_self_loop {
 };
 
 template<template<typename> class VectorType>
-inline void Graph<VectorType>::remove_self_loops()
+void Graph<VectorType>::remove_self_loops()
 {
     auto begin = thrust::make_zip_iterator(thrust::make_tuple(tails_.begin(), heads_.begin(), costs_.begin()));
     auto end = thrust::make_zip_iterator(thrust::make_tuple(tails_.end(), heads_.end(), costs_.end()));
@@ -373,7 +373,7 @@ struct extract_self_loop_costs {
 };
 
 template<template<typename> class VectorType>
-inline VectorType<float> Graph<VectorType>::self_loop_costs() const
+VectorType<float> Graph<VectorType>::self_loop_costs() const
 {
     VectorType<float> d(num_nodes_, 0.0);
 
@@ -387,7 +387,7 @@ inline VectorType<float> Graph<VectorType>::self_loop_costs() const
 }
 
 template<template<typename> class VectorType>
-inline VectorType<int> Graph<VectorType>::compute_offsets(const VectorType<int>& i, const int max_value) const
+VectorType<int> Graph<VectorType>::compute_offsets(const VectorType<int>& i, const int max_value) const
 {
     assert(thrust::is_sorted(i.begin(), i.end()));
 
@@ -425,7 +425,7 @@ inline VectorType<int> Graph<VectorType>::compute_offsets(const VectorType<int>&
 }
 
 template<template<typename> class VectorType>
-inline VectorType<int> Graph<VectorType>::compute_node_offsets() const
+VectorType<int> Graph<VectorType>::compute_node_offsets() const
 {
     return compute_offsets(tails_, num_nodes_ - 1);
 }
@@ -447,7 +447,7 @@ struct is_in_range_func {
 };
 
 template<template<typename> class VectorType>
-inline Graph<VectorType> Graph<VectorType>::filter(const float lb, const float ub) const
+Graph<VectorType> Graph<VectorType>::filter(const float lb, const float ub) const
 {
     assert(lb <= ub);
 
@@ -471,7 +471,7 @@ inline Graph<VectorType> Graph<VectorType>::filter(const float lb, const float u
 }
 
 template<template<typename> class VectorType>
-inline Graph<VectorType> Graph<VectorType>::contract(const VectorType<int>& node_mapping) const
+Graph<VectorType> Graph<VectorType>::contract(const VectorType<int>& node_mapping) const
 {
     assert(node_mapping.size() >= num_nodes_);
 
@@ -536,7 +536,7 @@ inline Graph<VectorType> Graph<VectorType>::contract(const VectorType<int>& node
 }
 
 template<template<typename> class VectorType>
-inline void Graph<VectorType>::print() const
+void Graph<VectorType>::print() const
 {
     std::cout << "Graph:\n";
     std::cout << "  nodes: " << num_nodes_ << ", edges: " << num_edges()
@@ -555,6 +555,11 @@ inline void Graph<VectorType>::print() const
         std::cout << "    (" << h_tails[i] << ", " << h_heads[i] << ", " << h_costs[i] << ")\n";
     }
 }
+
+// Explicit instantiation declarations — suppress implicit instantiation of
+// non-template member functions. Definitions in src/graph_cpu.cpp and src/graph_gpu.cu.
+extern template class Graph<thrust::host_vector>;
+extern template class Graph<thrust::device_vector>;
 
 // Type aliases for convenience
 using DeviceGraph = Graph<thrust::device_vector>;

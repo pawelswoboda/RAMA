@@ -440,9 +440,10 @@ bool filter_by_thresholding(
 
 // Find contraction mapping using BFS frontier approach on MST.
 // Returns (node_mapping, num_remaining_mst_edges).
+// lifted_G: if provided, negative lifted edges are also treated as repulsive seeds.
 template<template<typename> class VectorType>
 std::tuple<VectorType<int>, int> find_contraction_mapping(
-    const Graph<VectorType>& G, bool verbose = true)
+    const Graph<VectorType>& G, const Graph<VectorType>& lifted_G, bool verbose = true)
 {
     MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
 
@@ -494,6 +495,42 @@ std::tuple<VectorType<int>, int> find_contraction_mapping(
         int num_single = std::distance(first_rep_zip, last_valid);
         rep_tails.resize(num_single);
         rep_heads.resize(num_single);
+    }
+
+    // Append negative lifted edges (single-direction, tail < head) as additional repulsive seeds
+    if (lifted_G.num_directed_edges() > 0)
+    {
+        const VectorType<int>& l_tails = lifted_G.get_tails();
+        const VectorType<int>& l_heads = lifted_G.get_heads();
+        const VectorType<float>& l_costs = lifted_G.get_costs();
+
+        // Count negative, single-direction lifted edges
+        const size_t l_total = l_costs.size();
+        VectorType<int> neg_l_tails(l_total), neg_l_heads(l_total);
+
+        auto first_l = thrust::make_zip_iterator(thrust::make_tuple(
+            l_tails.begin(), l_heads.begin(), l_costs.begin()));
+        auto last_l = thrust::make_zip_iterator(thrust::make_tuple(
+            l_tails.end(), l_heads.end(), l_costs.end()));
+        auto first_neg_l = thrust::make_zip_iterator(thrust::make_tuple(
+            neg_l_tails.begin(), neg_l_heads.begin(), thrust::make_discard_iterator()));
+
+        auto last_neg_l = thrust::copy_if(first_l, last_l, first_neg_l,
+            [] EC_HOST_DEVICE (const thrust::tuple<int,int,float>& t) {
+                return thrust::get<2>(t) < 0.0f && thrust::get<0>(t) < thrust::get<1>(t);
+            });
+        int num_neg_lifted = std::distance(first_neg_l, last_neg_l);
+        neg_l_tails.resize(num_neg_lifted);
+        neg_l_heads.resize(num_neg_lifted);
+
+        if (num_neg_lifted > 0)
+        {
+            const size_t old_size = rep_tails.size();
+            rep_tails.resize(old_size + num_neg_lifted);
+            rep_heads.resize(old_size + num_neg_lifted);
+            thrust::copy(neg_l_tails.begin(), neg_l_tails.end(), rep_tails.begin() + old_size);
+            thrust::copy(neg_l_heads.begin(), neg_l_heads.end(), rep_heads.begin() + old_size);
+        }
     }
 
     // 2. Compute maximum spanning tree (takes symmetric input, returns single-direction)
@@ -575,3 +612,20 @@ std::tuple<VectorType<int>, int> find_contraction_mapping(
 
     return {node_mapping, (int)mst_tails.size()};
 }
+
+// Backward-compatible single-argument overload (no lifted graph).
+template<template<typename> class VectorType>
+std::tuple<VectorType<int>, int> find_contraction_mapping(
+    const Graph<VectorType>& G, bool verbose = true)
+{
+    return find_contraction_mapping<VectorType>(G, Graph<VectorType>(), verbose);
+}
+
+// Explicit instantiation declarations.
+extern template
+std::tuple<thrust::host_vector<int>, int>
+find_contraction_mapping<thrust::host_vector>(const Graph<thrust::host_vector>&, const Graph<thrust::host_vector>&, bool);
+
+extern template
+std::tuple<thrust::device_vector<int>, int>
+find_contraction_mapping<thrust::device_vector>(const Graph<thrust::device_vector>&, const Graph<thrust::device_vector>&, bool);

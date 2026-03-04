@@ -179,7 +179,7 @@ extract_costs_from_union(
         union_keys.begin(), union_keys.end(),
         base_keys.begin(), base_keys.end(),
         union_graph.get_costs().begin(),
-        thrust::make_discard_iterator(),
+        thrust::make_constant_iterator(0.0f),
         lifted_keys.begin(),
         lifted_costs.begin());
 

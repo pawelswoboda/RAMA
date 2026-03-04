@@ -190,6 +190,91 @@ void test_random_graph()
 }
 
 template<template<typename> class VectorType>
+void test_negative_lifted_edge_prevents_merge()
+{
+    // All-positive base triangle: nodes 0,1,2 would normally all merge.
+    //
+    //       +2
+    //   +-----------------------+
+    //   v                       |
+    // +---+  +3   +---+  +1   +---+
+    // | 0 | ----> | 1 | ----> | 2 |
+    // +---+       +---+       +---+
+    //
+    // Add a negative lifted edge (0,2) with cost -5.
+    // This should prevent nodes 0 and 2 from being merged.
+    //
+    //   0 ......................... 2    (lifted, -5)
+    //
+    // Expected: node 0 and 2 in different components.
+    std::vector<int> base_tails = {0, 1, 0};
+    std::vector<int> base_heads = {1, 2, 2};
+    std::vector<float> base_costs = {3.0f, 1.0f, 2.0f};
+
+    Graph<VectorType> base_G(base_tails.begin(), base_tails.end(),
+                             base_heads.begin(), base_heads.end(),
+                             base_costs.begin(), base_costs.end());
+
+    std::vector<int> lifted_tails = {0};
+    std::vector<int> lifted_heads = {2};
+    std::vector<float> lifted_costs = {-5.0f};
+
+    Graph<VectorType> lifted_G(3,
+                               lifted_tails.begin(), lifted_tails.end(),
+                               lifted_heads.begin(), lifted_heads.end(),
+                               lifted_costs.begin(), lifted_costs.end());
+
+    VectorType<int> mapping;
+    int mst_size;
+    std::tie(mapping, mst_size) = find_contraction_mapping<VectorType>(base_G, lifted_G, false);
+
+    test(mapping.size() == 3, "mapping size should be 3");
+    test(mapping[0] != mapping[2], "nodes 0 and 2 should be in different components (negative lifted edge)");
+}
+
+template<template<typename> class VectorType>
+void test_positive_lifted_edge_ignored()
+{
+    // Conflicted base triangle: repulsive edge (1,2).
+    //
+    //       +2
+    //   +-----------------------+
+    //   v                       |
+    // +---+  +3   +---+  -1   +---+
+    // | 0 | ----> | 1 | ----> | 2 |
+    // +---+       +---+       +---+
+    //
+    // Add a positive lifted edge (0,2) with cost +10.
+    // Positive lifted edges should be ignored — same result as without lifted graph.
+    //
+    // Expected: nodes 0,1 in same component; node 2 separate.
+    std::vector<int> base_tails = {0, 0, 1};
+    std::vector<int> base_heads = {1, 2, 2};
+    std::vector<float> base_costs = {3.0f, 2.0f, -1.0f};
+
+    Graph<VectorType> base_G(base_tails.begin(), base_tails.end(),
+                             base_heads.begin(), base_heads.end(),
+                             base_costs.begin(), base_costs.end());
+
+    std::vector<int> lifted_tails = {0};
+    std::vector<int> lifted_heads = {2};
+    std::vector<float> lifted_costs = {10.0f};
+
+    Graph<VectorType> lifted_G(3,
+                               lifted_tails.begin(), lifted_tails.end(),
+                               lifted_heads.begin(), lifted_heads.end(),
+                               lifted_costs.begin(), lifted_costs.end());
+
+    VectorType<int> mapping;
+    int mst_size;
+    std::tie(mapping, mst_size) = find_contraction_mapping<VectorType>(base_G, lifted_G, false);
+
+    test(mapping.size() == 3, "mapping size should be 3");
+    test(mapping[0] == mapping[1], "nodes 0 and 1 should be in same component");
+    test(mapping[2] != mapping[0], "node 2 should be in different component");
+}
+
+template<template<typename> class VectorType>
 void run_all_edge_contractions_tests()
 {
     test_conflicted_triangle<VectorType>();
@@ -203,6 +288,12 @@ void run_all_edge_contractions_tests()
 
     test_random_graph<VectorType>();
     std::cout << "test_random_graph passed\n";
+
+    test_negative_lifted_edge_prevents_merge<VectorType>();
+    std::cout << "test_negative_lifted_edge_prevents_merge passed\n";
+
+    test_positive_lifted_edge_ignored<VectorType>();
+    std::cout << "test_positive_lifted_edge_ignored passed\n";
 
     std::cout << "All edge_contractions tests passed!\n";
 }

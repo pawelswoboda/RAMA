@@ -25,12 +25,14 @@ template<template<typename> class VectorType>
 void test_single_quadrangle()
 {
     // Positive edges: 0-1, 1-2, 2-3
-    auto [offsets, col_ids] = build_positive_csr<VectorType>(4, {0, 1, 2}, {1, 2, 3});
+    auto [offsets, col_ids, costs] = build_positive_csr<VectorType>(4, {0, 1, 2}, {1, 2, 3});
 
     VectorType<int> rep_tails(1); rep_tails[0] = 0;
     VectorType<int> rep_heads(1); rep_heads[0] = 3;
+    VectorType<float> rep_costs(1); rep_costs[0] = -1.0f;
 
-    auto [v1, v2, v3] = find_quadrangles<VectorType>(rep_tails, rep_heads, offsets, col_ids);
+    auto [v1, v2, v3, strength] = find_quadrangles<VectorType>(
+        rep_tails, rep_heads, offsets, col_ids, costs, rep_costs);
 
     test(v1.size() == 2, "single quad: should find 2 triangles");
     // Sorted triangles from quad 0-1-2-3: (0,1,3) and (1,2,3)
@@ -50,12 +52,14 @@ template<template<typename> class VectorType>
 void test_no_quadrangles()
 {
     // Positive edges: 0-1, 2-3 (disconnected)
-    auto [offsets, col_ids] = build_positive_csr<VectorType>(4, {0, 2}, {1, 3});
+    auto [offsets, col_ids, costs] = build_positive_csr<VectorType>(4, {0, 2}, {1, 3});
 
     VectorType<int> rep_tails(1); rep_tails[0] = 0;
     VectorType<int> rep_heads(1); rep_heads[0] = 3;
+    VectorType<float> rep_costs(1); rep_costs[0] = -1.0f;
 
-    auto [v1, v2, v3] = find_quadrangles<VectorType>(rep_tails, rep_heads, offsets, col_ids);
+    auto [v1, v2, v3, strength] = find_quadrangles<VectorType>(
+        rep_tails, rep_heads, offsets, col_ids, costs, rep_costs);
 
     test(v1.size() == 0, "no quads: should find 0 triangles");
 }
@@ -79,13 +83,15 @@ template<template<typename> class VectorType>
 void test_multiple_quadrangles_one_edge()
 {
     // 4 nodes, positive edges: 0-1, 0-2, 1-2, 1-3, 2-3
-    auto [offsets, col_ids] = build_positive_csr<VectorType>(
+    auto [offsets, col_ids, costs] = build_positive_csr<VectorType>(
         4, {0, 0, 1, 1, 2}, {1, 2, 2, 3, 3});
 
     VectorType<int> rep_tails(1); rep_tails[0] = 0;
     VectorType<int> rep_heads(1); rep_heads[0] = 3;
+    VectorType<float> rep_costs(1); rep_costs[0] = -1.0f;
 
-    auto [v1, v2, v3] = find_quadrangles<VectorType>(rep_tails, rep_heads, offsets, col_ids);
+    auto [v1, v2, v3, strength] = find_quadrangles<VectorType>(
+        rep_tails, rep_heads, offsets, col_ids, costs, rep_costs);
 
     // Two quadrangles: 0-1-2-3 and 0-2-1-3
     // Triangles (deduplicated): (0,1,3), (1,2,3), (0,2,3)
@@ -103,12 +109,14 @@ void test_multiple_quadrangles_one_edge()
 template<template<typename> class VectorType>
 void test_quad_empty_input()
 {
-    auto [offsets, col_ids] = build_positive_csr<VectorType>(3, {0, 1}, {2, 2});
+    auto [offsets, col_ids, costs] = build_positive_csr<VectorType>(3, {0, 1}, {2, 2});
 
     VectorType<int> rep_tails;
     VectorType<int> rep_heads;
+    VectorType<float> rep_costs;
 
-    auto [v1, v2, v3] = find_quadrangles<VectorType>(rep_tails, rep_heads, offsets, col_ids);
+    auto [v1, v2, v3, strength] = find_quadrangles<VectorType>(
+        rep_tails, rep_heads, offsets, col_ids, costs, rep_costs);
 
     test(v1.size() == 0, "empty input: should find 0 triangles");
 }
@@ -177,31 +185,35 @@ void test_quad_random_graphs()
         auto rg = generate_random_graph(num_nodes, edge_prob, seed);
 
         std::vector<int> pos_tails, pos_heads, neg_tails, neg_heads;
+        std::vector<float> pos_costs_vec, neg_costs_vec;
         for (size_t i = 0; i < rg.tails.size(); ++i)
         {
             if (rg.costs[i] < 0.0f)
             {
                 neg_tails.push_back(rg.tails[i]);
                 neg_heads.push_back(rg.heads[i]);
+                neg_costs_vec.push_back(rg.costs[i]);
             }
             else
             {
                 pos_tails.push_back(rg.tails[i]);
                 pos_heads.push_back(rg.heads[i]);
+                pos_costs_vec.push_back(rg.costs[i]);
             }
         }
 
         if (pos_tails.empty() || neg_tails.empty())
             continue;
 
-        auto [offsets, col_ids] = build_positive_csr<VectorType>(
-            rg.num_nodes, pos_tails, pos_heads);
+        auto [offsets, col_ids, csr_costs] = build_positive_csr<VectorType>(
+            rg.num_nodes, pos_tails, pos_heads, pos_costs_vec);
 
         VectorType<int> rep_tails(neg_tails.begin(), neg_tails.end());
         VectorType<int> rep_heads(neg_heads.begin(), neg_heads.end());
+        VectorType<float> rep_costs(neg_costs_vec.begin(), neg_costs_vec.end());
 
-        auto [v1, v2, v3] = find_quadrangles<VectorType>(
-            rep_tails, rep_heads, offsets, col_ids);
+        auto [v1, v2, v3, strength] = find_quadrangles<VectorType>(
+            rep_tails, rep_heads, offsets, col_ids, csr_costs, rep_costs);
 
         thrust::host_vector<int> h_v1(v1), h_v2(v2), h_v3(v3);
 

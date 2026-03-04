@@ -119,6 +119,7 @@ maximum_spanning_tree(
     VectorType<int> rbk_v(n_vertices);
     VectorType<int> rbk_id(n_vertices);
 
+    int mst_iteration = 0;
     while (true) {
         if (n_edges == 0)
             break;
@@ -132,9 +133,33 @@ maximum_spanning_tree(
             break;
         }
 
+        // --- Bounds checks before Step 1 ---
+        assert(n_edges <= (int)u.size() && "u too small for n_edges");
+        assert(n_edges <= (int)v.size() && "v too small for n_edges");
+        assert(n_edges <= (int)w.size() && "w too small for n_edges");
+        assert(n_edges <= (int)id.size() && "id too small for n_edges");
+        assert(n_edges <= (int)indices.size() && "indices too small for n_edges");
+        assert(n_edges <= (int)v_tmp.size() && "v_tmp too small for n_edges");
+        assert(n_edges <= (int)w_tmp.size() && "w_tmp too small for n_edges");
+        assert(n_edges <= (int)id_tmp.size() && "id_tmp too small for n_edges");
+
         // Step 1: Sort edges by source vertex
         thrust::sequence(indices.begin(), indices.begin() + n_edges);
         thrust::sort_by_key(u.begin(), u.begin() + n_edges, indices.begin());
+
+        // Check: all u values should be in [0, n_vertices)
+        {
+            int u_max = *thrust::max_element(u.begin(), u.begin() + n_edges);
+            int u_min = *thrust::min_element(u.begin(), u.begin() + n_edges);
+            assert(u_min >= 0 && "u contains negative vertex id");
+            assert(u_max < n_vertices && "u contains vertex id >= n_vertices");
+        }
+
+        // Check: indices are valid gather maps into v, w, id
+        {
+            int idx_max = *thrust::max_element(indices.begin(), indices.begin() + n_edges);
+            assert(idx_max < n_edges && "sort indices out of range");
+        }
 
         // Reorder v, w, id according to sort
         thrust::gather(indices.begin(), indices.begin() + n_edges, v.begin(), v_tmp.begin());
@@ -143,6 +168,27 @@ maximum_spanning_tree(
         v.swap(v_tmp);
         w.swap(w_tmp);
         id.swap(id_tmp);
+
+        // Check: v values (destinations) in [0, n_vertices)
+        {
+            int v_max = *thrust::max_element(v.begin(), v.begin() + n_edges);
+            int v_min = *thrust::min_element(v.begin(), v.begin() + n_edges);
+            assert(v_min >= 0 && "v contains negative vertex id");
+            assert(v_max < n_vertices && "v contains vertex id >= n_vertices");
+        }
+
+        // --- Bounds checks before reduce_by_key ---
+        assert(n_vertices <= (int)rbk_keys.size() && "rbk_keys too small");
+        assert(n_vertices <= (int)rbk_w.size() && "rbk_w too small");
+        assert(n_vertices <= (int)rbk_v.size() && "rbk_v too small");
+        assert(n_vertices <= (int)rbk_id.size() && "rbk_id too small");
+
+        fprintf(stderr, "MST iter %d: n_edges=%d, n_vertices=%d, "
+            "u.size=%d, v.size=%d, w.size=%d, id.size=%d, "
+            "rbk_keys.size=%d\n",
+            mst_iteration, n_edges, n_vertices,
+            (int)u.size(), (int)v.size(), (int)w.size(), (int)id.size(),
+            (int)rbk_keys.size());
 
         // Step 2: Find minimum-weight edge per source vertex
         auto new_last = thrust::reduce_by_key(
@@ -156,6 +202,7 @@ maximum_spanning_tree(
             binop_tuple_minimum());
 
         int n_min_edges = new_last.first - rbk_keys.begin();
+        assert(n_min_edges >= 0 && n_min_edges <= n_vertices && "reduce_by_key returned invalid count");
 
         // Step 3: Build successor pointers
         // succ_input[vertex] = destination of min-weight edge from vertex
@@ -163,6 +210,21 @@ maximum_spanning_tree(
         thrust::sequence(succ_input.begin(), succ_input.begin() + n_vertices);
         // Initialize succ_id to -1
         thrust::fill(succ_id.begin(), succ_id.begin() + n_vertices, -1);
+
+        // Check: rbk_keys (scatter map) values in [0, n_vertices)
+        {
+            int key_max = *thrust::max_element(rbk_keys.begin(), rbk_keys.begin() + n_min_edges);
+            int key_min = *thrust::min_element(rbk_keys.begin(), rbk_keys.begin() + n_min_edges);
+            assert(key_min >= 0 && "rbk_keys contains negative key");
+            assert(key_max < n_vertices && "rbk_keys scatter target >= n_vertices");
+        }
+        // Check: rbk_v (successor destinations) in [0, n_vertices)
+        {
+            int rv_max = *thrust::max_element(rbk_v.begin(), rbk_v.begin() + n_min_edges);
+            int rv_min = *thrust::min_element(rbk_v.begin(), rbk_v.begin() + n_min_edges);
+            assert(rv_min >= 0 && "rbk_v contains negative vertex");
+            assert(rv_max < n_vertices && "rbk_v contains vertex >= n_vertices");
+        }
 
         thrust::scatter(
             thrust::make_zip_iterator(thrust::make_tuple(
@@ -176,6 +238,17 @@ maximum_spanning_tree(
         // Step 4: Break 2-cycles
         // If vertex i points to j and j points to i, break by keeping only
         // the edge from the smaller vertex.
+
+        // Check: succ_input values (used as indices into succ_input) in [0, n_vertices)
+        {
+            int si_max = *thrust::max_element(succ_input.begin(), succ_input.begin() + n_vertices);
+            int si_min = *thrust::min_element(succ_input.begin(), succ_input.begin() + n_vertices);
+            assert(si_min >= 0 && "succ_input contains negative value before step 4");
+            assert(si_max < n_vertices && "succ_input contains value >= n_vertices before step 4");
+        }
+        assert(n_vertices <= (int)succ.size() && "succ too small for n_vertices");
+        assert(n_vertices <= (int)succ_temp.size() && "succ_temp too small for n_vertices");
+
         {
             const int n = n_vertices;
             const int* si_ptr = thrust::raw_pointer_cast(succ_input.data());
@@ -199,6 +272,13 @@ maximum_spanning_tree(
         thrust::exclusive_scan(succ_temp.begin(), succ_temp.begin() + n_vertices,
             succ_input.begin()); // reuse succ_input as scan output
 
+        // Check: scatter targets (succ_input + n_mst) must fit in mst_edge_ids
+        {
+            int scan_max = *thrust::max_element(succ_input.begin(), succ_input.begin() + n_vertices);
+            assert(n_mst + scan_max < (int)mst_edge_ids.size() &&
+                "mst_edge_ids scatter would be out of bounds");
+        }
+
         thrust::scatter_if(
             succ_id.begin(), succ_id.begin() + n_vertices,
             succ_input.begin(),
@@ -211,6 +291,7 @@ maximum_spanning_tree(
             thrust::copy(succ_temp.begin() + n_vertices - 1, succ_temp.begin() + n_vertices, last_flag.begin());
             n_mst += last_scan[0] + last_flag[0];
         }
+        assert(n_mst <= n_directed && "collected more MST edges than input edges");
 
         // Step 6: Path compression to find connected components
         // succ[i] is the representative of i's component
@@ -252,6 +333,14 @@ maximum_spanning_tree(
         }
 
         // Step 8: Filter inter-component edges
+        // Check: u and v values are valid indices into new_vertices
+        {
+            int u_max = *thrust::max_element(u.begin(), u.begin() + n_edges);
+            int v_max = *thrust::max_element(v.begin(), v.begin() + n_edges);
+            assert(u_max < (int)new_vertices.size() && "u value >= new_vertices.size() in step 8");
+            assert(v_max < (int)new_vertices.size() && "v value >= new_vertices.size() in step 8");
+        }
+
         {
             const int* nv_ptr = thrust::raw_pointer_cast(new_vertices.data());
             const int* u_ptr = thrust::raw_pointer_cast(u.data());
@@ -291,8 +380,14 @@ maximum_spanning_tree(
                 u_tmp.begin(), v_tmp.begin(), w_tmp.begin(), id_tmp.begin())));
 
         // Step 9: Relabel endpoints with new component IDs
+        // Check: u_tmp and v_tmp values are valid indices into new_vertices
         {
-            const int* nv_ptr = thrust::raw_pointer_cast(new_vertices.data());
+            int ut_max = *thrust::max_element(u_tmp.begin(), u_tmp.begin() + new_n_edges);
+            int vt_max = *thrust::max_element(v_tmp.begin(), v_tmp.begin() + new_n_edges);
+            assert(ut_max < (int)new_vertices.size() && "u_tmp value >= new_vertices.size() in step 9");
+            assert(vt_max < (int)new_vertices.size() && "v_tmp value >= new_vertices.size() in step 9");
+        }
+        {
             thrust::gather(u_tmp.begin(), u_tmp.begin() + new_n_edges, new_vertices.begin(), u_tmp.begin());
             thrust::gather(v_tmp.begin(), v_tmp.begin() + new_n_edges, new_vertices.begin(), v_tmp.begin());
         }
@@ -317,9 +412,27 @@ maximum_spanning_tree(
             rbk_v.resize(n_vertices);
             rbk_id.resize(n_vertices);
         }
+
+        // Check: after relabeling, u and v should be in [0, new_n_vertices)
+        {
+            int u_max = *thrust::max_element(u.begin(), u.begin() + n_edges);
+            int v_max = *thrust::max_element(v.begin(), v.begin() + n_edges);
+            assert(u_max < n_vertices && "relabeled u >= new n_vertices at end of iteration");
+            assert(v_max < n_vertices && "relabeled v >= new n_vertices at end of iteration");
+        }
+
+        mst_iteration++;
     }
 
     // Gather MST edges from original input
+    // Check: mst_edge_ids are valid indices into tails/heads/costs
+    if (n_mst > 0) {
+        int eid_max = *thrust::max_element(mst_edge_ids.begin(), mst_edge_ids.begin() + n_mst);
+        int eid_min = *thrust::min_element(mst_edge_ids.begin(), mst_edge_ids.begin() + n_mst);
+        assert(eid_min >= 0 && "mst_edge_ids contains negative id");
+        assert(eid_max < n_directed && "mst_edge_ids contains id >= n_directed");
+    }
+
     VectorType<int> mst_tails(n_mst), mst_heads(n_mst);
     VectorType<float> mst_costs(n_mst);
     thrust::gather(mst_edge_ids.begin(), mst_edge_ids.begin() + n_mst,
@@ -371,3 +484,14 @@ maximum_spanning_tree(
 }
 
 } // namespace MST_boruvka
+
+// Explicit instantiation declarations.
+extern template
+std::tuple<thrust::host_vector<int>, thrust::host_vector<int>, thrust::host_vector<float>>
+MST_boruvka::maximum_spanning_tree<thrust::host_vector>(
+    const thrust::host_vector<int>&, const thrust::host_vector<int>&, const thrust::host_vector<float>&);
+
+extern template
+std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<float>>
+MST_boruvka::maximum_spanning_tree<thrust::device_vector>(
+    const thrust::device_vector<int>&, const thrust::device_vector<int>&, const thrust::device_vector<float>&);

@@ -10,22 +10,26 @@
 #include <algorithm>
 
 // Helper: build a symmetric positive graph in CSR format from single-orientation edges.
-// Returns (offsets, col_ids) vectors suitable for find_triangles.
+// Returns (offsets, col_ids, costs) vectors suitable for find_triangles.
 template<template<typename> class VectorType>
-std::pair<VectorType<int>, VectorType<int>>
+std::tuple<VectorType<int>, VectorType<int>, VectorType<float>>
 build_positive_csr(int num_nodes,
                    const std::vector<int>& tails,
-                   const std::vector<int>& heads)
+                   const std::vector<int>& heads,
+                   const std::vector<float>& edge_costs = {})
 {
-    std::vector<float> dummy_costs(tails.size(), 1.0f);
+    std::vector<float> costs_in = edge_costs;
+    if (costs_in.empty())
+        costs_in.assign(tails.size(), 1.0f);
     Graph<VectorType> g(num_nodes,
                         tails.begin(), tails.end(),
                         heads.begin(), heads.end(),
-                        dummy_costs.begin(), dummy_costs.end());
+                        costs_in.begin(), costs_in.end());
 
     VectorType<int> offsets = g.compute_node_offsets();
     VectorType<int> col_ids = g.get_heads();
-    return {std::move(offsets), std::move(col_ids)};
+    VectorType<float> csr_costs(g.get_costs().begin(), g.get_costs().end());
+    return {std::move(offsets), std::move(col_ids), std::move(csr_costs)};
 }
 
 //       (+)
@@ -41,18 +45,21 @@ template<template<typename> class VectorType>
 void test_single_triangle()
 {
     // Positive graph: 0-2, 1-2
-    auto [offsets, col_ids] = build_positive_csr<VectorType>(3, {0, 1}, {2, 2});
+    auto [offsets, col_ids, costs] = build_positive_csr<VectorType>(3, {0, 1}, {2, 2});
 
     // Repulsive edge: 0-1
     VectorType<int> rep_tails(1); rep_tails[0] = 0;
     VectorType<int> rep_heads(1); rep_heads[0] = 1;
+    VectorType<float> rep_costs(1); rep_costs[0] = -1.0f;
 
-    auto [v1, v2, v3] = find_triangles<VectorType>(rep_tails, rep_heads, offsets, col_ids);
+    auto [v1, v2, v3, strength] = find_triangles<VectorType>(
+        rep_tails, rep_heads, offsets, col_ids, costs, rep_costs);
 
     test(v1.size() == 1, "single triangle: should find 1 triangle");
     test(v1[0] == 0, "single triangle: v1 == 0");
     test(v2[0] == 1, "single triangle: v2 == 1");
     test(v3[0] == 2, "single triangle: v3 == 2");
+    test(strength[0] == 1.0f, "single triangle: strength == min(1,1,1)");
 }
 
 // +------+  (-)   +---+  (+)   +---+
@@ -70,12 +77,14 @@ template<template<typename> class VectorType>
 void test_no_common_neighbours()
 {
     // Positive graph: 0-2, 1-3 (nodes 0 and 1 share no neighbours)
-    auto [offsets, col_ids] = build_positive_csr<VectorType>(4, {0, 1}, {2, 3});
+    auto [offsets, col_ids, costs] = build_positive_csr<VectorType>(4, {0, 1}, {2, 3});
 
     VectorType<int> rep_tails(1); rep_tails[0] = 0;
     VectorType<int> rep_heads(1); rep_heads[0] = 1;
+    VectorType<float> rep_costs(1); rep_costs[0] = -1.0f;
 
-    auto [v1, v2, v3] = find_triangles<VectorType>(rep_tails, rep_heads, offsets, col_ids);
+    auto [v1, v2, v3, strength] = find_triangles<VectorType>(
+        rep_tails, rep_heads, offsets, col_ids, costs, rep_costs);
 
     test(v1.size() == 0, "no common neighbours: should find 0 triangles");
 }
@@ -98,12 +107,14 @@ template<template<typename> class VectorType>
 void test_multiple_triangles_one_edge()
 {
     // Positive graph: 0-2, 0-3, 1-2, 1-3
-    auto [offsets, col_ids] = build_positive_csr<VectorType>(4, {0, 0, 1, 1}, {2, 3, 2, 3});
+    auto [offsets, col_ids, costs] = build_positive_csr<VectorType>(4, {0, 0, 1, 1}, {2, 3, 2, 3});
 
     VectorType<int> rep_tails(1); rep_tails[0] = 0;
     VectorType<int> rep_heads(1); rep_heads[0] = 1;
+    VectorType<float> rep_costs(1); rep_costs[0] = -1.0f;
 
-    auto [v1, v2, v3] = find_triangles<VectorType>(rep_tails, rep_heads, offsets, col_ids);
+    auto [v1, v2, v3, strength] = find_triangles<VectorType>(
+        rep_tails, rep_heads, offsets, col_ids, costs, rep_costs);
 
     test(v1.size() == 2, "multiple triangles one edge: should find 2 triangles");
 
@@ -138,12 +149,14 @@ void test_multiple_repulsive_edges()
     // 5-node graph: positive edges 0-2, 1-2, 3-4, 0-4
     // Repulsive edge 0-1 shares neighbour 2 → triangle (0,1,2)
     // Repulsive edge 0-3 shares neighbour 4 → triangle (0,3,4)
-    auto [offsets, col_ids] = build_positive_csr<VectorType>(5, {0, 1, 3, 0}, {2, 2, 4, 4});
+    auto [offsets, col_ids, costs] = build_positive_csr<VectorType>(5, {0, 1, 3, 0}, {2, 2, 4, 4});
 
     VectorType<int> rep_tails(2); rep_tails[0] = 0; rep_tails[1] = 0;
     VectorType<int> rep_heads(2); rep_heads[0] = 1; rep_heads[1] = 3;
+    VectorType<float> rep_costs(2); rep_costs[0] = -1.0f; rep_costs[1] = -2.0f;
 
-    auto [v1, v2, v3] = find_triangles<VectorType>(rep_tails, rep_heads, offsets, col_ids);
+    auto [v1, v2, v3, strength] = find_triangles<VectorType>(
+        rep_tails, rep_heads, offsets, col_ids, costs, rep_costs);
 
     test(v1.size() == 2, "multiple repulsive edges: should find 2 triangles");
 
@@ -165,12 +178,14 @@ template<template<typename> class VectorType>
 void test_empty_input()
 {
     // Build some positive graph (doesn't matter)
-    auto [offsets, col_ids] = build_positive_csr<VectorType>(3, {0, 1}, {2, 2});
+    auto [offsets, col_ids, costs] = build_positive_csr<VectorType>(3, {0, 1}, {2, 2});
 
     VectorType<int> rep_tails;
     VectorType<int> rep_heads;
+    VectorType<float> rep_costs;
 
-    auto [v1, v2, v3] = find_triangles<VectorType>(rep_tails, rep_heads, offsets, col_ids);
+    auto [v1, v2, v3, strength] = find_triangles<VectorType>(
+        rep_tails, rep_heads, offsets, col_ids, costs, rep_costs);
 
     test(v1.size() == 0, "empty input: should find 0 triangles");
     test(v2.size() == 0, "empty input: v2 empty");
@@ -234,17 +249,20 @@ void test_random_graphs()
 
         // Split into positive (cost >= 0) and repulsive (cost < 0) edges
         std::vector<int> pos_tails, pos_heads, neg_tails, neg_heads;
+        std::vector<float> pos_costs_vec, neg_costs_vec;
         for (size_t i = 0; i < rg.tails.size(); ++i)
         {
             if (rg.costs[i] < 0.0f)
             {
                 neg_tails.push_back(rg.tails[i]);
                 neg_heads.push_back(rg.heads[i]);
+                neg_costs_vec.push_back(rg.costs[i]);
             }
             else
             {
                 pos_tails.push_back(rg.tails[i]);
                 pos_heads.push_back(rg.heads[i]);
+                pos_costs_vec.push_back(rg.costs[i]);
             }
         }
 
@@ -252,14 +270,15 @@ void test_random_graphs()
             continue;
 
         // Build positive CSR via Graph
-        auto [offsets, col_ids] = build_positive_csr<VectorType>(
-            rg.num_nodes, pos_tails, pos_heads);
+        auto [offsets, col_ids, csr_costs] = build_positive_csr<VectorType>(
+            rg.num_nodes, pos_tails, pos_heads, pos_costs_vec);
 
         VectorType<int> rep_tails(neg_tails.begin(), neg_tails.end());
         VectorType<int> rep_heads(neg_heads.begin(), neg_heads.end());
+        VectorType<float> rep_costs(neg_costs_vec.begin(), neg_costs_vec.end());
 
-        auto [v1, v2, v3] = find_triangles<VectorType>(
-            rep_tails, rep_heads, offsets, col_ids);
+        auto [v1, v2, v3, strength] = find_triangles<VectorType>(
+            rep_tails, rep_heads, offsets, col_ids, csr_costs, rep_costs);
 
         // Copy results to host for comparison
         thrust::host_vector<int> h_v1(v1), h_v2(v2), h_v3(v3);

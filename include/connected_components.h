@@ -90,3 +90,14 @@ VectorType<int> compute_cc(const int num_nodes,
 }
 
 } // namespace connected_components
+
+// Explicit instantiation declarations.
+extern template
+thrust::host_vector<int>
+connected_components::compute_cc<thrust::host_vector>(
+    int, const thrust::host_vector<int>&, const thrust::host_vector<int>&);
+
+extern template
+thrust::device_vector<int>
+connected_components::compute_cc<thrust::device_vector>(
+    int, const thrust::device_vector<int>&, const thrust::device_vector<int>&);

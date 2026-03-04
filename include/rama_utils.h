@@ -16,6 +16,8 @@
 #include <thrust/sort.h>
 #include <thrust/scan.h>
 #include <thrust/scatter.h>
+#include <thrust/binary_search.h>
+#include <thrust/reduce.h>
 
 #ifdef __CUDACC__
 #define RAMA_HOST_DEVICE __host__ __device__
@@ -276,7 +278,8 @@ struct sort_edge_nodes_func
         }
 };
 
-inline void sort_edge_nodes(thrust::device_vector<int>& i, thrust::device_vector<int>& j)
+template<template<typename> class VectorType>
+inline void sort_edge_nodes(VectorType<int>& i, VectorType<int>& j)
 {
     assert(i.size() == j.size());
 
@@ -468,13 +471,13 @@ inline void map_old_values_consec(VectorType<int>& src,
 inline thrust::device_vector<int> compute_sanitized_graph(thrust::device_vector<int>& i, thrust::device_vector<int>& j, thrust::device_vector<float>& data)
 {
     // First find and remove duplicate edges. The corresponding costs are also discarded!
-    sort_edge_nodes(i, j);
+    sort_edge_nodes<thrust::device_vector>(i, j);
 
     coo_sorting<thrust::device_vector>(i, j, data);
     auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
     auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end()));
     auto new_last = thrust::unique_by_key(first, last, data.begin());
-    auto num_unique_edges = thrust::distance(first, new_last.first);
+    auto num_unique_edges = new_last.first - first;
     i.resize(num_unique_edges);
     j.resize(num_unique_edges);
     data.resize(num_unique_edges);
@@ -538,6 +541,127 @@ inline thrust::device_vector<T> concatenate(const thrust::device_vector<T>& a, c
     thrust::copy(a.begin(), a.end(), ab.begin());
     thrust::copy(b.begin(), b.end(), ab.begin() + a.size());
     return ab;
+}
+
+namespace detail {
+
+struct add_overlap_costs_func {
+    float* base_costs;
+    const float* lifted_costs;
+    const int* positions;
+    const int* overlap_flags;
+    RAMA_HOST_DEVICE
+    void operator()(const int idx) const {
+        if (overlap_flags[idx])
+            base_costs[positions[idx]] += lifted_costs[idx];
+    }
+};
+
+struct is_not_overlapping_func {
+    RAMA_HOST_DEVICE
+    bool operator()(const int flag) const { return flag == 0; }
+};
+
+} // namespace detail
+
+// Sanitize base and lifted edge lists before Graph construction:
+// 1. Normalize edge directions (i < j)
+// 2. Merge duplicate edges within each list (sum costs)
+// 3. Move overlapping lifted edges into base (sum costs), remove from lifted
+template<template<typename> class VectorType>
+inline void sanitize_input_edges(
+    VectorType<int>& base_i, VectorType<int>& base_j, VectorType<float>& base_costs,
+    VectorType<int>& lifted_i, VectorType<int>& lifted_j, VectorType<float>& lifted_costs)
+{
+    // Step 1: Normalize edge directions so i < j
+    if (!base_i.empty())
+        sort_edge_nodes<VectorType>(base_i, base_j);
+    if (!lifted_i.empty())
+        sort_edge_nodes<VectorType>(lifted_i, lifted_j);
+
+    // Step 2: Dedup base edges (sort by (i,j), reduce_by_key to sum costs)
+    if (!base_i.empty())
+    {
+        coo_sorting<VectorType>(base_i, base_j, base_costs);
+        VectorType<int> out_i(base_i.size()), out_j(base_j.size());
+        VectorType<float> out_costs(base_costs.size());
+        auto keys_in = thrust::make_zip_iterator(thrust::make_tuple(base_i.begin(), base_j.begin()));
+        auto keys_out = thrust::make_zip_iterator(thrust::make_tuple(out_i.begin(), out_j.begin()));
+        auto end = thrust::reduce_by_key(keys_in, keys_in + base_i.size(),
+            base_costs.begin(), keys_out, out_costs.begin());
+        size_t n = std::distance(keys_out, end.first);
+        out_i.resize(n); out_j.resize(n); out_costs.resize(n);
+        base_i = std::move(out_i);
+        base_j = std::move(out_j);
+        base_costs = std::move(out_costs);
+    }
+
+    // Step 3: Dedup lifted edges
+    if (lifted_i.empty())
+        return;
+
+    {
+        coo_sorting<VectorType>(lifted_i, lifted_j, lifted_costs);
+        VectorType<int> out_i(lifted_i.size()), out_j(lifted_j.size());
+        VectorType<float> out_costs(lifted_costs.size());
+        auto keys_in = thrust::make_zip_iterator(thrust::make_tuple(lifted_i.begin(), lifted_j.begin()));
+        auto keys_out = thrust::make_zip_iterator(thrust::make_tuple(out_i.begin(), out_j.begin()));
+        auto end = thrust::reduce_by_key(keys_in, keys_in + lifted_i.size(),
+            lifted_costs.begin(), keys_out, out_costs.begin());
+        size_t n = std::distance(keys_out, end.first);
+        out_i.resize(n); out_j.resize(n); out_costs.resize(n);
+        lifted_i = std::move(out_i);
+        lifted_j = std::move(out_j);
+        lifted_costs = std::move(out_costs);
+    }
+
+    if (base_i.empty())
+        return;
+
+    // Step 4: Find lifted edges that overlap with base edges
+    auto base_keys_begin = thrust::make_zip_iterator(thrust::make_tuple(base_i.begin(), base_j.begin()));
+    auto base_keys_end = thrust::make_zip_iterator(thrust::make_tuple(base_i.end(), base_j.end()));
+    auto lifted_keys_begin = thrust::make_zip_iterator(thrust::make_tuple(lifted_i.begin(), lifted_j.begin()));
+    auto lifted_keys_end = thrust::make_zip_iterator(thrust::make_tuple(lifted_i.end(), lifted_j.end()));
+
+    VectorType<int> overlap_flags(lifted_i.size());
+    thrust::binary_search(base_keys_begin, base_keys_end,
+        lifted_keys_begin, lifted_keys_end, overlap_flags.begin());
+
+    int num_overlapping = thrust::reduce(overlap_flags.begin(), overlap_flags.end());
+    if (num_overlapping == 0)
+        return;
+
+    // Step 5: Add matched lifted costs to corresponding base edges
+    VectorType<int> positions(lifted_i.size());
+    thrust::lower_bound(base_keys_begin, base_keys_end,
+        lifted_keys_begin, lifted_keys_end, positions.begin());
+
+    thrust::for_each(
+        thrust::make_counting_iterator<int>(0),
+        thrust::make_counting_iterator<int>((int)lifted_i.size()),
+        detail::add_overlap_costs_func{
+            thrust::raw_pointer_cast(base_costs.data()),
+            thrust::raw_pointer_cast(lifted_costs.data()),
+            thrust::raw_pointer_cast(positions.data()),
+            thrust::raw_pointer_cast(overlap_flags.data())});
+
+    // Step 6: Remove overlapping edges from lifted
+    size_t num_remaining = lifted_i.size() - num_overlapping;
+    VectorType<int> new_li(num_remaining), new_lj(num_remaining);
+    VectorType<float> new_lc(num_remaining);
+
+    auto lifted_data = thrust::make_zip_iterator(
+        thrust::make_tuple(lifted_i.begin(), lifted_j.begin(), lifted_costs.begin()));
+    auto new_lifted_data = thrust::make_zip_iterator(
+        thrust::make_tuple(new_li.begin(), new_lj.begin(), new_lc.begin()));
+
+    thrust::copy_if(lifted_data, lifted_data + lifted_i.size(),
+        overlap_flags.begin(), new_lifted_data, detail::is_not_overlapping_func());
+
+    lifted_i = std::move(new_li);
+    lifted_j = std::move(new_lj);
+    lifted_costs = std::move(new_lc);
 }
 
 template<typename T>

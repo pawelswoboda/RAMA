@@ -63,7 +63,7 @@ inline float determine_matching_threshold(const Graph<VectorType>& A, const floa
 // Returns (node_mapping, nr_matched_vertices) where node_mapping[v] = u
 // means v is matched to u (with u <= v), and unmatched vertices map to themselves.
 template<template<typename> class VectorType>
-inline std::tuple<VectorType<int>, int> filter_edges_by_matching(
+std::tuple<VectorType<int>, int> filter_edges_by_matching(
     const Graph<VectorType>& A,
     const float mean_multiplier_mm = 0.0,
     const bool verbose = true)
@@ -168,3 +168,12 @@ inline std::tuple<VectorType<int>, int> filter_edges_by_matching(
 
     return {node_mapping, prev_num_matched};
 }
+
+// Explicit instantiation declarations.
+extern template
+std::tuple<thrust::host_vector<int>, int>
+filter_edges_by_matching<thrust::host_vector>(const Graph<thrust::host_vector>&, float, bool);
+
+extern template
+std::tuple<thrust::device_vector<int>, int>
+filter_edges_by_matching<thrust::device_vector>(const Graph<thrust::device_vector>&, float, bool);

@@ -96,8 +96,10 @@ rama_solver(Graph<VectorType>& base_G, Graph<VectorType>& lifted_G,
     Graph<VectorType> union_G = create_union_graph(base_G, lifted_G);
     const double final_lb = dual_solver<VectorType>(union_G, base_G, lifted_G,
         use_cut_factors, opts.max_cycle_length_lb, opts.num_dual_itr_lb,
-        opts.num_outer_itr_dual, 1e-4, opts.verbose);
+        opts.num_outer_itr_dual, 1e-4, opts.verbose, opts.long_cycle_method,
+        opts.triangle_budget_ratio);
     std::tie(base_G, lifted_G) = extract_costs_from_union(union_G, base_G);
+
 
     if (opts.verbose)
         std::cout << "initial energy = " << base_G.sum() + lifted_G.sum() << "\n";
@@ -122,7 +124,9 @@ rama_solver(Graph<VectorType>& base_G, Graph<VectorType>& lifted_G,
             union_G = create_union_graph(base_G, lifted_G);
             dual_solver<VectorType>(union_G, base_G, lifted_G, use_cut_factors,
                                     opts.max_cycle_length_primal,
-                                    opts.num_dual_itr_primal, 1, 1e-4, opts.verbose);
+                                    opts.num_dual_itr_primal, 1, 1e-4, opts.verbose,
+                                    opts.long_cycle_method,
+                                    opts.triangle_budget_ratio);
             std::tie(base_G, lifted_G) = extract_costs_from_union(union_G, base_G);
         }
 
@@ -134,22 +138,31 @@ rama_solver(Graph<VectorType>& base_G, Graph<VectorType>& lifted_G,
         // attractive lifted edge, find a base-graph path through
         // non-negative edges and merge all nodes along it.
         // Uses reparametrized costs for path finding (non-negative filter).
-        if (lifted_G.num_directed_edges() > 0)
+        if (lifted_G.num_directed_edges() > 0 && false) // TODO: remove that, current debugging
         {
             std::tie(cur_node_mapping, nr_edges_to_contract) =
                 find_lifted_contraction_mapping<VectorType>(base_G, lifted_G, opts.verbose);
             if (nr_edges_to_contract > 0)
+            {
                 used_lifted_contraction = true;
+                if (opts.verbose)
+                    std::cout << "contraction " << iter << ": lifted path ("
+                              << nr_edges_to_contract << " edges)\n";
+            }
         }
 
         // Fall back to regular base-edge contraction (matching or MST)
         if (nr_edges_to_contract == 0)
         {
-            if (try_matching)
+            if (try_matching && false) // TODO: debugging
             {
                 std::tie(cur_node_mapping, nr_edges_to_contract) =
                     rama_solver_detail::contraction_mapping_by_maximum_matching<VectorType>(
                         base_G, opts.mean_multiplier_mm, opts.verbose);
+
+                if (opts.verbose)
+                    std::cout << "contraction " << iter << ": matching ("
+                              << nr_edges_to_contract << " edges)\n";
 
                 if (nr_edges_to_contract < (int)base_G.num_nodes() * opts.matching_thresh_crossover_ratio)
                 {
@@ -165,7 +178,11 @@ rama_solver(Graph<VectorType>& base_G, Graph<VectorType>& lifted_G,
             else
             {
                 std::tie(cur_node_mapping, nr_edges_to_contract) =
-                    find_contraction_mapping<VectorType>(base_G, opts.verbose);
+                    find_contraction_mapping<VectorType>(base_G, lifted_G, opts.verbose);
+
+                if (opts.verbose)
+                    std::cout << "contraction " << iter << ": MST ("
+                              << nr_edges_to_contract << " edges)\n";
             }
         }
 
@@ -184,19 +201,13 @@ rama_solver(Graph<VectorType>& base_G, Graph<VectorType>& lifted_G,
         Graph<VectorType> new_base_G = used_lifted_contraction
             ? orig_base_G.contract(cur_node_mapping)
             : base_G.contract(cur_node_mapping);
+
         if (opts.verbose)
         {
             std::cout << "original G size " << base_G.num_nodes() << "\n";
             std::cout << "contracted G size " << new_base_G.num_nodes() << "\n";
         }
         assert(new_base_G.num_nodes() < base_G.num_nodes());
-
-        if (opts.verbose)
-        {
-            VectorType<float> slc = new_base_G.self_loop_costs();
-            float energy_reduction = thrust::reduce(slc.begin(), slc.end());
-            std::cout << "energy reduction " << energy_reduction << "\n";
-        }
 
         // Lifted path contraction may contract negative base edges (the
         // positive lifted cost outweighs them), so negative self-loops are
@@ -205,13 +216,50 @@ rama_solver(Graph<VectorType>& base_G, Graph<VectorType>& lifted_G,
             rama_solver_detail::has_bad_contractions<VectorType>(new_base_G))
             throw std::runtime_error("Found bad contractions");
 
-        base_G = std::move(new_base_G);
-        base_G.remove_self_loops();
 
+        base_G = std::move(new_base_G);
+
+        Graph<VectorType> new_lifted_G;
         if (lifted_G.num_directed_edges() > 0)
         {
-            lifted_G = lifted_G.contract(cur_node_mapping);
-            lifted_G.remove_self_loops();
+            if (opts.verbose)
+                std::cout << "contracting lifted graph: " << lifted_G.num_directed_edges()
+                          << " directed edges, " << lifted_G.num_nodes() << " nodes"
+                          << ", node_mapping size " << cur_node_mapping.size() << "\n";
+            new_lifted_G = lifted_G.contract(cur_node_mapping);
+
+        }
+
+        if (opts.verbose)
+        {
+            VectorType<float> base_slc = base_G.self_loop_costs();
+            float energy_reduction = thrust::reduce(base_slc.begin(), base_slc.end());
+            if (new_lifted_G.num_directed_edges() > 0)
+            {
+                VectorType<float> lifted_slc = new_lifted_G.self_loop_costs();
+                energy_reduction += thrust::reduce(lifted_slc.begin(), lifted_slc.end());
+            }
+            std::cout << "energy reduction " << energy_reduction << "\n";
+        }
+
+
+        base_G.remove_self_loops();
+
+
+        if (new_lifted_G.num_directed_edges() > 0)
+        {
+            new_lifted_G.remove_self_loops();
+
+            lifted_G = std::move(new_lifted_G);
+        }
+
+        // Absorb lifted edges that became parallel to base edges after contraction.
+        if (lifted_G.num_directed_edges() > 0 && base_G.num_directed_edges() > 0)
+        {
+            Graph<VectorType> u = create_union_graph(base_G, lifted_G);
+
+            std::tie(base_G, lifted_G) = extract_costs_from_union(u, base_G);
+
         }
 
         if (opts.verbose)
@@ -251,3 +299,26 @@ rama_solver(Graph<VectorType>& G, const multicut_solver_options& opts)
     Graph<VectorType> empty_lifted;
     return rama_solver(G, empty_lifted, opts);
 }
+
+// Explicit instantiation declarations.
+extern template
+std::tuple<thrust::host_vector<int>, double, std::vector<std::vector<int>>>
+rama_solver<thrust::host_vector>(
+    Graph<thrust::host_vector>&, Graph<thrust::host_vector>&,
+    const multicut_solver_options&);
+
+extern template
+std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>>>
+rama_solver<thrust::device_vector>(
+    Graph<thrust::device_vector>&, Graph<thrust::device_vector>&,
+    const multicut_solver_options&);
+
+extern template
+std::tuple<thrust::host_vector<int>, double, std::vector<std::vector<int>>>
+rama_solver<thrust::host_vector>(
+    Graph<thrust::host_vector>&, const multicut_solver_options&);
+
+extern template
+std::tuple<thrust::device_vector<int>, double, std::vector<std::vector<int>>>
+rama_solver<thrust::device_vector>(
+    Graph<thrust::device_vector>&, const multicut_solver_options&);

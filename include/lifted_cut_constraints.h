@@ -213,14 +213,45 @@ LiftedCutFactors<VectorType> find_lifted_cut_constraints(
             });
     }
 
+    int num_q_all = thrust::reduce(q_mask.begin(), q_mask.end(), 0);
+    if (num_q_all == 0)
+        return result;
+
+    auto is_one = [] LCC_HOST_DEVICE (int x) { return x == 1; };
+
+    // Compute cost threshold τ = 0.1 * mean(|cost|) of Q-edges.
+    // Re-filter Q to only moderately negative edges (cost <= -τ).
+    float tau;
+    {
+        VectorType<float> q_costs(num_q_all);
+        thrust::copy_if(base_G.get_costs().begin(), base_G.get_costs().begin() + num_base_dir,
+                        q_mask.begin(), q_costs.begin(), is_one);
+        float sum_abs = -thrust::reduce(q_costs.begin(), q_costs.end(), 0.0f);
+        tau = 0.1f * sum_abs / num_q_all;
+
+        // Tighten q_mask with threshold
+        const float* bc_ptr2 = base_G.get_costs_ptr();
+        const int* ct_ptr2 = thrust::raw_pointer_cast(base_ct.data());
+        const int* ch_ptr2 = thrust::raw_pointer_cast(base_ch.data());
+        int* mask_ptr2 = thrust::raw_pointer_cast(q_mask.data());
+        thrust::for_each(
+            thrust::make_counting_iterator(0),
+            thrust::make_counting_iterator(num_base_dir),
+            [bc_ptr2, ct_ptr2, ch_ptr2, mask_ptr2, tau] LCC_HOST_DEVICE (int e) {
+                mask_ptr2[e] = (bc_ptr2[e] <= -tau && ct_ptr2[e] < ch_ptr2[e]) ? 1 : 0;
+            });
+    }
+
     int num_q = thrust::reduce(q_mask.begin(), q_mask.end(), 0);
     if (num_q == 0)
         return result;
 
-    auto is_one = [] LCC_HOST_DEVICE (int x) { return x == 1; };
     VectorType<int> q_src(num_q), q_dst(num_q);
+    VectorType<float> q_costs(num_q);
     thrust::copy_if(base_ct.begin(), base_ct.end(), q_mask.begin(), q_src.begin(), is_one);
     thrust::copy_if(base_ch.begin(), base_ch.end(), q_mask.begin(), q_dst.begin(), is_one);
+    thrust::copy_if(base_G.get_costs().begin(), base_G.get_costs().begin() + num_base_dir,
+                    q_mask.begin(), q_costs.begin(), is_one);
 
     // ---- Phase 3: Find violations ----
     // Positive lifted edges (tail < head) with endpoints in different components.
@@ -277,13 +308,13 @@ LiftedCutFactors<VectorType> find_lifted_cut_constraints(
     thrust::sequence(iota.begin(), iota.end(), 0);
     thrust::copy_if(iota.begin(), iota.end(), v_mask.begin(), v_idx.begin(), is_one);
 
-    if (verbose)
-        std::cout << "lifted cut constraints: " << num_v
-                  << " violations, Q: " << num_comp << " nodes, "
-                  << num_q << " edges\n";
+    // ---- Phase 4: Unique (s,t) component pairs, filtered by sum(L) > τ ----
 
-    // ---- Phase 4: Unique (s,t) component pairs ----
+    // Gather violated lifted edge costs
+    VectorType<float> v_costs(num_v);
+    thrust::gather(v_idx.begin(), v_idx.end(), lifted_G.get_costs().begin(), v_costs.begin());
 
+    // Build pair keys for each violation
     VectorType<long long> pair_keys(num_v);
     {
         const int* vs_ptr = thrust::raw_pointer_cast(v_src.data());
@@ -297,11 +328,69 @@ LiftedCutFactors<VectorType> find_lifted_cut_constraints(
             });
     }
 
-    VectorType<long long> unique_keys(pair_keys);
-    thrust::sort(unique_keys.begin(), unique_keys.end());
-    auto new_end = thrust::unique(unique_keys.begin(), unique_keys.end());
-    int num_pairs = (int)(new_end - unique_keys.begin());
-    unique_keys.resize(num_pairs);
+    // Sort violations by pair key, then reduce to get sum(L) per pair
+    VectorType<long long> sorted_pair_keys(pair_keys);
+    VectorType<float> sorted_v_costs(v_costs);
+    thrust::sort_by_key(sorted_pair_keys.begin(), sorted_pair_keys.end(), sorted_v_costs.begin());
+
+    VectorType<long long> reduced_keys(num_v);
+    VectorType<float> reduced_sums(num_v);
+    auto reduce_end_pairs = thrust::reduce_by_key(
+        sorted_pair_keys.begin(), sorted_pair_keys.end(),
+        sorted_v_costs.begin(),
+        reduced_keys.begin(), reduced_sums.begin());
+    int num_pairs_all = (int)std::distance(reduced_keys.begin(), reduce_end_pairs.first);
+    reduced_keys.resize(num_pairs_all);
+    reduced_sums.resize(num_pairs_all);
+
+    // Filter to pairs with sum(L) > τ
+    VectorType<long long> unique_keys(num_pairs_all);
+    {
+        auto in_first = thrust::make_zip_iterator(
+            thrust::make_tuple(reduced_keys.begin(), reduced_sums.begin()));
+        auto in_last = thrust::make_zip_iterator(
+            thrust::make_tuple(reduced_keys.end(), reduced_sums.end()));
+        auto out_first = thrust::make_zip_iterator(
+            thrust::make_tuple(unique_keys.begin(), thrust::make_discard_iterator()));
+        auto filt_end = thrust::copy_if(in_first, in_last, reduced_sums.begin(), out_first,
+            [tau] LCC_HOST_DEVICE (float s) { return s > tau; });
+        int num_kept = (int)std::distance(
+            thrust::make_zip_iterator(thrust::make_tuple(unique_keys.begin(), thrust::make_discard_iterator())),
+            filt_end);
+        unique_keys.resize(num_kept);
+    }
+
+    int num_pairs = (int)unique_keys.size();
+    if (num_pairs == 0)
+        return result;
+
+    // Filter violations to only those belonging to surviving pairs
+    {
+        const long long* uk_ptr = thrust::raw_pointer_cast(unique_keys.data());
+        const long long* pk_ptr = thrust::raw_pointer_cast(pair_keys.data());
+        int np = num_pairs;
+        VectorType<int> keep_mask(num_v);
+        int* km_ptr = thrust::raw_pointer_cast(keep_mask.data());
+        thrust::for_each(
+            thrust::make_counting_iterator(0),
+            thrust::make_counting_iterator(num_v),
+            [pk_ptr, uk_ptr, km_ptr, np] LCC_HOST_DEVICE (int i) {
+                long long key = pk_ptr[i];
+                int lo = 0, hi = np;
+                while (lo < hi) { int mid = (lo + hi) / 2; if (uk_ptr[mid] < key) lo = mid + 1; else hi = mid; }
+                km_ptr[i] = (lo < np && uk_ptr[lo] == key) ? 1 : 0;
+            });
+
+        int new_num_v = thrust::reduce(keep_mask.begin(), keep_mask.end(), 0);
+        VectorType<int> new_v_src(new_num_v), new_v_dst(new_num_v), new_v_idx(new_num_v);
+        thrust::copy_if(v_src.begin(), v_src.end(), keep_mask.begin(), new_v_src.begin(), is_one);
+        thrust::copy_if(v_dst.begin(), v_dst.end(), keep_mask.begin(), new_v_dst.begin(), is_one);
+        thrust::copy_if(v_idx.begin(), v_idx.end(), keep_mask.begin(), new_v_idx.begin(), is_one);
+        v_src = std::move(new_v_src);
+        v_dst = std::move(new_v_dst);
+        v_idx = std::move(new_v_idx);
+        num_v = new_num_v;
+    }
 
     VectorType<int> pair_s(num_pairs), pair_t(num_pairs);
     {
@@ -317,6 +406,12 @@ LiftedCutFactors<VectorType> find_lifted_cut_constraints(
             });
     }
 
+    if (verbose)
+        std::cout << "cut factor filtering: tau=" << tau
+                  << ", Q-edges " << num_q_all << " -> " << num_q
+                  << ", pairs " << num_pairs_all << " -> " << num_pairs
+                  << ", violations " << num_v << "\n";
+
     // ---- Phase 5: Karger trials ----
     // For each unique (s,t) pair, run M random contraction trials and keep the smallest cut.
     // Each trial uses a random permutation of Q-edges (generated via hash-based keys + sort).
@@ -330,20 +425,24 @@ LiftedCutFactors<VectorType> find_lifted_cut_constraints(
 
     VectorType<int> cur_parent(num_pairs * num_comp);
     VectorType<int> cur_cut(num_pairs);
-    VectorType<unsigned int> perm_keys_buf(num_q);
+    VectorType<float> perm_keys_buf(num_q);
     VectorType<int> perm(num_q);
 
     for (int m = 0; m < M; m++)
     {
-        // Generate random permutation via hash-keyed sort
+        // Generate cost-weighted random permutation via hash-keyed sort.
+        // Key = hash * |cost|: strongly negative edges get large keys,
+        // are sorted late, and thus contracted late — surviving into the cut.
         {
             const unsigned int seed = (unsigned int)m * 0x9E3779B9u + 42u;
-            unsigned int* pk = thrust::raw_pointer_cast(perm_keys_buf.data());
+            float* pk = thrust::raw_pointer_cast(perm_keys_buf.data());
+            const float* qc = thrust::raw_pointer_cast(q_costs.data());
             thrust::for_each(
                 thrust::make_counting_iterator(0),
                 thrust::make_counting_iterator(num_q),
-                [pk, seed] LCC_HOST_DEVICE (int e) {
-                    pk[e] = lifted_cut_detail::hash32(seed + (unsigned int)e);
+                [pk, qc, seed] LCC_HOST_DEVICE (int e) {
+                    float u = (float)lifted_cut_detail::hash32(seed + (unsigned int)e);
+                    pk[e] = u * (-qc[e]);
                 });
         }
         thrust::sequence(perm.begin(), perm.end(), 0);
@@ -721,3 +820,14 @@ LiftedCutFactors<VectorType> find_lifted_cut_constraints(
 
     return result;
 }
+
+// Explicit instantiation declarations.
+extern template
+LiftedCutFactors<thrust::host_vector>
+find_lifted_cut_constraints<thrust::host_vector>(
+    const Graph<thrust::host_vector>&, const Graph<thrust::host_vector>&, bool);
+
+extern template
+LiftedCutFactors<thrust::device_vector>
+find_lifted_cut_constraints<thrust::device_vector>(
+    const Graph<thrust::device_vector>&, const Graph<thrust::device_vector>&, bool);

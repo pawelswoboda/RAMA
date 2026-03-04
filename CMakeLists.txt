@@ -5,7 +5,7 @@ option(WITH_CUDA "Compile GPU components" ON)
 if(WITH_CUDA)
     project(RAMA LANGUAGES CXX CUDA)
     set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -use_fast_math --extended-lambda")
-    set(CMAKE_CUDA_ARCHITECTURES OFF)
+    set(CMAKE_CUDA_ARCHITECTURES native)
 else()
     project(RAMA LANGUAGES CXX)
 endif()
@@ -76,7 +76,7 @@ endif()
 CPMAddPackage(
     NAME CCCL
     GITHUB_REPOSITORY nvidia/cccl
-    GIT_TAG v2.8.3
+    GIT_TAG v3.2.1
 )
 target_link_libraries(RAMA INTERFACE CCCL::CCCL)
 

@@ -28,12 +28,14 @@ template<template<typename> class VectorType>
 void test_single_pentagon()
 {
     // Positive edges: 0-1, 1-2, 2-3, 3-4
-    auto [offsets, col_ids] = build_positive_csr<VectorType>(5, {0, 1, 2, 3}, {1, 2, 3, 4});
+    auto [offsets, col_ids, costs] = build_positive_csr<VectorType>(5, {0, 1, 2, 3}, {1, 2, 3, 4});
 
     VectorType<int> rep_tails(1); rep_tails[0] = 0;
     VectorType<int> rep_heads(1); rep_heads[0] = 4;
+    VectorType<float> rep_costs(1); rep_costs[0] = -1.0f;
 
-    auto [v1, v2, v3] = find_pentagons<VectorType>(rep_tails, rep_heads, offsets, col_ids);
+    auto [v1, v2, v3, strength] = find_pentagons<VectorType>(
+        rep_tails, rep_heads, offsets, col_ids, costs, rep_costs);
 
     test(v1.size() == 3, "single pent: should find 3 triangles, found " + std::to_string(v1.size()));
     // Sorted triangles from pentagon 0-1-2-3-4: (0,1,4), (1,2,4), (2,3,4)
@@ -58,12 +60,14 @@ template<template<typename> class VectorType>
 void test_no_pentagons()
 {
     // Positive edges: 0-1, 3-4 (disconnected)
-    auto [offsets, col_ids] = build_positive_csr<VectorType>(5, {0, 3}, {1, 4});
+    auto [offsets, col_ids, costs] = build_positive_csr<VectorType>(5, {0, 3}, {1, 4});
 
     VectorType<int> rep_tails(1); rep_tails[0] = 0;
     VectorType<int> rep_heads(1); rep_heads[0] = 4;
+    VectorType<float> rep_costs(1); rep_costs[0] = -1.0f;
 
-    auto [v1, v2, v3] = find_pentagons<VectorType>(rep_tails, rep_heads, offsets, col_ids);
+    auto [v1, v2, v3, strength] = find_pentagons<VectorType>(
+        rep_tails, rep_heads, offsets, col_ids, costs, rep_costs);
 
     test(v1.size() == 0, "no pents: should find 0 triangles");
 }
@@ -72,12 +76,14 @@ void test_no_pentagons()
 template<template<typename> class VectorType>
 void test_pent_empty_input()
 {
-    auto [offsets, col_ids] = build_positive_csr<VectorType>(5, {0, 1, 2, 3}, {1, 2, 3, 4});
+    auto [offsets, col_ids, costs] = build_positive_csr<VectorType>(5, {0, 1, 2, 3}, {1, 2, 3, 4});
 
     VectorType<int> rep_tails;
     VectorType<int> rep_heads;
+    VectorType<float> rep_costs;
 
-    auto [v1, v2, v3] = find_pentagons<VectorType>(rep_tails, rep_heads, offsets, col_ids);
+    auto [v1, v2, v3, strength] = find_pentagons<VectorType>(
+        rep_tails, rep_heads, offsets, col_ids, costs, rep_costs);
 
     test(v1.size() == 0, "empty input: should find 0 triangles");
 }
@@ -104,13 +110,15 @@ template<template<typename> class VectorType>
 void test_two_pentagons_shared_repulsive_edge()
 {
     // Positive edges: 0-1, 1-2, 2-3, 3-4, 0-5, 5-6, 6-7, 7-4
-    auto [offsets, col_ids] = build_positive_csr<VectorType>(
+    auto [offsets, col_ids, costs] = build_positive_csr<VectorType>(
         8, {0, 1, 2, 3, 0, 5, 6, 7}, {1, 2, 3, 4, 5, 6, 7, 4});
 
     VectorType<int> rep_tails(1); rep_tails[0] = 0;
     VectorType<int> rep_heads(1); rep_heads[0] = 4;
+    VectorType<float> rep_costs(1); rep_costs[0] = -1.0f;
 
-    auto [v1, v2, v3] = find_pentagons<VectorType>(rep_tails, rep_heads, offsets, col_ids);
+    auto [v1, v2, v3, strength] = find_pentagons<VectorType>(
+        rep_tails, rep_heads, offsets, col_ids, costs, rep_costs);
 
     test(v1.size() == 6, "two pents shared edge: should find 6 triangles, found "
         + std::to_string(v1.size()));
@@ -194,31 +202,35 @@ void test_pent_random_graphs()
         auto rg = generate_random_graph(num_nodes, edge_prob, seed);
 
         std::vector<int> pos_tails, pos_heads, neg_tails, neg_heads;
+        std::vector<float> pos_costs_vec, neg_costs_vec;
         for (size_t i = 0; i < rg.tails.size(); ++i)
         {
             if (rg.costs[i] < 0.0f)
             {
                 neg_tails.push_back(rg.tails[i]);
                 neg_heads.push_back(rg.heads[i]);
+                neg_costs_vec.push_back(rg.costs[i]);
             }
             else
             {
                 pos_tails.push_back(rg.tails[i]);
                 pos_heads.push_back(rg.heads[i]);
+                pos_costs_vec.push_back(rg.costs[i]);
             }
         }
 
         if (pos_tails.empty() || neg_tails.empty())
             continue;
 
-        auto [offsets, col_ids] = build_positive_csr<VectorType>(
-            rg.num_nodes, pos_tails, pos_heads);
+        auto [offsets, col_ids, csr_costs] = build_positive_csr<VectorType>(
+            rg.num_nodes, pos_tails, pos_heads, pos_costs_vec);
 
         VectorType<int> rep_tails(neg_tails.begin(), neg_tails.end());
         VectorType<int> rep_heads(neg_heads.begin(), neg_heads.end());
+        VectorType<float> rep_costs(neg_costs_vec.begin(), neg_costs_vec.end());
 
-        auto [v1, v2, v3] = find_pentagons<VectorType>(
-            rep_tails, rep_heads, offsets, col_ids);
+        auto [v1, v2, v3, strength] = find_pentagons<VectorType>(
+            rep_tails, rep_heads, offsets, col_ids, csr_costs, rep_costs);
 
         thrust::host_vector<int> h_v1(v1), h_v2(v2), h_v3(v3);
 
