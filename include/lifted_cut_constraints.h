@@ -143,21 +143,21 @@ struct update_best_functor {
 
 // Find violated lifted cut constraints and build GPU-friendly cut factors.
 //
-// A lifted edge (s,t) with positive cost is "violated" when s and t are in different
-// connected components of the non-negative base subgraph. This means the LP relaxation
-// can set x_{st}=0 while cutting base edges on every s-t path -- violating the
-// cut constraint x_{st} >= sum_{e in C} x_e - (|C|-1).
+// Contracts base edges with cost > -tau into super-nodes. The remaining edges
+// (cost <= -tau, strongly repulsive) form the contracted graph Q.
+// For each lifted edge with cost >= tau whose endpoints are in different
+// super-nodes and reachable through Q, finds a min-cut via Karger's algorithm.
 //
-// For each violation, builds a quotient graph Q (nodes = components, edges = negative
-// inter-component base edges) and runs Karger's randomized min s-t cut algorithm to
-// find a small cut suitable for Lagrangian reparametrization.
+// At tau=0: contracts cost > 0, Q has cost <= 0 — close to the standard split.
+// Cascading from high tau to low finds strongest violations first.
 //
-// Returns LiftedCutFactors in CSR format, entirely on GPU.
+// Returns LiftedCutFactors in CSR format.
 template<template<typename> class VectorType>
 LiftedCutFactors<VectorType> find_lifted_cut_constraints(
     const Graph<VectorType>& base_G,
     const Graph<VectorType>& lifted_G,
-    bool verbose = false)
+    bool verbose = false,
+    float tau = 0.0f)
 {
     LiftedCutFactors<VectorType> result;
 
@@ -168,17 +168,21 @@ LiftedCutFactors<VectorType> find_lifted_cut_constraints(
     const int num_base_dir = (int)base_G.num_directed_edges();
     const int num_lifted_dir = (int)lifted_G.num_directed_edges();
 
-    // ---- Phase 1: CC on non-negative base subgraph ----
+    // ---- Phase 1: Contract base edges with cost > -tau ----
+    // Edges with cost > -tau (attractive + neutral) are contracted into super-nodes.
+    // Only strongly negative edges (cost <= -tau) remain between super-nodes.
 
-    auto is_nonneg = [] LCC_HOST_DEVICE (float c) { return c >= 0.0f; };
-    int num_nonneg = thrust::count_if(
-        base_G.get_costs().begin(), base_G.get_costs().end(), is_nonneg);
+    const float tau_val = tau;
+    const float neg_tau = -tau;
+    auto is_contracted = [neg_tau] LCC_HOST_DEVICE (float c) { return c > neg_tau; };
+    int num_contracted = thrust::count_if(
+        base_G.get_costs().begin(), base_G.get_costs().end(), is_contracted);
 
-    VectorType<int> attr_t(num_nonneg), attr_h(num_nonneg);
+    VectorType<int> attr_t(num_contracted), attr_h(num_contracted);
     thrust::copy_if(base_G.get_tails().begin(), base_G.get_tails().begin() + num_base_dir,
-                    base_G.get_costs().begin(), attr_t.begin(), is_nonneg);
+                    base_G.get_costs().begin(), attr_t.begin(), is_contracted);
     thrust::copy_if(base_G.get_heads().begin(), base_G.get_heads().begin() + num_base_dir,
-                    base_G.get_costs().begin(), attr_h.begin(), is_nonneg);
+                    base_G.get_costs().begin(), attr_h.begin(), is_contracted);
 
     VectorType<int> comp =
         connected_components::compute_cc<VectorType>(num_nodes, attr_t, attr_h);
@@ -191,7 +195,7 @@ LiftedCutFactors<VectorType> find_lifted_cut_constraints(
         return result;
 
     // ---- Phase 2: Build quotient graph Q ----
-    // One Q-edge per undirected negative inter-component base edge (comp_tail < comp_head).
+    // One Q-edge per undirected strongly repulsive inter-component base edge (cost <= -tau).
 
     VectorType<int> base_ct(num_base_dir), base_ch(num_base_dir);
     thrust::gather(base_G.get_tails().begin(), base_G.get_tails().begin() + num_base_dir,
@@ -208,8 +212,8 @@ LiftedCutFactors<VectorType> find_lifted_cut_constraints(
         thrust::for_each(
             thrust::make_counting_iterator(0),
             thrust::make_counting_iterator(num_base_dir),
-            [bc_ptr, ct_ptr, ch_ptr, mask_ptr] LCC_HOST_DEVICE (int e) {
-                mask_ptr[e] = (bc_ptr[e] < 0.0f && ct_ptr[e] < ch_ptr[e]) ? 1 : 0;
+            [bc_ptr, ct_ptr, ch_ptr, mask_ptr, neg_tau] LCC_HOST_DEVICE (int e) {
+                mask_ptr[e] = (bc_ptr[e] <= neg_tau && ct_ptr[e] < ch_ptr[e]) ? 1 : 0;
             });
     }
 
@@ -219,27 +223,30 @@ LiftedCutFactors<VectorType> find_lifted_cut_constraints(
 
     auto is_one = [] LCC_HOST_DEVICE (int x) { return x == 1; };
 
-    // Compute cost threshold τ = 0.1 * mean(|cost|) of Q-edges.
-    // Re-filter Q to only moderately negative edges (cost <= -τ).
-    float tau;
+    // Compute internal cost threshold = 0.1 * mean(|cost|) of Q-edges.
+    // Further tighten Q if this is stricter than -tau.
+    float internal_tau;
     {
-        VectorType<float> q_costs(num_q_all);
+        VectorType<float> q_costs_tmp(num_q_all);
         thrust::copy_if(base_G.get_costs().begin(), base_G.get_costs().begin() + num_base_dir,
-                        q_mask.begin(), q_costs.begin(), is_one);
-        float sum_abs = -thrust::reduce(q_costs.begin(), q_costs.end(), 0.0f);
-        tau = 0.1f * sum_abs / num_q_all;
+                        q_mask.begin(), q_costs_tmp.begin(), is_one);
+        float sum_abs = -thrust::reduce(q_costs_tmp.begin(), q_costs_tmp.end(), 0.0f);
+        internal_tau = 0.1f * sum_abs / num_q_all;
 
-        // Tighten q_mask with threshold
-        const float* bc_ptr2 = base_G.get_costs_ptr();
-        const int* ct_ptr2 = thrust::raw_pointer_cast(base_ct.data());
-        const int* ch_ptr2 = thrust::raw_pointer_cast(base_ch.data());
-        int* mask_ptr2 = thrust::raw_pointer_cast(q_mask.data());
-        thrust::for_each(
-            thrust::make_counting_iterator(0),
-            thrust::make_counting_iterator(num_base_dir),
-            [bc_ptr2, ct_ptr2, ch_ptr2, mask_ptr2, tau] LCC_HOST_DEVICE (int e) {
-                mask_ptr2[e] = (bc_ptr2[e] <= -tau && ct_ptr2[e] < ch_ptr2[e]) ? 1 : 0;
-            });
+        const float q_thresh = std::min(neg_tau, -internal_tau);
+        if (q_thresh < neg_tau)
+        {
+            const float* bc_ptr2 = base_G.get_costs_ptr();
+            const int* ct_ptr2 = thrust::raw_pointer_cast(base_ct.data());
+            const int* ch_ptr2 = thrust::raw_pointer_cast(base_ch.data());
+            int* mask_ptr2 = thrust::raw_pointer_cast(q_mask.data());
+            thrust::for_each(
+                thrust::make_counting_iterator(0),
+                thrust::make_counting_iterator(num_base_dir),
+                [bc_ptr2, ct_ptr2, ch_ptr2, mask_ptr2, q_thresh] LCC_HOST_DEVICE (int e) {
+                    mask_ptr2[e] = (bc_ptr2[e] <= q_thresh && ct_ptr2[e] < ch_ptr2[e]) ? 1 : 0;
+                });
+        }
     }
 
     int num_q = thrust::reduce(q_mask.begin(), q_mask.end(), 0);
@@ -253,8 +260,22 @@ LiftedCutFactors<VectorType> find_lifted_cut_constraints(
     thrust::copy_if(base_G.get_costs().begin(), base_G.get_costs().begin() + num_base_dir,
                     q_mask.begin(), q_costs.begin(), is_one);
 
+    // ---- Phase 2b: Q-CC prefilter ----
+    // Compute CC of Q to filter violations to pairs reachable through strongly negative edges.
+    // Q edges are undirected: add both directions for CC computation.
+
+    VectorType<int> q_cc_t(2 * num_q), q_cc_h(2 * num_q);
+    thrust::copy(q_src.begin(), q_src.end(), q_cc_t.begin());
+    thrust::copy(q_dst.begin(), q_dst.end(), q_cc_t.begin() + num_q);
+    thrust::copy(q_dst.begin(), q_dst.end(), q_cc_h.begin());
+    thrust::copy(q_src.begin(), q_src.end(), q_cc_h.begin() + num_q);
+
+    VectorType<int> q_comp =
+        connected_components::compute_cc<VectorType>(num_comp, q_cc_t, q_cc_h);
+
     // ---- Phase 3: Find violations ----
-    // Positive lifted edges (tail < head) with endpoints in different components.
+    // Lifted edges with cost > tau, endpoints in different CCs (strong base subgraph),
+    // and endpoints in the same Q-CC (reachable through strongly negative edges).
 
     VectorType<int> lift_ct(num_lifted_dir), lift_ch(num_lifted_dir);
     thrust::gather(lifted_G.get_tails().begin(), lifted_G.get_tails().begin() + num_lifted_dir,
@@ -269,13 +290,15 @@ LiftedCutFactors<VectorType> find_lifted_cut_constraints(
         const float* lc_ptr = lifted_G.get_costs_ptr();
         const int* lct_ptr = thrust::raw_pointer_cast(lift_ct.data());
         const int* lch_ptr = thrust::raw_pointer_cast(lift_ch.data());
+        const int* qc_ptr = thrust::raw_pointer_cast(q_comp.data());
         int* vm_ptr = thrust::raw_pointer_cast(v_mask.data());
         thrust::for_each(
             thrust::make_counting_iterator(0),
             thrust::make_counting_iterator(num_lifted_dir),
-            [lt_ptr, lh_ptr, lc_ptr, lct_ptr, lch_ptr, vm_ptr] LCC_HOST_DEVICE (int e) {
-                vm_ptr[e] = (lt_ptr[e] < lh_ptr[e] && lc_ptr[e] > 0.0f &&
-                             lct_ptr[e] != lch_ptr[e]) ? 1 : 0;
+            [lt_ptr, lh_ptr, lc_ptr, lct_ptr, lch_ptr, qc_ptr, vm_ptr, tau_val] LCC_HOST_DEVICE (int e) {
+                int ct = lct_ptr[e], ch = lch_ptr[e];
+                vm_ptr[e] = (lt_ptr[e] < lh_ptr[e] && lc_ptr[e] >= tau_val &&
+                             ct != ch && qc_ptr[ct] == qc_ptr[ch]) ? 1 : 0;
             });
     }
 
@@ -343,7 +366,7 @@ LiftedCutFactors<VectorType> find_lifted_cut_constraints(
     reduced_keys.resize(num_pairs_all);
     reduced_sums.resize(num_pairs_all);
 
-    // Filter to pairs with sum(L) > τ
+    // Filter to pairs with sum(L) > internal_tau
     VectorType<long long> unique_keys(num_pairs_all);
     {
         auto in_first = thrust::make_zip_iterator(
@@ -353,7 +376,7 @@ LiftedCutFactors<VectorType> find_lifted_cut_constraints(
         auto out_first = thrust::make_zip_iterator(
             thrust::make_tuple(unique_keys.begin(), thrust::make_discard_iterator()));
         auto filt_end = thrust::copy_if(in_first, in_last, reduced_sums.begin(), out_first,
-            [tau] LCC_HOST_DEVICE (float s) { return s > tau; });
+            [internal_tau] LCC_HOST_DEVICE (float s) { return s > internal_tau; });
         int num_kept = (int)std::distance(
             thrust::make_zip_iterator(thrust::make_tuple(unique_keys.begin(), thrust::make_discard_iterator())),
             filt_end);
@@ -407,7 +430,8 @@ LiftedCutFactors<VectorType> find_lifted_cut_constraints(
     }
 
     if (verbose)
-        std::cout << "cut factor filtering: tau=" << tau
+        std::cout << "cut factor search: tau=" << tau
+                  << ", num_comp=" << num_comp
                   << ", Q-edges " << num_q_all << " -> " << num_q
                   << ", pairs " << num_pairs_all << " -> " << num_pairs
                   << ", violations " << num_v << "\n";
@@ -481,8 +505,8 @@ LiftedCutFactors<VectorType> find_lifted_cut_constraints(
 
     // ---- Phase 6: Build LiftedCutFactors on GPU ----
 
-    // 6a: Collect negative forward inter-component base edge indices.
-    //     These are the base edges that CAN participate in cuts.
+    // 6a: Collect strongly repulsive forward inter-component base edge indices.
+    //     These are the base edges that CAN participate in cuts (cost <= -tau).
     VectorType<int> nfb_mask(num_base_dir);
     {
         const float* bc_ptr = base_G.get_costs_ptr();
@@ -494,8 +518,8 @@ LiftedCutFactors<VectorType> find_lifted_cut_constraints(
         thrust::for_each(
             thrust::make_counting_iterator(0),
             thrust::make_counting_iterator(num_base_dir),
-            [bc_ptr, bt_ptr, bh_ptr, ct_ptr, ch_ptr, m_ptr] LCC_HOST_DEVICE (int e) {
-                m_ptr[e] = (bc_ptr[e] < 0.0f && bt_ptr[e] < bh_ptr[e] &&
+            [bc_ptr, bt_ptr, bh_ptr, ct_ptr, ch_ptr, m_ptr, neg_tau] LCC_HOST_DEVICE (int e) {
+                m_ptr[e] = (bc_ptr[e] <= neg_tau && bt_ptr[e] < bh_ptr[e] &&
                             ct_ptr[e] != ch_ptr[e]) ? 1 : 0;
             });
     }
@@ -825,9 +849,9 @@ LiftedCutFactors<VectorType> find_lifted_cut_constraints(
 extern template
 LiftedCutFactors<thrust::host_vector>
 find_lifted_cut_constraints<thrust::host_vector>(
-    const Graph<thrust::host_vector>&, const Graph<thrust::host_vector>&, bool);
+    const Graph<thrust::host_vector>&, const Graph<thrust::host_vector>&, bool, float);
 
 extern template
 LiftedCutFactors<thrust::device_vector>
 find_lifted_cut_constraints<thrust::device_vector>(
-    const Graph<thrust::device_vector>&, const Graph<thrust::device_vector>&, bool);
+    const Graph<thrust::device_vector>&, const Graph<thrust::device_vector>&, bool, float);

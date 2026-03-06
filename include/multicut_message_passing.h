@@ -399,9 +399,37 @@ int multicut_message_passing<VectorType>::add_triangles(
             merged_j.resize(num_merged);
             merged_costs.resize(num_merged);
 
+            // After swap: merged_i/j = old edges, i/j = new (expanded) edges.
             thrust::swap(i, merged_i);
             thrust::swap(j, merged_j);
             thrust::swap(edge_costs, merged_costs);
+
+            // Remap cut factor edge indices to the new (expanded) edge array.
+            if (num_cut_factors_ > 0)
+            {
+                auto new_first = thrust::make_zip_iterator(
+                    thrust::make_tuple(i.begin(), j.begin()));
+                auto new_last = thrust::make_zip_iterator(
+                    thrust::make_tuple(i.end(), j.end()));
+
+                auto remap = [&](VectorType<int>& mp_idx) {
+                    if (mp_idx.empty()) return;
+                    // Gather old (i,j) keys for each cut factor entry.
+                    VectorType<int> keys_i(mp_idx.size()), keys_j(mp_idx.size());
+                    thrust::gather(mp_idx.begin(), mp_idx.end(),
+                                   merged_i.begin(), keys_i.begin());
+                    thrust::gather(mp_idx.begin(), mp_idx.end(),
+                                   merged_j.begin(), keys_j.begin());
+                    // Find new positions via lower_bound in expanded edge array.
+                    auto keys_first = thrust::make_zip_iterator(
+                        thrust::make_tuple(keys_i.begin(), keys_j.begin()));
+                    thrust::lower_bound(new_first, new_last,
+                        keys_first, keys_first + mp_idx.size(),
+                        mp_idx.begin());
+                };
+                remap(cf_base_mp_idx);
+                remap(cf_lifted_mp_idx);
+            }
         }
     }
 
@@ -448,6 +476,30 @@ int multicut_message_passing<VectorType>::add_triangles(
     compute_triangle_edge_correspondence(t1, t2, edge_counter, triangle_correspondence_12);
     compute_triangle_edge_correspondence(t1, t3, edge_counter, triangle_correspondence_13);
     compute_triangle_edge_correspondence(t2, t3, edge_counter, triangle_correspondence_23);
+
+    // Re-add cut factor contributions lost by the edge_counter reset above.
+    if (num_cut_factors_ > 0)
+    {
+        int total = (int)cf_base_mp_idx.size() + (int)cf_lifted_mp_idx.size();
+        VectorType<int> all_idx(total);
+        thrust::copy(cf_base_mp_idx.begin(), cf_base_mp_idx.end(), all_idx.begin());
+        thrust::copy(cf_lifted_mp_idx.begin(), cf_lifted_mp_idx.end(),
+                     all_idx.begin() + cf_base_mp_idx.size());
+
+        VectorType<int> sorted_idx(all_idx);
+        thrust::sort(sorted_idx.begin(), sorted_idx.end());
+
+        VectorType<int> unique_idx(total), counts(total);
+        auto end = thrust::reduce_by_key(sorted_idx.begin(), sorted_idx.end(),
+            thrust::make_constant_iterator(1), unique_idx.begin(), counts.begin());
+        int num_unique = (int)std::distance(unique_idx.begin(), end.first);
+
+        VectorType<int> increments(edge_counter.size(), 0);
+        thrust::scatter(counts.begin(), counts.begin() + num_unique,
+                        unique_idx.begin(), increments.begin());
+        thrust::transform(edge_counter.begin(), edge_counter.end(), increments.begin(),
+                          edge_counter.begin(), thrust::plus<int>());
+    }
 
     return num_new;
 }

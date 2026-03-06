@@ -449,7 +449,7 @@ struct is_in_range_func {
 template<template<typename> class VectorType>
 Graph<VectorType> Graph<VectorType>::filter(const float lb, const float ub) const
 {
-    assert(lb <= ub);
+    assert(lb <= ub || (std::cerr << "filter: lb=" << lb << " > ub=" << ub << "\n", false));
 
     const size_t new_count = thrust::count_if(costs_.begin(), costs_.end(), is_in_range_func{lb, ub});
     VectorType<int> tails_f(new_count), heads_f(new_count);

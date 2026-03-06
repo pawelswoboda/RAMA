@@ -6,4 +6,4 @@
 template
 LiftedCutFactors<thrust::host_vector>
 find_lifted_cut_constraints<thrust::host_vector>(
-    const Graph<thrust::host_vector>&, const Graph<thrust::host_vector>&, bool);
+    const Graph<thrust::host_vector>&, const Graph<thrust::host_vector>&, bool, float);

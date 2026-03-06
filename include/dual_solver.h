@@ -5,7 +5,9 @@
 #include "lifted_multicut_utils.h"
 #include "multicut_message_passing.h"
 #include "time_measure_util.h"
+#include <iomanip>
 #include <iostream>
+#include <vector>
 
 // Dual solver with optional lifted cut factor support.
 // When use_cut_factors is true, iteratively finds cut constraints on the
@@ -45,22 +47,49 @@ double dual_solver(Graph<VectorType>& G,
         {
             Graph<VectorType> reparam_G = mp.reparametrized_graph();
 
-            // Find new cut factors on reparametrized costs
+            // Find new cut factors on reparametrized costs using cascading tau
             int num_new_cuts = 0;
-            std::cout << "Use cut factors: " << use_cut_factors << "\n";
             if (use_cut_factors)
             {
                 auto [reparam_base, reparam_lifted] =
                     extract_costs_from_union(reparam_G, base_G);
-                auto factors = find_lifted_cut_constraints<VectorType>(
-                    reparam_base, reparam_lifted, verbose);
-                if (factors.num_factors > 0)
+
+                const float base_mag = -reparam_base.min();
+                const float lifted_mag = reparam_lifted.max();
+
+                if (base_mag > 0 && lifted_mag > 0)
                 {
-                    num_new_cuts = mp.add_cut_factors(factors, reparam_base, reparam_lifted);
-                    total_cut_factors += num_new_cuts;
+                    const float tau_max = std::min(base_mag, lifted_mag);
+
+                    // Build threshold schedule: start strict (high tau), relax to tau=0.
+                    std::vector<float> taus;
+                    for (float r = 0.5f; r > tol_ratio; r *= 0.5f)
+                        taus.push_back(r * tau_max);
+                    taus.push_back(0.0f);
+
+                    for (const float tau : taus)
+                    {
+                        auto factors = find_lifted_cut_constraints<VectorType>(
+                            reparam_base, reparam_lifted, verbose, tau);
+                        if (factors.num_factors > 0)
+                        {
+                            num_new_cuts += mp.add_cut_factors(
+                                factors, reparam_base, reparam_lifted);
+                            if (verbose)
+                                std::cout << "outer " << outer_itr << " tau=" << tau
+                                          << ": added " << factors.num_factors
+                                          << " cut factors\n";
+                            break;
+                        }
+                    }
+                }
+
+                total_cut_factors += num_new_cuts;
+                if (num_new_cuts > 0)
+                {
                     if (verbose)
                         std::cout << "outer " << outer_itr << ": added "
-                                  << num_new_cuts << " cut factors\n";
+                                  << num_new_cuts << " cut factors total\n";
                 }
                 else if (verbose)
                     std::cout << "outer " << outer_itr << ": no cut factors found\n";
@@ -92,6 +121,8 @@ double dual_solver(Graph<VectorType>& G,
                 if (verbose)
                     std::cout << "outer " << outer_itr << ", iteration "
                               << iter << ", lower bound: " << lb << "\n";
+                assert(iter == 0 || lb >= prev_iter_lb - 1e-4
+                    || (std::cerr << "lower bound decreased: " << std::fixed << std::setprecision(5) << prev_iter_lb << " -> " << lb << std::defaultfloat << "\n", false));
                 if (iter > 0 && (lb - prev_iter_lb) < 1e-3)
                     break;
                 mp.iteration();
