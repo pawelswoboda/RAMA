@@ -84,7 +84,8 @@ rama_solver(Graph<VectorType>& base_G, Graph<VectorType>& lifted_G,
     // Must be checked before any dual solving, because triangulation
     // introduces diagonal edges that end up in lifted_G via
     // extract_costs_from_union — those are NOT original lifted edges.
-    const bool use_cut_factors = lifted_G.num_directed_edges() > 0;
+    const bool use_cut_factors = opts.use_lifted_cut_constraints
+                                 && lifted_G.num_directed_edges() > 0;
 
     // Save base costs before reparametrization. Union-graph dual solving
     // distributes lifted cost into base edges, making them appear more

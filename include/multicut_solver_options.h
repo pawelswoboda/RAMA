@@ -18,6 +18,7 @@ struct multicut_solver_options {
     bool dump_timeline = false;
     bool verbose = false;
     bool sanitize_graph = false;
+    bool use_lifted_cut_constraints = true;
     std::string long_cycle_method = "bfs";
 
     multicut_solver_options() { }
@@ -129,6 +130,10 @@ struct multicut_solver_options {
         app.add_flag("--sanitize-graph", sanitize_graph,
             "Handle graphs with isolated nodes (labels will be -1 for those)")
             ->group("Solver");
+        app.add_flag("--lifted-cut-constraints,!--no-lifted-cut-constraints",
+            use_lifted_cut_constraints,
+            "Use lifted cut constraints when lifted edges are present (default: on)")
+            ->group("Solver");
 
         // --- Advanced ---
         app.add_option("--tri-memory-factor", tri_memory_factor,
@@ -176,6 +181,7 @@ struct multicut_solver_options {
             ", only_compute_lb: " + std::to_string(only_compute_lb) +
             ", max_time_sec: " + std::to_string(max_time_sec) +
             ", sanitize_graph: " + std::to_string(sanitize_graph) +
+            ", use_lifted_cut_constraints: " + std::to_string(use_lifted_cut_constraints) +
             ", long_cycle_method: " + long_cycle_method +
             ", verbose: " + std::to_string(verbose) + "\n";
     }

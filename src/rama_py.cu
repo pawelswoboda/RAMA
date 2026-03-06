@@ -136,6 +136,7 @@ PYBIND11_MODULE(rama_py, m) {
         .def_readwrite("verbose", &multicut_solver_options::verbose)
         .def_readwrite("dump_timeline", &multicut_solver_options::dump_timeline)
         .def_readwrite("sanitize_graph", &multicut_solver_options::sanitize_graph)
+        .def_readwrite("use_lifted_cut_constraints", &multicut_solver_options::use_lifted_cut_constraints)
         .def("__repr__", [](const multicut_solver_options &a) {
             return a.get_string();
         });
