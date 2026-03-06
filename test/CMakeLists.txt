@@ -10,10 +10,6 @@ target_link_libraries(multicut_message_passing_cpu_test rama_cpu)
 add_test(NAME multicut_message_passing_cpu COMMAND multicut_message_passing_cpu_test)
 
 if(WITH_CUDA)
-    add_executable(cc_gpu_test cc_gpu_test.cu)
-    target_link_libraries(cc_gpu_test ECL-CC_11)
-    add_test(NAME cc_gpu COMMAND cc_gpu_test)
-
     add_executable(edge_contractions_gpu_test edge_contractions_gpu_test.cu)
     target_compile_definitions(edge_contractions_gpu_test PRIVATE ${GPU_COMPILE_DEFINITIONS})
     target_link_libraries(edge_contractions_gpu_test rama_gpu)

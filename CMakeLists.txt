@@ -18,7 +18,6 @@ target_compile_features(RAMA INTERFACE cxx_std_17)
 
 target_compile_options(RAMA INTERFACE -march=native)
 target_compile_options(RAMA INTERFACE -fPIC)
-target_include_directories(RAMA INTERFACE external/Eigen)
 
 if(WITH_CUDA)
     # Define global Thrust execution backend flags
@@ -106,23 +105,6 @@ else()
 endif()
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-
-if(WITH_CUDA)
-    include_directories(external/ECL-CC)
-
-    add_library(ECL-CC_11 external/ECL-CC/ECL-CC_11.cu)
-    target_include_directories(ECL-CC_11 INTERFACE external/ECL-CC)
-
-    add_library(gpuMST_boruvka external/cudaMST/gpuMST/gpuMST.cu)
-    target_link_libraries(gpuMST_boruvka RAMA)
-    target_include_directories(gpuMST_boruvka PUBLIC external/cudaMST/gpuMST/)
-    target_include_directories(gpuMST_boruvka PUBLIC external/cudaMST/common/)
-
-    add_library(gpuMST_kruskal external/cudaMST/gpuMSTdpk/gpuMST.cu)
-    target_link_libraries(gpuMST_kruskal RAMA)
-    target_include_directories(gpuMST_kruskal PUBLIC external/cudaMST/gpuMSTdpk/)
-    target_include_directories(gpuMST_kruskal PUBLIC external/cudaMST/common/)
-endif()
 
 add_subdirectory(src)
 enable_testing()
