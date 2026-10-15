@@ -8,6 +8,8 @@
 #include <thrust/host_vector.h>
 #include <thrust/gather.h>
 #include <thrust/iterator/discard_iterator.h>
+#include <thrust/iterator/zip_iterator.h>
+#include <thrust/tuple.h>
 #include <thrust/adjacent_difference.h>
 #include <thrust/iterator/constant_iterator.h>
 #include <thrust/remove.h>

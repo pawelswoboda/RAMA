@@ -207,17 +207,17 @@ bool Graph<VectorType>::is_single_orientation(
     if (n <= 1)
         return true;
 
+    // Copy into VectorType first: the iterators may live in a different memory
+    // space (e.g. std::vector on host while VectorType is device_vector).
+    VectorType<int> lo(tail_begin, tail_end);
+    VectorType<int> hi(head_begin, head_end);
+
     // Normalize each edge to (min, max) so (i,j) and (j,i) map to the same pair
-    VectorType<int> lo(n), hi(n);
-    auto edge_begin = thrust::make_zip_iterator(thrust::make_tuple(tail_begin, head_begin));
-    auto edge_end   = thrust::make_zip_iterator(thrust::make_tuple(tail_end,   head_end));
-    auto norm_begin = thrust::make_zip_iterator(thrust::make_tuple(lo.begin(), hi.begin()));
-
-    thrust::transform(edge_begin, edge_end, norm_begin, normalize_edge_func());
-
-    // Sort the normalized pairs
     auto sort_begin = thrust::make_zip_iterator(thrust::make_tuple(lo.begin(), hi.begin()));
     auto sort_end   = thrust::make_zip_iterator(thrust::make_tuple(lo.end(),   hi.end()));
+    thrust::transform(sort_begin, sort_end, sort_begin, normalize_edge_func());
+
+    // Sort the normalized pairs
     thrust::sort(sort_begin, sort_end);
 
     // If all normalized edges are unique, no edge was provided in both orientations
