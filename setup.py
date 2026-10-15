@@ -3,11 +3,18 @@ import os
 import re
 import sys
 import platform
+import shutil
 import subprocess
 
 from setuptools import setup, Extension, find_packages
 from setuptools.command.build_ext import build_ext
 from pkg_resources import parse_version
+
+
+def with_cuda():
+    # WITH_CUDA=ON/OFF overrides; by default build the GPU module if nvcc is found.
+    default = 'ON' if (shutil.which('nvcc') or os.path.exists('/usr/local/cuda/bin/nvcc')) else 'OFF'
+    return os.environ.get('WITH_CUDA', default).upper() == 'ON'
 
 
 class CMakeExtension(Extension):
@@ -85,7 +92,8 @@ class CMakeBuild(build_ext):
     def build_extension(self, ext):
         extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
         cmake_args = ['-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + extdir,
-                      '-DPYTHON_EXECUTABLE=' + sys.executable]
+                      '-DPYTHON_EXECUTABLE=' + sys.executable,
+                      '-DWITH_CUDA=' + ('ON' if with_cuda() else 'OFF')]
 
         cfg = 'Debug' if self.debug else 'Release'
         build_args = ['--config', cfg]
@@ -122,7 +130,8 @@ setup(
     version='0.0.8',
     description='Bindings for RAMA: Rapid algorithm for multicut.',
     packages=find_packages('.'),
-    ext_modules=[CMakeExtension(name='rama_py')],
+    ext_modules=[CMakeExtension(name='rama_py_cpu')] +
+                ([CMakeExtension(name='rama_py')] if with_cuda() else []),
     cmdclass=dict(build_ext=CMakeBuild),
     zip_safe=False,
     setup_requires=['wheel']

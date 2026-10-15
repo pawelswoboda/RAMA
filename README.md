@@ -64,6 +64,20 @@ import rama_py
 opts = rama_py.multicut_solver_options("PD")
 rama_py.rama_cuda([0, 1, 2], [1, 2, 0], [1.1, -2, 3], opts)
 ```
+The same interface is available for the CPU solver in the module `rama_py_cpu` (no GPU required). `pip install .` always builds `rama_py_cpu` and builds `rama_py` only if CUDA is found; set `WITH_CUDA=ON` or `WITH_CUDA=OFF` to override.
+```python
+import rama_py_cpu
+opts = rama_py_cpu.multicut_solver_options("PD")
+rama_py_cpu.rama_cpu([0, 1, 2], [1, 2, 0], [1.1, -2, 3], opts)
+```
+| GPU (`rama_py`) | CPU (`rama_py_cpu`) |
+|---|---|
+| `rama_cuda(i, j, costs, opts)` | `rama_cpu(i, j, costs, opts)` |
+| `rama_cuda_gpu_pointers(i_ptr, j_ptr, costs_ptr, labels_ptr, num_nodes, num_edges, gpu_id, opts)` | `rama_cpu_pointers(i_ptr, j_ptr, costs_ptr, labels_ptr, num_nodes, num_edges, opts)` (host pointers, e.g. `numpy_array.ctypes.data`) |
+| `rama_torch(i, j, costs, opts)` with CUDA tensors | `rama_torch(i, j, costs, opts)` with CPU tensors |
+| `read_multicut_file(path)` | `read_multicut_file(path)` |
+
+`rama_torch` is available when built with `WITH_TORCH=ON`.
 The solver supports different modes which can be chosen by initializing multicut_solver_options by following:
 - `"P"`: For running purely primal algorithm (best runtime).
 - `"PD"`: This one offers good runtime vs quality tradeoff and is the default solver.

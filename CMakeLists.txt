@@ -60,17 +60,15 @@ endif()
 
 include(${CPM_DOWNLOAD_LOCATION})
 
-if(WITH_CUDA)
-    CPMAddPackage(
-        NAME pybind11
-        GIT_TAG master
-        GITHUB_REPOSITORY pybind/pybind11
-        OPTIONS
-        "PYBIND11_CPP_STANDARD -std=c++17"
-        "PYBIND11_INSTALL ON CACHE BOOL"
-    )
-    find_package(pybind11 REQUIRED)
-endif()
+CPMAddPackage(
+    NAME pybind11
+    GIT_TAG master
+    GITHUB_REPOSITORY pybind/pybind11
+    OPTIONS
+    "PYBIND11_CPP_STANDARD -std=c++17"
+    "PYBIND11_INSTALL ON CACHE BOOL"
+)
+find_package(pybind11 REQUIRED)
 
 CPMAddPackage(
     NAME CCCL
@@ -93,9 +91,6 @@ endif()
 option(WITH_TORCH "Compile with PyTorch support" OFF)
 
 if(WITH_TORCH)
-    if(NOT WITH_CUDA)
-        message(FATAL_ERROR "WITH_TORCH requires WITH_CUDA=ON")
-    endif()
     message(STATUS "Compiling with PyTorch support")
     find_package(Torch REQUIRED)
     add_definitions(-DWITH_TORCH)

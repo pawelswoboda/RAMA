@@ -201,3 +201,12 @@ endif()
 add_executable(lifted_edge_contraction_cpu_test lifted_edge_contraction_cpu_test.cpp)
 target_link_libraries(lifted_edge_contraction_cpu_test rama_cpu)
 add_test(NAME lifted_edge_contraction_cpu COMMAND lifted_edge_contraction_cpu_test)
+
+# Python interface tests. PYTHONPATH points at the built rama_py_cpu / rama_py modules.
+add_test(NAME rama_py_cpu COMMAND ${Python_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_rama_py_cpu.py)
+set_tests_properties(rama_py_cpu PROPERTIES ENVIRONMENT "PYTHONPATH=$<TARGET_FILE_DIR:rama_py_cpu>")
+
+if(WITH_CUDA)
+    add_test(NAME rama_py_cpu_gpu COMMAND ${Python_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_rama_py_cpu_gpu.py)
+    set_tests_properties(rama_py_cpu_gpu PROPERTIES ENVIRONMENT "PYTHONPATH=$<TARGET_FILE_DIR:rama_py_cpu>:$<TARGET_FILE_DIR:rama_py>")
+endif()

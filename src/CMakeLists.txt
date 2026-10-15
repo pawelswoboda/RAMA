@@ -59,13 +59,25 @@ add_executable(rama_text_input_cpu rama_text_input_cpu.cpp)
 # Compiled with g++ (not nvcc), CPP backend defined in source file
 target_link_libraries(rama_text_input_cpu rama_cpu multicut_text_parser)
 
+if(WITH_TORCH)
+    find_library(TORCH_PYTHON_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib")
+    message(STATUS "TORCH_PYTHON_LIBRARY: ${TORCH_PYTHON_LIBRARY}") # https://github.com/pytorch/pytorch/issues/38122#issuecomment-694203281
+endif()
+
+pybind11_add_module(rama_py_cpu rama_py_cpu.cpp)
+# Compiled with g++ (not nvcc), CPP backend defined in source file
+target_link_libraries(rama_py_cpu PRIVATE multicut_text_parser rama_cpu)
+if(WITH_TORCH)
+    target_link_libraries(rama_py_cpu PRIVATE "${TORCH_LIBRARIES}" ${TORCH_PYTHON_LIBRARY})
+endif()
+
 if(WITH_CUDA)
     pybind11_add_module(rama_py rama_py.cu)
     target_link_libraries(rama_py PRIVATE multicut_text_parser rama_gpu)
 
     if(WITH_TORCH)
-        find_library(TORCH_PYTHON_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib")
-        message(STATUS "TORCH_PYTHON_LIBRARY: ${TORCH_PYTHON_LIBRARY}") # https://github.com/pytorch/pytorch/issues/38122#issuecomment-694203281
         target_link_libraries(rama_py PRIVATE "${TORCH_LIBRARIES}" ${TORCH_PYTHON_LIBRARY})
+        # Torch headers require C++20; Torch only sets CXX_STANDARD, not CUDA_STANDARD.
+        set_target_properties(rama_py PROPERTIES CUDA_STANDARD 20)
     endif()
 endif()
