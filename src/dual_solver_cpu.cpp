@@ -7,8 +7,8 @@ template
 double dual_solver<thrust::host_vector>(
     Graph<thrust::host_vector>&, const Graph<thrust::host_vector>&,
     const Graph<thrust::host_vector>&, bool, int, int, int, float, bool,
-    const std::string&, float);
+    const std::string&, float, float, long long);
 
 template
 double dual_solver<thrust::host_vector>(
-    Graph<thrust::host_vector>&, int, int, int, float, bool, const std::string&, float);
+    Graph<thrust::host_vector>&, int, int, int, float, bool, const std::string&, float, float, long long);

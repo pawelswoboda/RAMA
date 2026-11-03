@@ -5,8 +5,8 @@
 #include <pybind11/stl.h>
 #include "rama_solver.h"
 #include "multicut_solver_options.h"
-#include "multicut_text_parser.h"
 #include "rama_utils.h"
+#include "rama_py_backend.h"
 
 #ifdef WITH_TORCH
 #include <torch/extension.h>
@@ -25,7 +25,7 @@ solve_gpu(thrust::device_vector<int>&& i_gpu, thrust::device_vector<int>&& j_gpu
 {
     thrust::device_vector<int> sanitized_node_ids;
     if (opts.sanitize_graph)
-        sanitized_node_ids = compute_sanitized_graph(i_gpu, j_gpu, costs_gpu);
+        sanitized_node_ids = compute_sanitized_graph<thrust::device_vector>(i_gpu, j_gpu, costs_gpu);
     else
         sort_edge_nodes<thrust::device_vector>(i_gpu, j_gpu);
 
@@ -33,14 +33,24 @@ solve_gpu(thrust::device_vector<int>&& i_gpu, thrust::device_vector<int>&& j_gpu
     auto [node_mapping, lb, timeline] = rama_solver<thrust::device_vector>(G, opts);
 
     if (opts.sanitize_graph)
-        node_mapping = desanitize_node_labels(node_mapping, sanitized_node_ids);
+        node_mapping = desanitize_node_labels<thrust::device_vector>(node_mapping, sanitized_node_ids);
 
     return {std::move(node_mapping), lb, std::move(timeline)};
 }
 
-static std::tuple<std::vector<int>, double, int, std::vector<std::vector<int>>>
-rama_cuda(const std::vector<int>& i, const std::vector<int>& j,
-          const std::vector<float>& costs, const multicut_solver_options& opts)
+bool rama_gpu_available()
+{
+    int num_devices = 0;
+    if (cudaGetDeviceCount(&num_devices) != cudaSuccess)
+    {
+        cudaGetLastError(); // clear the sticky error so later CUDA calls are unaffected
+        return false;
+    }
+    return num_devices > 0;
+}
+
+rama_py_result rama_solve_gpu(const std::vector<int>& i, const std::vector<int>& j,
+                              const std::vector<float>& costs, const multicut_solver_options& opts)
 {
     initialize_gpu(opts.verbose);
     thrust::device_vector<int> i_gpu(i.begin(), i.end());
@@ -55,7 +65,7 @@ rama_cuda(const std::vector<int>& i, const std::vector<int>& j,
 
     std::vector<int> h_node_mapping(node_mapping.size());
     thrust::copy(node_mapping.begin(), node_mapping.end(), h_node_mapping.begin());
-    return {h_node_mapping, lb, dur, timeline};
+    return {std::move(h_node_mapping), lb, dur, std::move(timeline)};
 }
 
 #ifdef WITH_TORCH
@@ -112,39 +122,8 @@ std::vector<std::vector<int>> rama_cuda_gpu_pointers(const int* const i, const i
     return timeline;
 }
 
-PYBIND11_MODULE(rama_py, m) {
-    m.doc() = "Bindings for RAMA: Rapid algorithm for multicut. "
-                "For running purely primal algorithm initialize multicut_solver_options with \"P\". "
-                "For algorithm with best quality call with \"PD+\" where \"PD\" is default algorithm. "
-                "For only computing the lower bound call with \"D\". ";
-    py::class_<multicut_solver_options>(m, "multicut_solver_options")
-        .def(py::init<>())
-        .def(py::init<const std::string&>())
-        .def(py::init<const int&, const int&, const int&, const int&, const int&,
-                const float&, const float&, const float&,
-                const bool&, const int&, const bool&>())
-        .def_readwrite("max_cycle_length_lb", &multicut_solver_options::max_cycle_length_lb)
-        .def_readwrite("num_dual_itr_lb", &multicut_solver_options::num_dual_itr_lb)
-        .def_readwrite("max_cycle_length_primal", &multicut_solver_options::max_cycle_length_primal)
-        .def_readwrite("num_dual_itr_primal", &multicut_solver_options::num_dual_itr_primal)
-        .def_readwrite("num_outer_itr_dual", &multicut_solver_options::num_outer_itr_dual)
-        .def_readwrite("mean_multiplier_mm", &multicut_solver_options::mean_multiplier_mm)
-        .def_readwrite("matching_thresh_crossover_ratio", &multicut_solver_options::matching_thresh_crossover_ratio)
-        .def_readwrite("tri_memory_factor", &multicut_solver_options::tri_memory_factor)
-        .def_readwrite("only_compute_lb", &multicut_solver_options::only_compute_lb)
-        .def_readwrite("max_time_sec", &multicut_solver_options::max_time_sec)
-        .def_readwrite("verbose", &multicut_solver_options::verbose)
-        .def_readwrite("dump_timeline", &multicut_solver_options::dump_timeline)
-        .def_readwrite("sanitize_graph", &multicut_solver_options::sanitize_graph)
-        .def_readwrite("use_lifted_cut_constraints", &multicut_solver_options::use_lifted_cut_constraints)
-        .def("__repr__", [](const multicut_solver_options &a) {
-            return a.get_string();
-        });
-
-    m.def("rama_cuda", [](const std::vector<int>& i, const std::vector<int>& j, const std::vector<float>& edge_costs, const multicut_solver_options& opts) {
-            return rama_cuda(i, j, edge_costs, opts);
-            });
-
+void register_gpu_bindings(py::module_& m)
+{
     m.def("rama_cuda_gpu_pointers", [](const long i_ptr, const long j_ptr, const long edge_costs_ptr, const long node_labels_out_ptr,
                                     const int num_nodes, const int num_edges, const int gpuDeviceID, const multicut_solver_options& opts) {
             const int* const i = reinterpret_cast<const int* const>(i_ptr);
@@ -152,12 +131,6 @@ PYBIND11_MODULE(rama_py, m) {
             const float* const edge_costs = reinterpret_cast<const float* const>(edge_costs_ptr);
             int* const node_labels = reinterpret_cast<int* const>(node_labels_out_ptr);
             return rama_cuda_gpu_pointers(i, j, edge_costs, node_labels, num_nodes, num_edges, gpuDeviceID, opts);
-            });
-
-    m.def("read_multicut_file", [](const std::string& filename) {
-            auto inst = read_file(filename);
-            return std::make_tuple(inst.i, inst.j, inst.costs,
-                                   inst.lifted_i, inst.lifted_j, inst.lifted_costs);
             });
 
     #ifdef WITH_TORCH

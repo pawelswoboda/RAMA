@@ -16,6 +16,7 @@
 #include "find_triangles.h"    // CC_HOST_DEVICE
 #include "find_quadrangles.h"  // qd_detail::write_sorted_triangle, deduplicate_triangles
 #include "connected_components.h"
+#include "time_measure_util.h"
 
 // Find conflicted cycles of length > 5 via BFS in the positive subgraph.
 // For each repulsive edge (u,v), finds the shortest positive path from u to v.
@@ -46,6 +47,7 @@ find_conflicted_cycles_bfs(
     const int max_cycle_length,
     const bool verbose = true)
 {
+    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
     const int num_rep_edges = (int)rep_edge_tails.size();
     assert(num_rep_edges == (int)rep_edge_heads.size());
 
@@ -118,10 +120,12 @@ find_conflicted_cycles_bfs(
     const int* pos_h = thrust::raw_pointer_cast(pos_graph_heads.data());
     const float* pos_c = thrust::raw_pointer_cast(pos_graph_costs.data());
 
-    // Batch size: limit dist + parent arrays to ~128 MB total.
+    // Batch size: limit dist + parent + min_cost arrays (12*B*N bytes).
+    // With sparse frontier BFS, per-level work is O(frontier*degree),
+    // not O(B*N), so we can afford larger batches for fewer iterations.
     const int max_batch = std::max(1,
         (int)std::min((long long)S,
-                      16LL * 1024 * 1024 / std::max((long long)N, 1LL)));
+                      64LL * 1024 * 1024 / std::max((long long)N, 1LL)));
 
     if (verbose)
         std::cout << "BFS cycles: " << S << " sources, batch " << max_batch
@@ -160,37 +164,145 @@ find_conflicted_cycles_bfs(
                 });
         }
 
-        // Level-synchronous BFS
+        // Expand-contract BFS (Merrill-Garland pattern) with parent-match
+        // dedup. Fuses expand + dist/parent/mc write into one kernel, then
+        // compacts the frontier by checking whose parent value "stuck" —
+        // eliminating the sort entirely. Pre-allocated buffers avoid
+        // per-level cudaMalloc overhead.
         const int depth_lim = std::min(max_depth, N);
+
+        // Initialize frontier: one entry per BFS source
+        VectorType<int> f_src(B), f_node(B);
+        {
+            int* fs = thrust::raw_pointer_cast(f_src.data());
+            int* fn = thrust::raw_pointer_cast(f_node.data());
+            thrust::for_each(
+                thrust::make_counting_iterator(0),
+                thrust::make_counting_iterator(B),
+                [fs, fn, b_src] CC_HOST_DEVICE (int i) {
+                    fs[i] = i;
+                    fn[i] = b_src[i];
+                });
+        }
+
+        // Pre-allocate work arrays outside the level loop (grow-only).
+        VectorType<int> degrees, w_off;
+        VectorType<int> cand_src, cand_node, cand_parent;
+        VectorType<float> cand_mc;
+
         for (int level = 0; level < depth_lim; ++level)
         {
+            const int F = (int)f_src.size();
+            if (F == 0) break;
+
+            const int* fs_ptr = thrust::raw_pointer_cast(f_src.data());
+            const int* fn_ptr = thrust::raw_pointer_cast(f_node.data());
             const int n = N;
-            thrust::for_each(
-                thrust::make_counting_iterator<long long>(0),
-                thrust::make_counting_iterator<long long>(BN),
-                [d, p, mc, pos_off, pos_h, pos_c, n, level]
-                CC_HOST_DEVICE (long long idx) {
-                    const int s = (int)(idx / n);
-                    const int node = (int)(idx % n);
-                    const long long off = (long long)s * n;
-                    if (d[off + node] != level) return;
-                    for (int e = pos_off[node]; e < pos_off[node + 1]; ++e)
-                    {
-                        const int h = pos_h[e];
-                        if (d[off + h] > level + 1)
-                        {
-                            d[off + h] = level + 1;
-                            p[off + h] = node;
-                            const float abs_c = pos_c[e] < 0 ? -pos_c[e] : pos_c[e];
-                            mc[off + h] = (level == 0) ? abs_c
-                                : thrust::min(mc[off + node], abs_c);
-                        }
-                    }
+            const int next_level = level + 1;
+
+            // Count neighbors per frontier entry
+            degrees.resize(F);
+            thrust::transform(
+                f_node.begin(), f_node.end(), degrees.begin(),
+                [pos_off] CC_HOST_DEVICE (int node) {
+                    return pos_off[node + 1] - pos_off[node];
                 });
+
+            w_off.resize(F);
+            thrust::exclusive_scan(degrees.begin(), degrees.end(), w_off.begin());
+            const int total = thrust::reduce(degrees.begin(), degrees.end());
+            if (total == 0) break;
+
+            // Fused expand + write: generate candidates and immediately
+            // write dist/parent/mc for unvisited nodes. On GPU, multiple
+            // threads may race on the same (s, nbr) slot; one writer wins
+            // (benign for dist since all write the same value; parent race
+            // resolved by parent-match compact below).
+            cand_src.resize(total);
+            cand_node.resize(total);
+            cand_parent.resize(total);
+            cand_mc.resize(total);
+            {
+                int* cs = thrust::raw_pointer_cast(cand_src.data());
+                int* cn = thrust::raw_pointer_cast(cand_node.data());
+                int* cp = thrust::raw_pointer_cast(cand_parent.data());
+                float* cm = thrust::raw_pointer_cast(cand_mc.data());
+                const int* wo = thrust::raw_pointer_cast(w_off.data());
+
+                thrust::for_each(
+                    thrust::make_counting_iterator(0),
+                    thrust::make_counting_iterator(F),
+                    [fs_ptr, fn_ptr, pos_off, pos_h, pos_c, wo,
+                     cs, cn, cp, cm, d, p, mc, n, level, next_level]
+                    CC_HOST_DEVICE (int i) {
+                        const int s = fs_ptr[i];
+                        const int node = fn_ptr[i];
+                        const long long s_off = (long long)s * n;
+                        int base = wo[i];
+                        for (int e = pos_off[node]; e < pos_off[node + 1]; ++e)
+                        {
+                            const int nbr = pos_h[e];
+                            const float abs_c = pos_c[e] < 0 ? -pos_c[e] : pos_c[e];
+                            const float cmc = (level == 0) ? abs_c
+                                : thrust::min(mc[s_off + node], abs_c);
+
+                            cs[base] = s;
+                            cn[base] = nbr;
+                            cp[base] = node;
+                            cm[base] = cmc;
+
+                            // Write if unvisited
+                            const long long idx = s_off + nbr;
+                            if (d[idx] > next_level)
+                            {
+                                d[idx] = next_level;
+                                p[idx] = node;
+                                mc[idx] = cmc;
+                            }
+                            ++base;
+                        }
+                    });
+            }
+
+            // Parent-match compact: for each candidate, check if its parent
+            // value matches what's stored in p[]. Exactly one candidate wins
+            // per (s, node) — no sort needed.
+            {
+                const int* cs = thrust::raw_pointer_cast(cand_src.data());
+                const int* cn = thrust::raw_pointer_cast(cand_node.data());
+                const int* cp_arr = thrust::raw_pointer_cast(cand_parent.data());
+
+                auto is_winner = [cs, cn, cp_arr, d, p, n, next_level]
+                    CC_HOST_DEVICE (int i) {
+                        const long long idx = (long long)cs[i] * n + cn[i];
+                        return d[idx] == next_level && p[idx] == cp_arr[i];
+                    };
+
+                const int new_F = thrust::count_if(
+                    thrust::make_counting_iterator(0),
+                    thrust::make_counting_iterator(total),
+                    is_winner);
+
+                if (new_F == 0) break;
+
+                VectorType<int> new_f_src(new_F), new_f_node(new_F);
+
+                auto in_first = thrust::make_zip_iterator(thrust::make_tuple(
+                    cand_src.begin(), cand_node.begin()));
+                auto out_first = thrust::make_zip_iterator(thrust::make_tuple(
+                    new_f_src.begin(), new_f_node.begin()));
+
+                thrust::copy_if(
+                    in_first, in_first + total,
+                    thrust::make_counting_iterator(0),
+                    out_first, is_winner);
+
+                f_src = std::move(new_f_src);
+                f_node = std::move(new_f_node);
+            }
 
             // Early exit: all targets reached?
             {
-                const int n = N;
                 int unreached = thrust::count_if(
                     thrust::make_counting_iterator(0),
                     thrust::make_counting_iterator(B),
@@ -198,18 +310,6 @@ find_conflicted_cycles_bfs(
                         return d[(long long)s * n + b_dst[s]] >= n;
                     });
                 if (unreached == 0) break;
-            }
-
-            // Early exit: frontier empty?
-            {
-                const int next = level + 1;
-                int frontier = thrust::count_if(
-                    thrust::make_counting_iterator<long long>(0),
-                    thrust::make_counting_iterator<long long>(BN),
-                    [d, next] CC_HOST_DEVICE (long long idx) {
-                        return d[idx] == next;
-                    });
-                if (frontier == 0) break;
             }
         }
 

@@ -67,6 +67,81 @@ std::tuple<VectorType<int>, int> contraction_mapping_by_maximum_matching(
     return {compress_label_sequence<VectorType>(node_mapping, node_mapping.size() - 1), nr_matched};
 }
 
+// Validate that every cluster is connected in the base graph.
+// For lifted multicut, a feasible clustering requires that any two nodes
+// assigned to the same cluster are connected by a path of uncut base edges.
+template<template<typename> class VectorType>
+void validate_clustering_connectivity(
+    const int num_nodes,
+    const VectorType<int>& base_tails,
+    const VectorType<int>& base_heads,
+    const VectorType<int>& node_mapping)
+{
+    const int m = (int)base_tails.size();
+    if (m == 0) return;
+
+    const int* t_ptr = thrust::raw_pointer_cast(base_tails.data());
+    const int* h_ptr = thrust::raw_pointer_cast(base_heads.data());
+    const int* map_ptr = thrust::raw_pointer_cast(node_mapping.data());
+
+    // Keep only uncut edges (both endpoints in the same cluster).
+    auto is_uncut = [t_ptr, h_ptr, map_ptr] SOLVER_HOST_DEVICE (int idx) {
+        return map_ptr[t_ptr[idx]] == map_ptr[h_ptr[idx]];
+    };
+
+    int num_uncut = thrust::count_if(
+        thrust::make_counting_iterator(0),
+        thrust::make_counting_iterator(m),
+        is_uncut);
+
+    VectorType<int> uncut_indices(num_uncut);
+    thrust::copy_if(
+        thrust::make_counting_iterator(0),
+        thrust::make_counting_iterator(m),
+        uncut_indices.begin(), is_uncut);
+
+    VectorType<int> uncut_tails(num_uncut), uncut_heads(num_uncut);
+    thrust::gather(uncut_indices.begin(), uncut_indices.end(),
+                   base_tails.begin(), uncut_tails.begin());
+    thrust::gather(uncut_indices.begin(), uncut_indices.end(),
+                   base_heads.begin(), uncut_heads.begin());
+
+    // Connected components of the uncut subgraph.
+    VectorType<int> cc = connected_components::compute_cc<VectorType>(
+        num_nodes, uncut_tails, uncut_heads);
+
+    // Check: nodes with the same cluster label must have the same CC label.
+    // Sort by cluster label, then reduce_by_key with min and max over CC labels.
+    VectorType<int> clusters(node_mapping);
+    VectorType<int> cc_by_cluster(cc);
+    thrust::sort_by_key(clusters.begin(), clusters.end(), cc_by_cluster.begin());
+
+    VectorType<int> unique_clusters(num_nodes), min_cc(num_nodes), max_cc(num_nodes);
+
+    auto end = thrust::reduce_by_key(
+        clusters.begin(), clusters.end(), cc_by_cluster.begin(),
+        unique_clusters.begin(), min_cc.begin(),
+        thrust::equal_to<int>(), thrust::minimum<int>());
+    int nc = end.first - unique_clusters.begin();
+
+    thrust::reduce_by_key(
+        clusters.begin(), clusters.end(), cc_by_cluster.begin(),
+        thrust::make_discard_iterator(), max_cc.begin(),
+        thrust::equal_to<int>(), thrust::maximum<int>());
+
+    VectorType<int> bad(nc);
+    thrust::transform(min_cc.begin(), min_cc.begin() + nc,
+                      max_cc.begin(), bad.begin(),
+                      thrust::not_equal_to<int>());
+    int num_bad = thrust::reduce(bad.begin(), bad.end());
+
+    if (num_bad > 0)
+        throw std::runtime_error(
+            "Invalid clustering: " + std::to_string(num_bad) +
+            " / " + std::to_string(nc) +
+            " clusters are disconnected in the base graph");
+}
+
 } // namespace rama_solver_detail
 
 // Lifted multicut solver. Works on both CPU (thrust::host_vector) and GPU (thrust::device_vector).
@@ -98,7 +173,8 @@ rama_solver(Graph<VectorType>& base_G, Graph<VectorType>& lifted_G,
     const double final_lb = dual_solver<VectorType>(union_G, base_G, lifted_G,
         use_cut_factors, opts.max_cycle_length_lb, opts.num_dual_itr_lb,
         opts.num_outer_itr_dual, 1e-4, opts.verbose, opts.long_cycle_method,
-        opts.triangle_budget_ratio);
+        opts.triangle_budget_ratio, opts.cut_factor_budget_ratio,
+        opts.max_raw_triangles);
     std::tie(base_G, lifted_G) = extract_costs_from_union(union_G, base_G);
 
 
@@ -112,6 +188,11 @@ rama_solver(Graph<VectorType>& base_G, Graph<VectorType>& lifted_G,
 
     if (opts.only_compute_lb)
         return {VectorType<int>(), final_lb, timeline};
+
+    // Save original base graph structure for final clustering validation.
+    const int input_num_nodes = base_G.num_nodes();
+    const VectorType<int> input_base_tails(base_G.get_tails());
+    const VectorType<int> input_base_heads(base_G.get_heads());
 
     bool try_matching = true;
     if (opts.matching_thresh_crossover_ratio > 1.0)
@@ -127,7 +208,9 @@ rama_solver(Graph<VectorType>& base_G, Graph<VectorType>& lifted_G,
                                     opts.max_cycle_length_primal,
                                     opts.num_dual_itr_primal, 1, 1e-4, opts.verbose,
                                     opts.long_cycle_method,
-                                    opts.triangle_budget_ratio);
+                                    opts.triangle_budget_ratio,
+                                    opts.cut_factor_budget_ratio,
+                                    opts.max_raw_triangles);
             std::tie(base_G, lifted_G) = extract_costs_from_union(union_G, base_G);
         }
 
@@ -155,7 +238,7 @@ rama_solver(Graph<VectorType>& base_G, Graph<VectorType>& lifted_G,
         // Fall back to regular base-edge contraction (matching or MST)
         if (nr_edges_to_contract == 0)
         {
-            if (try_matching && false) // TODO: debugging
+            if (try_matching)
             {
                 std::tie(cur_node_mapping, nr_edges_to_contract) =
                     rama_solver_detail::contraction_mapping_by_maximum_matching<VectorType>(
@@ -288,6 +371,9 @@ rama_solver(Graph<VectorType>& base_G, Graph<VectorType>& lifted_G,
 
     if (opts.verbose)
         std::cout << "final energy = " << base_G.sum() + lifted_G.sum() << "\n";
+
+    rama_solver_detail::validate_clustering_connectivity<VectorType>(
+        input_num_nodes, input_base_tails, input_base_heads, node_mapping);
 
     return {node_mapping, final_lb, timeline};
 }

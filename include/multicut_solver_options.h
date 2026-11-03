@@ -13,6 +13,13 @@ struct multicut_solver_options {
     float matching_thresh_crossover_ratio = 0.05;
     float tri_memory_factor = 2.0;
     float triangle_budget_ratio = 0;
+    float cut_factor_budget_ratio = 0;
+    // Ceiling on triangles materialized by one cycle finder before
+    // deduplication. Quadrangle/pentagon enumeration is O(deg^2)/O(deg^3) per
+    // repulsive edge, so on dense graphs the raw count runs into the billions
+    // while the distinct count stays small. 32M triangles is ~0.5 GB of output
+    // plus sort scratch, and far more than any graph yields after dedup.
+    long long max_raw_triangles = 32 * 1000 * 1000;
     bool only_compute_lb = false;
     int max_time_sec = -1;
     bool dump_timeline = false;
@@ -144,6 +151,15 @@ struct multicut_solver_options {
             "Keep only top fraction of triangles by cycle strength (0 = no limit)")
             ->check(CLI::NonNegativeNumber)
             ->group("Dual solver");
+        app.add_option("--cut-factor-budget-ratio", cut_factor_budget_ratio,
+            "Max cut factors as fraction of lifted edges per outer iteration (0 = no limit)")
+            ->check(CLI::NonNegativeNumber)
+            ->group("Dual solver");
+        app.add_option("--max-raw-triangles", max_raw_triangles,
+            "Max triangles a cycle finder may materialize before dedup (0 = no limit). "
+            "Bounds memory on dense graphs, where pentagon search is O(deg^3) per edge")
+            ->check(CLI::NonNegativeNumber)
+            ->group("Advanced");
 
         // --- Debug ---
         app.add_flag("-v,--verbose", verbose,
@@ -178,6 +194,8 @@ struct multicut_solver_options {
             ", matching_thresh_crossover_ratio: " + std::to_string(matching_thresh_crossover_ratio) +
             ", tri_memory_factor: " + std::to_string(tri_memory_factor) +
             ", triangle_budget_ratio: " + std::to_string(triangle_budget_ratio) +
+            ", cut_factor_budget_ratio: " + std::to_string(cut_factor_budget_ratio) +
+            ", max_raw_triangles: " + std::to_string(max_raw_triangles) +
             ", only_compute_lb: " + std::to_string(only_compute_lb) +
             ", max_time_sec: " + std::to_string(max_time_sec) +
             ", sanitize_graph: " + std::to_string(sanitize_graph) +

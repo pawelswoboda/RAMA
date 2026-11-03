@@ -28,16 +28,20 @@
 // 4. Stops early once the triangle budget is filled
 // 5. Deduplicates and applies budget filtering
 //
-// Returns three vectors of equal length: (v1, v2, v3) with v1 < v2 < v3.
+// Returns (v1, v2, v3, effective_ratio) where v1 < v2 < v3 are triangle
+// node vectors and effective_ratio is the threshold ratio at which the
+// search stopped (for warm-starting the next call via start_ratio).
 template<template<typename> class VectorType>
-std::tuple<VectorType<int>, VectorType<int>, VectorType<int>>
+std::tuple<VectorType<int>, VectorType<int>, VectorType<int>, float>
 conflicted_cycles(const Graph<VectorType>& G, int max_cycle_length,
                   float tol_ratio = 1e-4, bool verbose = true,
                   const std::string& long_cycle_method = "bfs",
-                  float triangle_budget_ratio = 0)
+                  float triangle_budget_ratio = 0,
+                  float start_ratio = 0.5f,
+                  long long max_raw_triangles = 0)
 {
     if (max_cycle_length < 3)
-        return {VectorType<int>(), VectorType<int>(), VectorType<int>()};
+        return {VectorType<int>(), VectorType<int>(), VectorType<int>(), tol_ratio};
 
     const int budget_cap = (triangle_budget_ratio > 0)
         ? (int)(triangle_budget_ratio * G.num_edges()) : 0;
@@ -47,7 +51,7 @@ conflicted_cycles(const Graph<VectorType>& G, int max_cycle_length,
     std::vector<float> ratios;
     if (budget_cap > 0)
     {
-        for (float r = 0.5f; r > tol_ratio; r *= 0.5f)
+        for (float r = start_ratio; r > tol_ratio; r *= 0.5f)
             ratios.push_back(r);
     }
     ratios.push_back(tol_ratio);
@@ -70,9 +74,19 @@ conflicted_cycles(const Graph<VectorType>& G, int max_cycle_length,
     auto budget_filled = [&]() {
         return budget_cap > 0 && (int)all_v1.size() >= budget_cap;
     };
+    // Triangles each cycle finder may still materialize before deduplication.
+    // Quadrangle/pentagon enumeration is O(deg^2)/O(deg^3) per repulsive edge,
+    // so on dense graphs this is what bounds peak memory.
+    auto remaining_raw = [&]() -> long long {
+        if (max_raw_triangles <= 0) return 0;
+        const long long left = max_raw_triangles - (long long)all_v1.size();
+        return left > 1 ? left : 1;
+    };
 
+    float last_ratio = tol_ratio;
     for (const float current_ratio : ratios)
     {
+        last_ratio = current_ratio;
         const float neg_thresh = current_ratio * G.min();
         const float pos_thresh = current_ratio * G.max();
 
@@ -134,7 +148,8 @@ conflicted_cycles(const Graph<VectorType>& G, int max_cycle_length,
         if (max_cycle_length >= 3)
         {
             auto [v1, v2, v3, str] = find_triangles<VectorType>(
-                rep_tails, rep_heads, pos_offsets, pos_heads, pos_costs, rep_costs);
+                rep_tails, rep_heads, pos_offsets, pos_heads, pos_costs, rep_costs,
+                remaining_raw());
             if (verbose)
                 std::cout << "3-cycles: found " << v1.size() << " triangles\n";
             append(all_v1, v1); append(all_v2, v2); append(all_v3, v3);
@@ -146,7 +161,8 @@ conflicted_cycles(const Graph<VectorType>& G, int max_cycle_length,
         if (max_cycle_length >= 4)
         {
             auto [v1, v2, v3, str] = find_quadrangles<VectorType>(
-                rep_tails, rep_heads, pos_offsets, pos_heads, pos_costs, rep_costs);
+                rep_tails, rep_heads, pos_offsets, pos_heads, pos_costs, rep_costs,
+                remaining_raw());
             if (verbose)
                 std::cout << "4-cycles: found " << v1.size() << " triangles\n";
             append(all_v1, v1); append(all_v2, v2); append(all_v3, v3);
@@ -158,7 +174,8 @@ conflicted_cycles(const Graph<VectorType>& G, int max_cycle_length,
         if (max_cycle_length >= 5)
         {
             auto [v1, v2, v3, str] = find_pentagons<VectorType>(
-                rep_tails, rep_heads, pos_offsets, pos_heads, pos_costs, rep_costs);
+                rep_tails, rep_heads, pos_offsets, pos_heads, pos_costs, rep_costs,
+                remaining_raw());
             if (verbose)
                 std::cout << "5-cycles: found " << v1.size() << " triangles\n";
             append(all_v1, v1); append(all_v2, v2); append(all_v3, v3);
@@ -231,16 +248,18 @@ conflicted_cycles(const Graph<VectorType>& G, int max_cycle_length,
                       << total_before << " triangles\n";
     }
 
-    return {std::move(all_v1), std::move(all_v2), std::move(all_v3)};
+    return {std::move(all_v1), std::move(all_v2), std::move(all_v3), last_ratio};
 }
 
 // Explicit instantiation declarations.
 extern template
-std::tuple<thrust::host_vector<int>, thrust::host_vector<int>, thrust::host_vector<int>>
+std::tuple<thrust::host_vector<int>, thrust::host_vector<int>, thrust::host_vector<int>, float>
 conflicted_cycles<thrust::host_vector>(
-    const Graph<thrust::host_vector>&, int, float, bool, const std::string&, float);
+    const Graph<thrust::host_vector>&, int, float, bool, const std::string&, float, float,
+    long long);
 
 extern template
-std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<int>>
+std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<int>, float>
 conflicted_cycles<thrust::device_vector>(
-    const Graph<thrust::device_vector>&, int, float, bool, const std::string&, float);
+    const Graph<thrust::device_vector>&, int, float, bool, const std::string&, float, float,
+    long long);

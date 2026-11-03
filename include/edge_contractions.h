@@ -282,9 +282,16 @@ bool filter_cycles(
 
     assert(std::distance(first_merged_key, last_merged.first) == (int)total_size);
 
+    // The count column is a materialized array of ones rather than a
+    // constant_iterator: nesting a constant_iterator inside the value
+    // zip_iterator makes reduce_by_key read far out of bounds on sm_120
+    // (CCCL 3.2.1). Swapping it for a real array is the only thing that
+    // avoids the fault -- the discard iterators and the key comparator are
+    // not involved.
+    VectorType<int> v_ones(total_size, 1);
     auto first_merged_val_with_count = thrust::make_zip_iterator(thrust::make_tuple(
         v_bottleneck_index_merged.begin(), v_bottleneck_value_merged.begin(),
-        thrust::make_constant_iterator<int>(1)));
+        v_ones.begin()));
 
     VectorType<int> v_rep_edges_reduced(total_size);
     VectorType<int> v_bottleneck_index_reduced(total_size);
@@ -470,7 +477,7 @@ std::tuple<VectorType<int>, int> find_contraction_mapping(
 
     auto ends = thrust::partition_copy(first_all, last_all, first_pos, first_rep,
         [] EC_HOST_DEVICE (const thrust::tuple<int,int,float>& t) {
-            return thrust::get<2>(t) >= 0.0f;
+            return thrust::get<2>(t) > 0.0f;
         });
 
     const int num_positive = std::distance(first_pos, ends.first);

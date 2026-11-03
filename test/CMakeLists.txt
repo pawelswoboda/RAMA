@@ -201,3 +201,12 @@ endif()
 add_executable(lifted_edge_contraction_cpu_test lifted_edge_contraction_cpu_test.cpp)
 target_link_libraries(lifted_edge_contraction_cpu_test rama_cpu)
 add_test(NAME lifted_edge_contraction_cpu COMMAND lifted_edge_contraction_cpu_test)
+
+# Python bindings: CPU tests always run, GPU tests only if rama_py was built with CUDA and a GPU is present.
+if(Python_EXECUTABLE)
+    set(RAMA_TEST_PYTHON ${Python_EXECUTABLE})
+else()
+    set(RAMA_TEST_PYTHON ${PYTHON_EXECUTABLE})
+endif()
+add_test(NAME rama_py COMMAND ${RAMA_TEST_PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/python/test_rama_py.py)
+set_tests_properties(rama_py PROPERTIES ENVIRONMENT "PYTHONPATH=$<TARGET_FILE_DIR:rama_py>")

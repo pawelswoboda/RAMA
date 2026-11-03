@@ -3,6 +3,7 @@ import os
 import re
 import sys
 import platform
+import shutil
 import subprocess
 
 from setuptools import setup, Extension, find_packages
@@ -73,8 +74,22 @@ class CMakeBuild(build_ext):
         raise RuntimeError("gcc >= 8.0 not found on the system")
 
 
-    def _prepare_environment(self):
-        gcc, gpp = self._find_suitable_gcc_gpp()
+    def _with_cuda(self):
+        # WITH_CUDA=ON/OFF selects the backends explicitly; by default CUDA is used if nvcc is found.
+        with_cuda = os.environ.get("WITH_CUDA", "AUTO").upper()
+        if with_cuda == "AUTO":
+            return shutil.which("nvcc") is not None or os.path.exists(os.environ.get("CUDACXX", ""))
+        return with_cuda in ("ON", "1", "TRUE", "YES")
+
+    def _prepare_environment(self, with_cuda):
+        # nvcc needs gcc as host compiler. A CPU-only build works with the default compiler (e.g. clang on macOS).
+        try:
+            gcc, gpp = self._find_suitable_gcc_gpp()
+        except RuntimeError:
+            if with_cuda:
+                raise
+            print("No suitable gcc found, using the default C/C++ compiler")
+            return
 
         gcc_path = subprocess.check_output(f"which {gcc}", shell=True).decode("utf-8").rstrip()
         gpp_path = subprocess.check_output(f"which {gpp}", shell=True).decode("utf-8").rstrip()
@@ -98,6 +113,10 @@ class CMakeBuild(build_ext):
         else:
             cmake_args += ['-DCMAKE_BUILD_TYPE=' + cfg]
             build_args += ['--', '-j8']
+        with_cuda = self._with_cuda()
+        print(f"with_cuda:{with_cuda}")
+        cmake_args += ['-DWITH_CUDA=' + ('ON' if with_cuda else 'OFF')]
+
         build_with_torch = os.environ.get("WITH_TORCH", "OFF")
         print(f"build_with_torch:{build_with_torch}\n\n")
 
@@ -107,7 +126,7 @@ class CMakeBuild(build_ext):
             import torch
             cmake_args += ['-DCMAKE_PREFIX_PATH='+torch.utils.cmake_prefix_path]
             print(cmake_args)
-        self._prepare_environment()
+        self._prepare_environment(with_cuda)
         env = os.environ.copy()
         env['CXXFLAGS'] = '{} -DVERSION_INFO=\\"{}\\"'.format(env.get('CXXFLAGS', ''),
                                                               self.distribution.get_version())

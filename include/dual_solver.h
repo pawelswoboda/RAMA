@@ -21,9 +21,11 @@ double dual_solver(Graph<VectorType>& G,
                    const int num_outer_itr = 1, const float tol_ratio = 1e-4,
                    const bool verbose = true,
                    const std::string& long_cycle_method = "bfs",
-                   const float triangle_budget_ratio = 0)
+                   const float triangle_budget_ratio = 0,
+                   const float cut_factor_budget_ratio = 0,
+                   const long long max_raw_triangles = 0)
 {
-    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
+    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
 
     if (num_iter == 0 || num_outer_itr == 0)
     {
@@ -40,9 +42,19 @@ double dual_solver(Graph<VectorType>& G,
     multicut_message_passing<VectorType> mp(G, verbose);
     double final_lb = mp.lower_bound();
     int total_cut_factors = 0;
+    int cut_budget = 0;
+    if (cut_factor_budget_ratio > 0 && lifted_G.num_directed_edges() > 0)
+    {
+        const int num_pos_lifted = thrust::count_if(
+            lifted_G.get_costs().begin(), lifted_G.get_costs().end(),
+            [] CC_HOST_DEVICE (float c) { return c > 0; }) / 2;
+        cut_budget = (int)(cut_factor_budget_ratio * num_pos_lifted);
+    }
 
     try {
         double prev_outer_lb = final_lb;
+        float cycle_start_ratio = 0.5f;
+        float cut_start_frac = 0.5f;
         for (int outer_itr = 0; outer_itr < num_outer_itr; outer_itr++)
         {
             Graph<VectorType> reparam_G = mp.reparametrized_graph();
@@ -63,10 +75,23 @@ double dual_solver(Graph<VectorType>& G,
 
                     // Build threshold schedule: start strict (high tau), relax to tau=0.
                     std::vector<float> taus;
-                    for (float r = 0.5f; r > tol_ratio; r *= 0.5f)
+                    for (float r = cut_start_frac; r > tol_ratio; r *= 0.5f)
                         taus.push_back(r * tau_max);
                     taus.push_back(0.0f);
 
+                    if (verbose)
+                    {
+                        std::cout << "cut factor search: tau_max=" << tau_max
+                                  << ", schedule=[";
+                        for (size_t ti = 0; ti < taus.size(); ++ti)
+                            std::cout << (ti ? ", " : "") << taus[ti];
+                        std::cout << "], budget="
+                                  << (cut_budget > 0 ? std::to_string(cut_budget) : "unlimited")
+                                  << "\n";
+                    }
+
+                    bool found_cuts = false;
+                    int total_base_edges = 0, total_lifted_edges = 0;
                     for (const float tau : taus)
                     {
                         auto factors = find_lifted_cut_constraints<VectorType>(
@@ -75,13 +100,33 @@ double dual_solver(Graph<VectorType>& G,
                         {
                             num_new_cuts += mp.add_cut_factors(
                                 factors, reparam_base, reparam_lifted);
+                            total_base_edges += (int)factors.base_edge_idx.size();
+                            total_lifted_edges += (int)factors.lifted_edge_idx.size();
                             if (verbose)
                                 std::cout << "outer " << outer_itr << " tau=" << tau
-                                          << ": added " << factors.num_factors
-                                          << " cut factors\n";
-                            break;
+                                          << ": " << factors.num_factors
+                                          << " cut factors ("
+                                          << factors.base_edge_idx.size() << " base, "
+                                          << factors.lifted_edge_idx.size() << " lifted edges)\n";
+                            if (!found_cuts)
+                            {
+                                // Persist: start one level stricter next time
+                                float effective_frac = (tau_max > 0) ? tau / tau_max : 0.0f;
+                                cut_start_frac = std::min(effective_frac * 2.0f, 0.5f);
+                                found_cuts = true;
+                            }
+                            if (cut_budget > 0 && num_new_cuts >= cut_budget)
+                            {
+                                if (verbose)
+                                    std::cout << "outer " << outer_itr
+                                              << ": cut factor budget reached ("
+                                              << num_new_cuts << "/" << cut_budget << ")\n";
+                                break;
+                            }
                         }
                     }
+                    if (!found_cuts)
+                        cut_start_frac = tol_ratio;
                 }
 
                 total_cut_factors += num_new_cuts;
@@ -99,9 +144,11 @@ double dual_solver(Graph<VectorType>& G,
             int num_new_triangles = 0;
             if (max_cycle_length >= 3)
             {
-                auto [v1, v2, v3] = conflicted_cycles<VectorType>(
+                auto [v1, v2, v3, eff_ratio] = conflicted_cycles<VectorType>(
                     reparam_G, max_cycle_length, tol_ratio, verbose, long_cycle_method,
-                    triangle_budget_ratio);
+                    triangle_budget_ratio, cycle_start_ratio, max_raw_triangles);
+                // Persist: start one level stricter next time
+                cycle_start_ratio = std::min(eff_ratio * 2.0f, 0.5f);
                 if (!v1.empty())
                     num_new_triangles = mp.add_triangles(
                         std::move(v1), std::move(v2), std::move(v3));
@@ -155,12 +202,15 @@ template<template<typename> class VectorType>
 double dual_solver(Graph<VectorType>& G, int max_cycle_length, int num_iter,
                    int num_outer_itr = 1, float tol_ratio = 1e-4, bool verbose = true,
                    const std::string& long_cycle_method = "bfs",
-                   float triangle_budget_ratio = 0)
+                   float triangle_budget_ratio = 0,
+                   float cut_factor_budget_ratio = 0,
+                   long long max_raw_triangles = 0)
 {
     Graph<VectorType> empty_base, empty_lifted;
     return dual_solver(G, empty_base, empty_lifted, false,
                        max_cycle_length, num_iter, num_outer_itr, tol_ratio, verbose,
-                       long_cycle_method, triangle_budget_ratio);
+                       long_cycle_method, triangle_budget_ratio, cut_factor_budget_ratio,
+                       max_raw_triangles);
 }
 
 // Explicit instantiation declarations.
@@ -168,18 +218,18 @@ extern template
 double dual_solver<thrust::host_vector>(
     Graph<thrust::host_vector>&, const Graph<thrust::host_vector>&,
     const Graph<thrust::host_vector>&, bool, int, int, int, float, bool,
-    const std::string&, float);
+    const std::string&, float, float, long long);
 
 extern template
 double dual_solver<thrust::device_vector>(
     Graph<thrust::device_vector>&, const Graph<thrust::device_vector>&,
     const Graph<thrust::device_vector>&, bool, int, int, int, float, bool,
-    const std::string&, float);
+    const std::string&, float, float, long long);
 
 extern template
 double dual_solver<thrust::host_vector>(
-    Graph<thrust::host_vector>&, int, int, int, float, bool, const std::string&, float);
+    Graph<thrust::host_vector>&, int, int, int, float, bool, const std::string&, float, float, long long);
 
 extern template
 double dual_solver<thrust::device_vector>(
-    Graph<thrust::device_vector>&, int, int, int, float, bool, const std::string&, float);
+    Graph<thrust::device_vector>&, int, int, int, float, bool, const std::string&, float, float, long long);

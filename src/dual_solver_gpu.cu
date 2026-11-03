@@ -4,8 +4,8 @@ template
 double dual_solver<thrust::device_vector>(
     Graph<thrust::device_vector>&, const Graph<thrust::device_vector>&,
     const Graph<thrust::device_vector>&, bool, int, int, int, float, bool,
-    const std::string&, float);
+    const std::string&, float, float, long long);
 
 template
 double dual_solver<thrust::device_vector>(
-    Graph<thrust::device_vector>&, int, int, int, float, bool, const std::string&, float);
+    Graph<thrust::device_vector>&, int, int, int, float, bool, const std::string&, float, float, long long);

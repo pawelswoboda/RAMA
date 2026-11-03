@@ -17,4 +17,5 @@ std::tuple<thrust::host_vector<int>, thrust::host_vector<int>, thrust::host_vect
 find_quadrangles<thrust::host_vector>(
     const thrust::host_vector<int>&, const thrust::host_vector<int>&,
     const thrust::host_vector<int>&, const thrust::host_vector<int>&,
-    const thrust::host_vector<float>&, const thrust::host_vector<float>&);
+    const thrust::host_vector<float>&, const thrust::host_vector<float>&,
+    long long);

@@ -18,6 +18,12 @@
 #include <thrust/scatter.h>
 #include <thrust/binary_search.h>
 #include <thrust/reduce.h>
+#include <thrust/tuple.h>
+#include <thrust/iterator/zip_iterator.h>
+#include <thrust/iterator/counting_iterator.h>
+#include <thrust/transform.h>
+#include <thrust/transform_reduce.h>
+#include <thrust/for_each.h>
 
 #ifdef __CUDACC__
 #define RAMA_HOST_DEVICE __host__ __device__
@@ -468,23 +474,30 @@ inline void map_old_values_consec(VectorType<int>& src,
     thrust::transform(src.begin(), src.end(), src.begin(), mapper);
 }
 
-inline thrust::device_vector<int> compute_sanitized_graph(thrust::device_vector<int>& i, thrust::device_vector<int>& j, thrust::device_vector<float>& data)
+template<template<typename> class VectorType>
+inline VectorType<int> compute_sanitized_graph(VectorType<int>& i, VectorType<int>& j, VectorType<float>& data)
 {
-    // First find and remove duplicate edges. The corresponding costs are also discarded!
-    sort_edge_nodes<thrust::device_vector>(i, j);
+    // Normalize edge directions and merge duplicate edges by summing costs.
+    sort_edge_nodes<VectorType>(i, j);
 
-    coo_sorting<thrust::device_vector>(i, j, data);
-    auto first = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
-    auto last = thrust::make_zip_iterator(thrust::make_tuple(i.end(), j.end()));
-    auto new_last = thrust::unique_by_key(first, last, data.begin());
-    auto num_unique_edges = new_last.first - first;
-    i.resize(num_unique_edges);
-    j.resize(num_unique_edges);
-    data.resize(num_unique_edges);
+    coo_sorting<VectorType>(i, j, data);
+    VectorType<int> out_i(i.size()), out_j(j.size());
+    VectorType<float> out_data(data.size());
+    auto keys_in = thrust::make_zip_iterator(thrust::make_tuple(i.begin(), j.begin()));
+    auto keys_out = thrust::make_zip_iterator(thrust::make_tuple(out_i.begin(), out_j.begin()));
+    auto end = thrust::reduce_by_key(keys_in, keys_in + i.size(),
+        data.begin(), keys_out, out_data.begin());
+    size_t num_unique_edges = std::distance(keys_out, end.first);
+    out_i.resize(num_unique_edges);
+    out_j.resize(num_unique_edges);
+    out_data.resize(num_unique_edges);
+    i = std::move(out_i);
+    j = std::move(out_j);
+    data = std::move(out_data);
 
     // Find unique node IDs in graph.
 
-    thrust::device_vector<int> unique_node_ids(2 * i.size());
+    VectorType<int> unique_node_ids(2 * i.size());
     thrust::copy(i.begin(), i.end(), unique_node_ids.begin());
     thrust::copy(j.begin(), j.end(), unique_node_ids.begin() + i.size());
 
@@ -493,7 +506,7 @@ inline thrust::device_vector<int> compute_sanitized_graph(thrust::device_vector<
     unique_node_ids.resize(std::distance(unique_node_ids.begin(), unique_end));
 
     const int max_node_id = unique_node_ids.back();
-    thrust::device_vector<int> ids_mapping(max_node_id + 1, 0);
+    VectorType<int> ids_mapping(max_node_id + 1, 0);
     thrust::scatter(thrust::constant_iterator<int>(1), thrust::constant_iterator<int>(1) + unique_node_ids.size(), 
                     unique_node_ids.begin(), ids_mapping.begin());
 
@@ -521,13 +534,14 @@ struct desanitize_node_labels_func
     }
 };
 
-inline thrust::device_vector<int> desanitize_node_labels(const thrust::device_vector<int>& node_labels, const thrust::device_vector<int>& ids_mapping)
+template<template<typename> class VectorType>
+inline VectorType<int> desanitize_node_labels(const VectorType<int>& node_labels, const VectorType<int>& ids_mapping)
 {
     desanitize_node_labels_func desanitizer({thrust::raw_pointer_cast(ids_mapping.data()), 
                                             thrust::raw_pointer_cast(node_labels.data()), 
                                             ids_mapping.size()}); 
 
-    thrust::device_vector<int> all_nodes_labels(ids_mapping.size(), -1); // -1 label is for nodes which did not have any incident edges!
+    VectorType<int> all_nodes_labels(ids_mapping.size(), -1); // -1 label is for nodes which did not have any incident edges!
     thrust::transform(thrust::make_counting_iterator<int>(0), thrust::make_counting_iterator<int>(0) + all_nodes_labels.size(), 
                     all_nodes_labels.begin(), desanitizer);
 

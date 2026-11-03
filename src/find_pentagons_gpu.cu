@@ -5,4 +5,5 @@ std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::devic
 find_pentagons<thrust::device_vector>(
     const thrust::device_vector<int>&, const thrust::device_vector<int>&,
     const thrust::device_vector<int>&, const thrust::device_vector<int>&,
-    const thrust::device_vector<float>&, const thrust::device_vector<float>&);
+    const thrust::device_vector<float>&, const thrust::device_vector<float>&,
+    long long);

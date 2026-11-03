@@ -49,12 +49,12 @@ inline int count_common_neighbours_excluding(
 // where v1_n1 != v2_n1, count common neighbours of (v1_n1, v2_n1) excluding
 // v1 and v2. Each valid common neighbour yields one pentagon = 3 triangles.
 CC_HOST_DEVICE
-inline int count_pentagon_triangles(
+inline long long count_pentagon_triangles(
     const int v1, const int v2,
     const int* const __restrict__ offsets,
     const int* const __restrict__ col_ids)
 {
-    int count = 0;
+    long long count = 0;
     for (int i = offsets[v1]; i < offsets[v1 + 1]; ++i)
     {
         const int v1_n1 = col_ids[i];
@@ -86,9 +86,9 @@ inline void fill_pentagon_triangles(
     int* const __restrict__ tri_v2,
     int* const __restrict__ tri_v3,
     float* const __restrict__ strength,
-    const int write_offset)
+    const long long write_offset)
 {
-    int local_idx = 0;
+    long long local_idx = 0;
     const float abs_rep = rep_cost < 0 ? -rep_cost : rep_cost;
     for (int i = offsets[v1]; i < offsets[v1 + 1]; ++i)
     {
@@ -119,17 +119,17 @@ inline void fill_pentagon_triangles(
                                 thrust::min(abs_v2_v2n1,
                                     thrust::min(abs_v1n1_mid, abs_mid_v2n1))));
 
-                        const int idx0 = write_offset + local_idx;
+                        const long long idx0 = write_offset + local_idx;
                         qd_detail::write_sorted_triangle(v1, v2, v1_n1,
                             tri_v1, tri_v2, tri_v3, idx0);
                         strength[idx0] = s;
                         ++local_idx;
-                        const int idx1 = write_offset + local_idx;
+                        const long long idx1 = write_offset + local_idx;
                         qd_detail::write_sorted_triangle(v2, v1_n1, mid,
                             tri_v1, tri_v2, tri_v3, idx1);
                         strength[idx1] = s;
                         ++local_idx;
-                        const int idx2 = write_offset + local_idx;
+                        const long long idx2 = write_offset + local_idx;
                         qd_detail::write_sorted_triangle(v2, mid, v2_n1,
                             tri_v1, tri_v2, tri_v3, idx2);
                         strength[idx2] = s;
@@ -165,6 +165,12 @@ inline void fill_pentagon_triangles(
 // pos_graph_heads: CSR column indices of the symmetric positive graph.
 // pos_graph_costs: CSR edge costs (parallel to pos_graph_heads).
 // rep_edge_costs: costs of repulsive edges (parallel to rep_edge_tails/heads).
+// max_triangles: cap on the number of triangles emitted (0 = unlimited).
+//
+// Pentagon enumeration is O(deg^3) per repulsive edge and produces mostly
+// duplicates on dense graphs, so max_triangles is what keeps this affordable:
+// the complete graph on 227 nodes yields ~1.3e10 raw triangles (210 GB) that
+// deduplicate down to at most C(227,3) = 1.9e6 distinct ones.
 template<template<typename> class VectorType>
 std::tuple<VectorType<int>, VectorType<int>, VectorType<int>, VectorType<float>>
 find_pentagons(
@@ -173,7 +179,8 @@ find_pentagons(
     const VectorType<int>& pos_graph_offsets,
     const VectorType<int>& pos_graph_heads,
     const VectorType<float>& pos_graph_costs,
-    const VectorType<float>& rep_edge_costs)
+    const VectorType<float>& rep_edge_costs,
+    const long long max_triangles = 0)
 {
     const int num_rep_edges = rep_edge_tails.size();
     assert(num_rep_edges == (int)rep_edge_heads.size());
@@ -189,25 +196,24 @@ find_pentagons(
     const float* rep_costs_ptr = thrust::raw_pointer_cast(rep_edge_costs.data());
 
     // Pass 1: count triangles per repulsive edge.
-    VectorType<int> counts(num_rep_edges);
+    VectorType<long long> counts(num_rep_edges);
     thrust::transform(
         thrust::make_counting_iterator(0),
         thrust::make_counting_iterator(num_rep_edges),
         counts.begin(),
         [tails_ptr, heads_ptr, pos_offsets_ptr, pos_heads_ptr]
-        CC_HOST_DEVICE (const int edge_idx) {
+        CC_HOST_DEVICE (const int edge_idx) -> long long {
             return pent_detail::count_pentagon_triangles(
                 tails_ptr[edge_idx], heads_ptr[edge_idx],
                 pos_offsets_ptr, pos_heads_ptr);
         });
 
-    const int total_triangles = thrust::reduce(counts.begin(), counts.end());
+    // Compute write offsets via exclusive scan (64-bit, see helper).
+    VectorType<long long> offsets(num_rep_edges);
+    const long long total_triangles =
+        cc_detail::compute_write_offsets<VectorType>(counts, offsets, max_triangles);
     if (total_triangles == 0)
         return {VectorType<int>(), VectorType<int>(), VectorType<int>(), VectorType<float>()};
-
-    // Compute write offsets via exclusive scan.
-    VectorType<int> offsets(num_rep_edges);
-    thrust::exclusive_scan(counts.begin(), counts.end(), offsets.begin());
 
     // Allocate output.
     VectorType<int> tri_v1(total_triangles);
@@ -219,15 +225,21 @@ find_pentagons(
     int* tri_v2_ptr = thrust::raw_pointer_cast(tri_v2.data());
     int* tri_v3_ptr = thrust::raw_pointer_cast(tri_v3.data());
     float* tri_str_ptr = thrust::raw_pointer_cast(tri_strength.data());
-    const int* offsets_ptr = thrust::raw_pointer_cast(offsets.data());
+    const long long* offsets_ptr = thrust::raw_pointer_cast(offsets.data());
 
-    // Pass 2: fill triangles at computed offsets.
+    // Pass 2: fill triangles at computed offsets. Edges zeroed out by the
+    // cap are skipped -- the fill helper re-enumerates the pentagons and
+    // would otherwise write past the end of the output.
+    const long long* counts_ptr = thrust::raw_pointer_cast(counts.data());
     thrust::for_each(
         thrust::make_counting_iterator(0),
         thrust::make_counting_iterator(num_rep_edges),
         [tails_ptr, heads_ptr, pos_offsets_ptr, pos_heads_ptr, pos_costs_ptr,
-         rep_costs_ptr, tri_v1_ptr, tri_v2_ptr, tri_v3_ptr, tri_str_ptr, offsets_ptr]
+         rep_costs_ptr, tri_v1_ptr, tri_v2_ptr, tri_v3_ptr, tri_str_ptr,
+         offsets_ptr, counts_ptr]
         CC_HOST_DEVICE (const int edge_idx) {
+            if (counts_ptr[edge_idx] == 0)
+                return;
             pent_detail::fill_pentagon_triangles(
                 tails_ptr[edge_idx], heads_ptr[edge_idx],
                 pos_offsets_ptr, pos_heads_ptr,
@@ -248,11 +260,13 @@ std::tuple<thrust::host_vector<int>, thrust::host_vector<int>, thrust::host_vect
 find_pentagons<thrust::host_vector>(
     const thrust::host_vector<int>&, const thrust::host_vector<int>&,
     const thrust::host_vector<int>&, const thrust::host_vector<int>&,
-    const thrust::host_vector<float>&, const thrust::host_vector<float>&);
+    const thrust::host_vector<float>&, const thrust::host_vector<float>&,
+    long long);
 
 extern template
 std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<float>>
 find_pentagons<thrust::device_vector>(
     const thrust::device_vector<int>&, const thrust::device_vector<int>&,
     const thrust::device_vector<int>&, const thrust::device_vector<int>&,
-    const thrust::device_vector<float>&, const thrust::device_vector<float>&);
+    const thrust::device_vector<float>&, const thrust::device_vector<float>&,
+    long long);

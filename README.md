@@ -33,6 +33,10 @@ We also provide python bindings using [pybind](https://github.com/pybind/pybind1
 ```bash
 python -m pip install git+https://github.com/pawelswoboda/RAMA.git
 ```
+The GPU backend is built if `nvcc` is found, otherwise only the CPU backend is built (no CUDA or GCC required, e.g. on macOS). Set `WITH_CUDA=ON` or `WITH_CUDA=OFF` to choose explicitly:
+```bash
+WITH_CUDA=OFF python -m pip install git+https://github.com/pawelswoboda/RAMA.git
+```
 
 ## Usage
 
@@ -62,8 +66,10 @@ An example to compute multicut on a triangle graph:
 ```python
 import rama_py
 opts = rama_py.multicut_solver_options("PD")
-rama_py.rama_cuda([0, 1, 2], [1, 2, 0], [1.1, -2, 3], opts)
+node_labels, lower_bound, duration_ms, timeline = rama_py.rama([0, 1, 2], [1, 2, 0], [1.1, -2, 3], opts)
 ```
+`rama()` runs on the GPU if RAMA was built with CUDA and a GPU is present, and on the CPU otherwise. Pass `device="cpu"` or `device="cuda"` to choose the backend, or call `rama_py.rama_cpu(...)` / `rama_py.rama_cuda(...)` directly (same arguments and return value). `rama_py.with_cuda` tells whether the GPU backend was built.
+
 The solver supports different modes which can be chosen by initializing multicut_solver_options by following:
 - `"P"`: For running purely primal algorithm (best runtime).
 - `"PD"`: This one offers good runtime vs quality tradeoff and is the default solver.
@@ -99,7 +105,7 @@ All parameter variants work with both `rama_text_input_gpu` and `rama_text_input
 
 
 ## PyTorch support (Optional):
-The above-mentioned Python solver takes input in CPU memory and then copies to GPU memory. In cases where this takes too much time we offer additional (optional) functionality in Python bindings which allow to directly use the GPU tensors and return the result in GPU memory. For this there are two options:
+These functions are GPU-only. The above-mentioned Python solver takes input in CPU memory and then copies to GPU memory. In cases where this takes too much time we offer additional (optional) functionality in Python bindings which allow to directly use the GPU tensors and return the result in GPU memory. For this there are two options:
 
 - **Binding via pointers to GPU memory:**
 Does not require compiling RAMA with PyTorch support (as done below). This option passes the GPU memory pointers to RAMA (the data is not modified). See

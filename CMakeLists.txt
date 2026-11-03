@@ -16,7 +16,12 @@ add_library(RAMA INTERFACE)
 target_include_directories(RAMA INTERFACE include/)
 target_compile_features(RAMA INTERFACE cxx_std_17)
 
-target_compile_options(RAMA INTERFACE -march=native)
+# Apple clang on arm64 may reject -march=native.
+include(CheckCXXCompilerFlag)
+check_cxx_compiler_flag(-march=native RAMA_HAS_MARCH_NATIVE)
+if(RAMA_HAS_MARCH_NATIVE)
+    target_compile_options(RAMA INTERFACE -march=native)
+endif()
 target_compile_options(RAMA INTERFACE -fPIC)
 
 if(WITH_CUDA)
@@ -60,24 +65,31 @@ endif()
 
 include(${CPM_DOWNLOAD_LOCATION})
 
-if(WITH_CUDA)
-    CPMAddPackage(
-        NAME pybind11
-        GIT_TAG master
-        GITHUB_REPOSITORY pybind/pybind11
-        OPTIONS
-        "PYBIND11_CPP_STANDARD -std=c++17"
-        "PYBIND11_INSTALL ON CACHE BOOL"
-    )
-    find_package(pybind11 REQUIRED)
-endif()
+CPMAddPackage(
+    NAME pybind11
+    GIT_TAG master
+    GITHUB_REPOSITORY pybind/pybind11
+    OPTIONS
+    "PYBIND11_CPP_STANDARD -std=c++17"
+    "PYBIND11_INSTALL ON CACHE BOOL"
+)
+find_package(pybind11 REQUIRED)
 
 CPMAddPackage(
     NAME CCCL
     GITHUB_REPOSITORY nvidia/cccl
     GIT_TAG v3.2.1
 )
-target_link_libraries(RAMA INTERFACE CCCL::CCCL)
+
+# Expose only CCCL headers on the base RAMA interface target. CCCL::CCCL
+# transitively requires CUDA::cudart_static (via CUB), which breaks CPU-only
+# targets on systems without libcudart_static.a. GPU targets (rama_gpu) link
+# CCCL::CCCL explicitly so they get the full runtime dependency.
+target_include_directories(RAMA INTERFACE
+    "${CCCL_SOURCE_DIR}/thrust"
+    "${CCCL_SOURCE_DIR}/cub"
+    "${CCCL_SOURCE_DIR}/libcudacxx/include"
+)
 
 CPMAddPackage("gl:libeigen/eigen#master")
 target_include_directories(RAMA INTERFACE "${eigen_SOURCE_DIR}")

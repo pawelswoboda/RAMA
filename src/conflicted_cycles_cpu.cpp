@@ -4,6 +4,7 @@
 #include "conflicted_cycles.h"
 
 template
-std::tuple<thrust::host_vector<int>, thrust::host_vector<int>, thrust::host_vector<int>>
+std::tuple<thrust::host_vector<int>, thrust::host_vector<int>, thrust::host_vector<int>, float>
 conflicted_cycles<thrust::host_vector>(
-    const Graph<thrust::host_vector>&, int, float, bool, const std::string&, float);
+    const Graph<thrust::host_vector>&, int, float, bool, const std::string&, float, float,
+    long long);

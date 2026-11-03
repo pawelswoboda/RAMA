@@ -192,7 +192,12 @@ LiftedCutFactors<VectorType> find_lifted_cut_constraints(
     int num_comp = thrust::reduce(comp.begin(), comp.end(), 0, thrust::maximum<int>()) + 1;
 
     if (num_comp <= 1)
+    {
+        if (verbose)
+            std::cout << "cut factor search: tau=" << tau
+                      << ", num_comp=" << num_comp << " (all contracted), skipping\n";
         return result;
+    }
 
     // ---- Phase 2: Build quotient graph Q ----
     // One Q-edge per undirected strongly repulsive inter-component base edge (cost <= -tau).
@@ -219,7 +224,13 @@ LiftedCutFactors<VectorType> find_lifted_cut_constraints(
 
     int num_q_all = thrust::reduce(q_mask.begin(), q_mask.end(), 0);
     if (num_q_all == 0)
+    {
+        if (verbose)
+            std::cout << "cut factor search: tau=" << tau
+                      << ", num_comp=" << num_comp
+                      << ", Q-edges 0, skipping\n";
         return result;
+    }
 
     auto is_one = [] LCC_HOST_DEVICE (int x) { return x == 1; };
 
@@ -304,7 +315,14 @@ LiftedCutFactors<VectorType> find_lifted_cut_constraints(
 
     int num_v = thrust::reduce(v_mask.begin(), v_mask.end(), 0);
     if (num_v == 0)
+    {
+        if (verbose)
+            std::cout << "cut factor search: tau=" << tau
+                      << ", num_comp=" << num_comp
+                      << ", Q-edges " << num_q_all << " -> " << num_q
+                      << ", violations 0, skipping\n";
         return result;
+    }
 
     // Gather violation data
     VectorType<int> lift_cmin(num_lifted_dir), lift_cmax(num_lifted_dir);

@@ -1,6 +1,7 @@
 #include "conflicted_cycles.h"
 
 template
-std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<int>>
+std::tuple<thrust::device_vector<int>, thrust::device_vector<int>, thrust::device_vector<int>, float>
 conflicted_cycles<thrust::device_vector>(
-    const Graph<thrust::device_vector>&, int, float, bool, const std::string&, float);
+    const Graph<thrust::device_vector>&, int, float, bool, const std::string&, float, float,
+    long long);
